@@ -1,0 +1,21 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:PpgBatch.kt$PpgBatch$override fun equals(other: Any?): Boolean</ID>
+    <ID>MagicNumber:PpgBatchCodec.kt$PpgBatchCodec$3</ID>
+    <ID>MagicNumber:PpgType.kt$PpgType.GREEN$12</ID>
+    <ID>MagicNumber:PpgType.kt$PpgType.GREEN$25</ID>
+    <ID>MagicNumber:PpgType.kt$PpgType.IR$100</ID>
+    <ID>MagicNumber:PpgType.kt$PpgType.IR$3</ID>
+    <ID>MagicNumber:PpgType.kt$PpgType.RED$100</ID>
+    <ID>MagicNumber:PpgType.kt$PpgType.RED$3</ID>
+    <ID>MagicNumber:SensorTimestampNormalizer.kt$SensorTimestampNormalizer$1_000L</ID>
+    <ID>MagicNumber:SensorTimestampNormalizer.kt$SensorTimestampNormalizer$1_000_000L</ID>
+    <ID>NestedBlockDepth:PpgBatchCodec.kt$PpgBatchCodec$fun encode(batch: PpgBatch): ByteArray</ID>
+    <ID>ReturnCount:PpgBatchOrdering.kt$PpgBatchSequenceAudit$fun accept(batch: PpgBatch): PpgBatchDelivery</ID>
+    <ID>ReturnCount:PpgBatchOrdering.kt$PpgBatchSequenceAudit$fun acceptDirect(batch: PpgBatch): PpgBatchDelivery</ID>
+    <ID>ReturnCount:PpgBatchPolicy.kt$PpgBatchPolicy$fun shouldFlush(type: PpgType, sampleCount: Int, callbackAgeMillis: Long): Boolean</ID>
+    <ID>TooManyFunctions:PpgBatchCodec.kt$PpgBatchCodec</ID>
+  </CurrentIssues>
+</SmellBaseline>

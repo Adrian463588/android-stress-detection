@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<baseline version="1.0">
+    <file name="src/main/java/com/stressdetector/shared/MessagePath.kt">
+        <error line="7" column="5" source="standard:spacing-between-declarations-with-comments" />
+        <error line="9" column="5" source="standard:spacing-between-declarations-with-comments" />
+        <error line="11" column="5" source="standard:spacing-between-declarations-with-comments" />
+        <error line="13" column="5" source="standard:spacing-between-declarations-with-comments" />
+        <error line="16" column="5" source="standard:spacing-between-declarations-with-comments" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/PpgBatch.kt">
+        <error line="42" column="17" source="standard:multiline-expression-wrapping" />
+        <error line="42" column="17" source="standard:wrapping" />
+        <error line="44" column="9" source="standard:wrapping" />
+        <error line="94" column="43" source="standard:multiline-expression-wrapping" />
+        <error line="94" column="43" source="standard:function-signature" />
+        <error line="107" column="9" source="standard:spacing-between-declarations-with-comments" />
+        <error line="111" column="24" source="standard:function-signature" />
+        <error line="111" column="43" source="standard:function-signature" />
+        <error line="111" column="58" source="standard:function-signature" />
+        <error line="111" column="78" source="standard:function-signature" />
+        <error line="111" column="89" source="standard:function-signature" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/PpgBatchCodec.kt">
+        <error line="51" column="50" source="standard:multiline-expression-wrapping" />
+        <error line="51" column="50" source="standard:function-signature" />
+        <error line="79" column="55" source="standard:multiline-expression-wrapping" />
+        <error line="79" column="55" source="standard:function-signature" />
+        <error line="95" column="23" source="standard:multiline-expression-wrapping" />
+        <error line="103" column="73" source="standard:multiline-expression-wrapping" />
+        <error line="103" column="73" source="standard:function-signature" />
+        <error line="123" column="25" source="standard:multiline-expression-wrapping" />
+        <error line="131" column="61" source="standard:multiline-expression-wrapping" />
+        <error line="131" column="61" source="standard:function-signature" />
+        <error line="150" column="24" source="standard:multiline-expression-wrapping" />
+        <error line="159" column="63" source="standard:multiline-expression-wrapping" />
+        <error line="159" column="63" source="standard:function-signature" />
+        <error line="182" column="45" source="standard:function-signature" />
+        <error line="185" column="56" source="standard:multiline-expression-wrapping" />
+        <error line="185" column="56" source="standard:function-signature" />
+        <error line="191" column="20" source="standard:multiline-expression-wrapping" />
+        <error line="249" column="23" source="standard:multiline-expression-wrapping" />
+        <error line="292" column="70" source="standard:multiline-expression-wrapping" />
+        <error line="292" column="70" source="standard:function-signature" />
+        <error line="300" column="30" source="standard:function-signature" />
+        <error line="300" column="59" source="standard:function-signature" />
+        <error line="300" column="71" source="standard:function-signature" />
+        <error line="300" column="82" source="standard:function-signature" />
+        <error line="303" column="29" source="standard:function-signature" />
+        <error line="303" column="58" source="standard:function-signature" />
+        <error line="303" column="70" source="standard:function-signature" />
+        <error line="303" column="79" source="standard:function-signature" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/PpgBatchOrdering.kt">
+        <error line="23" column="34" source="standard:class-signature" />
+        <error line="23" column="57" source="standard:class-signature" />
+        <error line="23" column="83" source="standard:class-signature" />
+        <error line="23" column="100" source="standard:class-signature" />
+        <error line="25" column="31" source="standard:class-signature" />
+        <error line="25" column="52" source="standard:class-signature" />
+        <error line="43" column="22" source="standard:multiline-expression-wrapping" />
+        <error line="96" column="23" source="standard:function-signature" />
+        <error line="96" column="40" source="standard:function-signature" />
+        <error line="96" column="61" source="standard:function-signature" />
+        <error line="96" column="91" source="standard:function-signature" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/PpgBatchPolicy.kt">
+        <error line="16" column="5" source="standard:spacing-between-declarations-with-comments" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/PpgType.kt">
+        <error line="14" column="53" source="standard:trailing-comma-on-declaration-site" />
+        <error line="21" column="9" source="standard:blank-line-before-declaration" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/PredictionConfidence.kt">
+        <error line="18" column="17" source="standard:multiline-expression-wrapping" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/SensorTimestampNormalizer.kt">
+        <error line="27" column="43" source="standard:multiline-expression-wrapping" />
+        <error line="42" column="32" source="standard:multiline-expression-wrapping" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/SessionCommandCodec.kt">
+        <error line="49" column="22" source="standard:multiline-expression-wrapping" />
+        <error line="49" column="29" source="standard:chain-method-continuation" />
+        <error line="52" column="37" source="standard:if-else-wrapping" />
+        <error line="52" column="37" source="standard:multiline-if-else" />
+        <error line="53" column="22" source="standard:if-else-wrapping" />
+        <error line="53" column="22" source="standard:multiline-if-else" />
+        <error line="55" column="25" source="standard:multiline-expression-wrapping" />
+        <error line="57" column="20" source="standard:multiline-expression-wrapping" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/SignalQualitySummary.kt">
+        <error line="19" column="17" source="standard:multiline-expression-wrapping" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/StressLabel.kt">
+        <error line="4" column="24" source="standard:class-signature" />
+        <error line="4" column="43" source="standard:class-signature" />
+        <error line="4" column="66" source="standard:class-signature" />
+        <error line="11" column="64" source="standard:multiline-expression-wrapping" />
+        <error line="11" column="64" source="standard:function-signature" />
+        <error line="17" column="46" source="standard:multiline-expression-wrapping" />
+        <error line="17" column="46" source="standard:function-signature" />
+        <error line="23" column="48" source="standard:multiline-expression-wrapping" />
+        <error line="23" column="48" source="standard:function-signature" />
+        <error line="23" column="56" source="standard:chain-method-continuation" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/StressPrediction.kt">
+        <error line="17" column="17" source="standard:multiline-expression-wrapping" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/audio/AudioCaptureEngine.kt">
+        <error line="14" column="1" source="standard:no-empty-first-line-in-class-body" />
+        <error line="39" column="30" source="standard:trailing-comma-on-declaration-site" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/audio/SpeakerDiarizer.kt">
+        <error line="9" column="1" source="standard:no-empty-first-line-in-class-body" />
+        <error line="37" column="30" source="standard:trailing-comma-on-declaration-site" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/audio/SpeechToTextEngine.kt">
+        <error line="10" column="1" source="standard:no-empty-first-line-in-class-body" />
+        <error line="39" column="29" source="standard:trailing-comma-on-declaration-site" />
+    </file>
+    <file name="src/main/java/com/stressdetector/shared/audio/TextToSpeechEngine.kt">
+        <error line="7" column="1" source="standard:no-empty-first-line-in-class-body" />
+        <error line="18" column="23" source="standard:function-signature" />
+        <error line="18" column="37" source="standard:function-signature" />
+        <error line="18" column="67" source="standard:function-signature" />
+    </file>
+    <file name="src/test/java/com/stressdetector/shared/PpgBatchCodecTest.kt">
+        <error line="3" column="1" source="standard:import-ordering" />
+        <error line="13" column="21" source="standard:multiline-expression-wrapping" />
+        <error line="58" column="21" source="standard:multiline-expression-wrapping" />
+        <error line="89" column="21" source="standard:multiline-expression-wrapping" />
+        <error line="107" column="22" source="standard:multiline-expression-wrapping" />
+        <error line="107" column="22" source="standard:string-template-indent" />
+        <error line="113" column="9" source="standard:string-template-indent" />
+    </file>
+    <file name="src/test/java/com/stressdetector/shared/PpgBatchOrderingTest.kt">
+        <error line="64" column="23" source="standard:function-signature" />
+        <error line="64" column="39" source="standard:function-signature" />
+        <error line="64" column="52" source="standard:function-signature" />
+        <error line="64" column="66" source="standard:multiline-expression-wrapping" />
+        <error line="64" column="66" source="standard:function-signature" />
+    </file>
+    <file name="src/test/java/com/stressdetector/shared/SessionCommandCodecTest.kt">
+        <error line="18" column="23" source="standard:multiline-expression-wrapping" />
+        <error line="30" column="23" source="standard:multiline-expression-wrapping" />
+        <error line="39" column="23" source="standard:multiline-expression-wrapping" />
+        <error line="48" column="23" source="standard:multiline-expression-wrapping" />
+    </file>
+</baseline>

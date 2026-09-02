@@ -1,0 +1,75 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:WearTrackingState.kt$WearTrackingState$!value &amp;&amp; it.isTracking &amp;&amp; !reachabilityEvidence &amp;&amp; it.connectionPhase != WearConnectionPhase.FAILED &amp;&amp; it.connectionPhase != WearConnectionPhase.COMPLETE</ID>
+    <ID>ComplexCondition:WearTrackingState.kt$WearTrackingState$it.connectionPhase == WearConnectionPhase.FAILED || it.connectionPhase == WearConnectionPhase.COMPLETE || (it.isTracking &amp;&amp; reachabilityEvidence &amp;&amp; !value)</ID>
+    <ID>ComplexCondition:WearTrackingState.kt$WearTrackingState$it.isTracking &amp;&amp; it.isConnectedToSamsung &amp;&amp; it.sensorReady &amp;&amp; (greenSamplesSent &gt; 0 || irSamplesSent &gt; 0)</ID>
+    <ID>CyclomaticComplexMethod:MainActivity.kt$@Composable private fun DeviceStatusCard( isTracking: Boolean, isSamsungConnected: Boolean, isSamsungListenerRegistered: Boolean, isPhoneNodeDiscovered: Boolean, isPhoneReachable: Boolean, connectionPhase: com.stressdetector.wear.data.WearConnectionPhase, transportFailure: String?, sensorFailure: String?, healthSdkState: HealthSdkState, healthSdkMessage: String?, healthSdkResolutionAvailable: Boolean, onResolveHealthSdk: () -&gt; Unit )</ID>
+    <ID>CyclomaticComplexMethod:WearTrackingState.kt$WearTrackingState$fun markChannelFailure(type: PpgType, message: String)</ID>
+    <ID>CyclomaticComplexMethod:WearTrackingState.kt$WearTrackingState$fun markChannelReady(type: PpgType)</ID>
+    <ID>CyclomaticComplexMethod:WearTrackingState.kt$WearTrackingState$fun setPhoneNodeDiscovered(value: Boolean, message: String)</ID>
+    <ID>CyclomaticComplexMethod:WearTrackingState.kt$WearTrackingState$fun setPhoneReachable(value: Boolean, message: String)</ID>
+    <ID>CyclomaticComplexMethod:WearTrackingState.kt$WearTrackingState$fun setSamsungConnected(value: Boolean, failureMessage: String? = null)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun ControlActions(isTracking: Boolean, onStop: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun DeviceStatusCard( isTracking: Boolean, isSamsungConnected: Boolean, isSamsungListenerRegistered: Boolean, isPhoneNodeDiscovered: Boolean, isPhoneReachable: Boolean, connectionPhase: com.stressdetector.wear.data.WearConnectionPhase, transportFailure: String?, sensorFailure: String?, healthSdkState: HealthSdkState, healthSdkMessage: String?, healthSdkResolutionAvailable: Boolean, onResolveHealthSdk: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun HeaderSection(isTracking: Boolean, mode: com.stressdetector.shared.WearSessionMode?)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun MetricRow(label: String, value: String)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun PermissionGateCard(status: PermissionStatus, onGrantPermissions: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun SessionProgressCard( progress: Float, elapsedMillis: Long, greenReady: Boolean, irReady: Boolean, redReady: Boolean, transportFailure: String?, lastMessage: String )</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun StatusTextRow(label: String, value: String, healthy: Boolean)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun WearAppTheme(content: @Composable () -&gt; Unit)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun WearScreen( permissionStatus: PermissionStatus, onGrantPermissions: () -&gt; Unit, onStop: () -&gt; Unit, onResolveHealthSdk: () -&gt; Unit )</ID>
+    <ID>LongMethod:MainActivity.kt$@Composable private fun DeviceStatusCard( isTracking: Boolean, isSamsungConnected: Boolean, isSamsungListenerRegistered: Boolean, isPhoneNodeDiscovered: Boolean, isPhoneReachable: Boolean, connectionPhase: com.stressdetector.wear.data.WearConnectionPhase, transportFailure: String?, sensorFailure: String?, healthSdkState: HealthSdkState, healthSdkMessage: String?, healthSdkResolutionAvailable: Boolean, onResolveHealthSdk: () -&gt; Unit )</ID>
+    <ID>LongMethod:MainActivity.kt$@Composable private fun WearScreen( permissionStatus: PermissionStatus, onGrantPermissions: () -&gt; Unit, onStop: () -&gt; Unit, onResolveHealthSdk: () -&gt; Unit )</ID>
+    <ID>LongMethod:PpgBatchSender.kt$PpgBatchSender$fun send( type: PpgType, timestamps: LongArray, values: IntArray, sessionId: String, elapsedMillis: Long, elapsedStartMillis: Long = elapsedMillis, elapsedEndMillis: Long = elapsedMillis, callbackReceivedAtElapsedRealtimeMillis: Long = monotonicNowMillis() )</ID>
+    <ID>LongParameterList:MainActivity.kt$( isTracking: Boolean, isSamsungConnected: Boolean, isSamsungListenerRegistered: Boolean, isPhoneNodeDiscovered: Boolean, isPhoneReachable: Boolean, connectionPhase: com.stressdetector.wear.data.WearConnectionPhase, transportFailure: String?, sensorFailure: String?, healthSdkState: HealthSdkState, healthSdkMessage: String?, healthSdkResolutionAvailable: Boolean, onResolveHealthSdk: () -&gt; Unit )</ID>
+    <ID>LongParameterList:MainActivity.kt$( progress: Float, elapsedMillis: Long, greenReady: Boolean, irReady: Boolean, redReady: Boolean, transportFailure: String?, lastMessage: String )</ID>
+    <ID>LongParameterList:PpgBatchSender.kt$PpgBatchSender$( type: PpgType, timestamps: LongArray, values: IntArray, sessionId: String, elapsedMillis: Long, elapsedStartMillis: Long = elapsedMillis, elapsedEndMillis: Long = elapsedMillis, callbackReceivedAtElapsedRealtimeMillis: Long = monotonicNowMillis() )</ID>
+    <ID>LongParameterList:SamsungContinuousPpgSource.kt$SamsungContinuousPpgSource$( private val tracker: HealthTracker, private val sensorHandler: Handler, private val controlHandler: Handler, private val onSamples: (PpgCallbackBatch) -&gt; Unit, private val onFailure: (SamsungPpgFailure) -&gt; Unit, private val diagnostics: SamsungPpgCallbackDiagnostics = SamsungPpgCallbackDiagnostics(), private val onDiagnostic: (SamsungPpgSampleDiagnostic) -&gt; Unit = {}, private val onRegistered: () -&gt; Unit = {}, private val onUnregistered: () -&gt; Unit = {} )</ID>
+    <ID>MagicNumber:MainActivity.kt$0.92f</ID>
+    <ID>MagicNumber:MainActivity.kt$0.9f</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF0F172A</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF10B981</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF1E293B</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF34D399</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF3B82F6</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF450A0A</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF7F1D1D</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF94A3B8</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF9CA3AF</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFFDC2626</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFFE2E8F0</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFFEF4444</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFFF1F5F9</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFFF87171</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFFFBBF24</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFFFCA5A5</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFFFECACA</ID>
+    <ID>MagicNumber:MainActivity.kt$1_000L</ID>
+    <ID>MagicNumber:MainActivity.kt$300L</ID>
+    <ID>MagicNumber:MainActivity.kt$60L</ID>
+    <ID>MagicNumber:MainActivity.kt$MainActivity$2_000L</ID>
+    <ID>MagicNumber:PpgBatchSender.kt$PpgBatchSender$1_000_000L</ID>
+    <ID>MagicNumber:PpgSensorRepository.kt$PpgSensorRepository$1_000_000L</ID>
+    <ID>MagicNumber:PpgTrackingService.kt$PpgTrackingService.&lt;no name provided&gt;$1_000L</ID>
+    <ID>MagicNumber:WearPermissions.kt$33</ID>
+    <ID>MatchingDeclarationName:PpgSessionController.kt$PpgSessionState</ID>
+    <ID>ReturnCount:BaseSamsungListener.kt$BaseSamsungListener$fun start()</ID>
+    <ID>ReturnCount:PpgSensorRepository.kt$PpgSensorRepository$fun onCallbackBatch(callbackBatch: PpgCallbackBatch): Boolean</ID>
+    <ID>ReturnCount:PpgTrackingService.kt$PpgTrackingService$private fun registerIndividualTrackers()</ID>
+    <ID>ReturnCount:PpgTrackingService.kt$PpgTrackingService$private fun startTracking(commandBytes: ByteArray?, replyNodeId: String?)</ID>
+    <ID>ReturnCount:PpgTrackingService.kt$PpgTrackingService$private fun stopTracking(commandBytes: ByteArray? = null)</ID>
+    <ID>TooManyFunctions:MainActivity.kt$com.stressdetector.wear.MainActivity.kt</ID>
+    <ID>TooManyFunctions:PpgSensorRepository.kt$PpgSensorRepository</ID>
+    <ID>TooManyFunctions:PpgTrackingService.kt$PpgTrackingService : Service</ID>
+    <ID>TooManyFunctions:WearTrackingState.kt$WearTrackingState</ID>
+    <ID>UnusedParameter:MainActivity.kt$lastMessage: String</ID>
+    <ID>UnusedParameter:PpgBatchSender.kt$PpgBatchSender$nodeId: String?</ID>
+    <ID>UnusedParameter:PpgBatchSender.kt$PpgBatchSender$receipt: PpgTerminalReceipt</ID>
+    <ID>UnusedParameter:PpgBatchSender.kt$PpgBatchSender.Companion$context: Context</ID>
+    <ID>UnusedParameter:PpgBatchSender.kt$PpgBatchSender.Companion$sourceNodeId: String</ID>
+    <ID>UnusedPrivateMember:MainActivity.kt$@Composable private fun StatusTextRow(label: String, value: String, healthy: Boolean)</ID>
+    <ID>UnusedPrivateProperty:PpgSensorRepository.kt$PpgSensorRepository$private val onFatalError: (String) -&gt; Unit = {}</ID>
+  </CurrentIssues>
+</SmellBaseline>

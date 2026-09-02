@@ -1,0 +1,100 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "154efc0dd941022ea02336c76a85b188",
+    "entities": [
+      {
+        "tableName": "stress_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `startedAtMillis` INTEGER NOT NULL, `endedAtMillis` INTEGER NOT NULL, `durationMillis` INTEGER NOT NULL, `primarySensor` TEXT NOT NULL, `finalLabel` TEXT NOT NULL, `confidence` REAL NOT NULL, `qualityTier` TEXT NOT NULL, `stressProbability` REAL NOT NULL, `greenSampleCount` INTEGER NOT NULL, `irSampleCount` INTEGER NOT NULL, `errorReason` TEXT, PRIMARY KEY(`sessionId`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAtMillis",
+            "columnName": "startedAtMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAtMillis",
+            "columnName": "endedAtMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "durationMillis",
+            "columnName": "durationMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "primarySensor",
+            "columnName": "primarySensor",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finalLabel",
+            "columnName": "finalLabel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "qualityTier",
+            "columnName": "qualityTier",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stressProbability",
+            "columnName": "stressProbability",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "greenSampleCount",
+            "columnName": "greenSampleCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "irSampleCount",
+            "columnName": "irSampleCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "errorReason",
+            "columnName": "errorReason",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '154efc0dd941022ea02336c76a85b188')"
+    ]
+  }
+}

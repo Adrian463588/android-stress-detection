@@ -1,0 +1,153 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository$candidate.release_status != "accepted" || !candidate.android_ready || candidate.sensor_channel !in ACCEPTED_SENSORS || !candidate.source_rate_hz.isFinite() || candidate.source_rate_hz &lt;= 0.0 || !candidate.model_rate_hz.isFinite() || candidate.model_rate_hz &lt;= 0.0</ID>
+    <ID>ComplexCondition:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository$index.models.isEmpty() || index.models.size &gt; ACCEPTED_SENSORS.size || index.models.size != indexedSensors.size || !ACCEPTED_SENSORS.containsAll(indexedSensors)</ID>
+    <ID>ComplexCondition:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository$resources.manifest.sensor_channel != sensorChannel || resources.manifest.model_version != candidate.model_version || resources.manifest.analysis_seconds != candidate.analysis_seconds || resources.manifest.window_seconds != candidate.window_seconds || resources.manifest.stride_seconds != candidate.stride_seconds || resources.manifest.expected_windows_per_session != candidate.expected_windows_per_session || resources.manifest.source_rate_hz != candidate.source_rate_hz || resources.manifest.model_rate_hz != candidate.model_rate_hz || ( candidate.calibration_version.isNotBlank() &amp;&amp; resources.manifest.probability_calibration.version != candidate.calibration_version )</ID>
+    <ID>ComplexCondition:StressInferenceEngine.kt$StressInferenceEngine$window.timestampDeltasMs.isEmpty() || window.timestampDeltasMs.first() != 0.0 || window.timestampDeltasMs.drop(1).any { !it.isFinite() || it &lt;= 0.0 }</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$/** Canonical rate represented by the feature tensor. */ val model_rate_hz: Double = 0.0</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$/** Explicit promotion gate; absent legacy manifests fail closed. */ val android_ready: Boolean = false</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$/** One model window selected on development participants only. */ val window_seconds: Int = 0</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$/** Physical acquisition rate declared by the model-producing pipeline. */ val source_rate_hz: Double = 0.0</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$/** Retained analysis core declared by the selected channel model. */ val analysis_seconds: Int = 0</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val balanced_accuracy_gate: Double</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val balanced_accuracy_holdout: Double</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val candidate_bundle_sha256: String</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val cohort_access_count: Int</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val deployment_scope: String = ""</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val device_parity_receipt_sha256: String? = null</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val disclaimer_required: Boolean = false</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val expected_windows_per_session: Int = 0</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val f1_gate: Double = 0.0</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val f1_holdout: Double = 0.0</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val feature_order: List&lt;String&gt; = emptyList()</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val feature_version: String</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val gate_passed: Boolean</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val model_family: String</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val model_version: String</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val onnx_sha256: String</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val performance_policy_sha256: String = ""</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val performance_policy_version: String = ""</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val performance_tier: String = ""</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val preprocessing_version: String</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val probability_calibration: ProbabilityCalibration</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val probability_threshold: Float</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val release_status: String</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val research_disclaimer: String = ""</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val roc_auc_gate: Double = 0.0</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val roc_auc_holdout: Double = 0.0</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val scaler_mean: List&lt;Double&gt;? = null</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val scaler_scale: List&lt;Double&gt;? = null</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val schema_version: String</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val sensor_channel: String</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val stride_seconds: Int = 0</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val threshold_source: String</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ModelManifest$val validation_cohort_ids: List&lt;String&gt;</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ProbabilityCalibration$val brier_score: Double</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ProbabilityCalibration$val calibration_status: String</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ProbabilityCalibration$val fitted_cohort: List&lt;String&gt;</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ProbabilityCalibration$val fitted_on: String</ID>
+    <ID>ConstructorParameterNaming:Contracts.kt$ProbabilityCalibration$val log_loss: Double</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository.DeviceParityReceiptWire$val actual_sensor_acquisition: Boolean = false</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository.DeviceParityReceiptWire$val apk_sha256: String = ""</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository.DeviceParityReceiptWire$val device_fingerprint: String = ""</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository.DeviceParityReceiptWire$val max_abs_diff: Double = Double.NaN</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository.DeviceParityReceiptWire$val model_version: String = ""</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository.DeviceParityReceiptWire$val onnx_sha256: String = ""</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository.DeviceParityReceiptWire$val receipt_sha256: String = ""</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository.DeviceParityReceiptWire$val sensor_channel: String = ""</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository.DeviceParityReceiptWire$val vector_count: Int = 0</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository.ParityWire$val checked_samples: Int = 0</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository.ParityWire$val max_abs_diff: Double = Double.NaN</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository.ParityWire$val onnx_checker_passed: Boolean = false</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository.ParityWire$val real_batch1_inference_passed: Boolean = false</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val analysis_seconds: Int = 0</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val android_ready: Boolean = false</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val balanced_accuracy_conservative: Double = Double.NaN</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val balanced_accuracy_holdout: Double</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val calibration_version: String = ""</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val deployment_scope: String = ""</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val disclaimer_required: Boolean = false</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val expected_windows_per_session: Int = 0</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val f1_conservative: Double = Double.NaN</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val f1_holdout: Double</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val model_rate_hz: Double = 0.0</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val model_version: String</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val performance_policy_sha256: String = ""</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val performance_policy_version: String = ""</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val performance_tier: String = ""</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val release_status: String</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val research_disclaimer: String = ""</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val roc_auc_conservative: Double = Double.NaN</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val roc_auc_holdout: Double</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val sensor_channel: String</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val source_rate_hz: Double = 0.0</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val stride_seconds: Int = 0</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelEntry$val window_seconds: Int = 0</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelIndex$val release_status: String</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$CanonicalModelIndex$val schema_version: String</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$TestVectorCaseWire$val expected_features: List&lt;Float&gt;? = null</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$TestVectorCaseWire$val expected_probability: Float? = null</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$TestVectorCaseWire$val expected_status: String? = null</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$TestVectorCaseWire$val expected_stress_probability: Float? = null</ID>
+    <ID>ConstructorParameterNaming:ModelArtifactRepository.kt$TestVectorCaseWire$val onnx_probability: Float? = null</ID>
+    <ID>ConstructorParameterNaming:PerformancePolicy.kt$MetricGate$val balanced_accuracy: Double</ID>
+    <ID>ConstructorParameterNaming:PerformancePolicy.kt$MetricGate$val roc_auc: Double</ID>
+    <ID>ConstructorParameterNaming:PerformancePolicy.kt$PackagedPerformancePolicy$val accuracy_is_gate: Boolean = false</ID>
+    <ID>ConstructorParameterNaming:PerformancePolicy.kt$PackagedPerformancePolicy$val minimum_research: MetricGate</ID>
+    <ID>ConstructorParameterNaming:PerformancePolicy.kt$PackagedPerformancePolicy$val performance_policy_sha256: String</ID>
+    <ID>ConstructorParameterNaming:PerformancePolicy.kt$PackagedPerformancePolicy$val performance_policy_version: String</ID>
+    <ID>ConstructorParameterNaming:PerformancePolicy.kt$PackagedPerformancePolicy$val research_disclaimer: String</ID>
+    <ID>ConstructorParameterNaming:PerformancePolicy.kt$PackagedPerformancePolicy$val schema_version: String</ID>
+    <ID>CyclomaticComplexMethod:Contracts.kt$ModelManifest$private fun requireCommonContract()</ID>
+    <ID>CyclomaticComplexMethod:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository$override fun load(sensorChannel: String): ModelArtifactResult</ID>
+    <ID>CyclomaticComplexMethod:V3PpgFeatureParityTest.kt$V3PpgFeatureParityTest$private fun assertFeatureParity(fixture: File, featureOrder: List&lt;String&gt;, sensorChannel: String)</ID>
+    <ID>LongMethod:ModelArtifactRepository.kt$AndroidAssetModelArtifactRepository$override fun load(sensorChannel: String): ModelArtifactResult</ID>
+    <ID>LongMethod:StressInferenceEngine.kt$StressInferenceEngine$private fun initialize(): EngineInitialization</ID>
+    <ID>LongMethod:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$fun extract( values: DoubleArray, samplingRateHz: Double, timestampsMillis: LongArray? = null, missingRatio: Double = 0.0, samplingJitter: Double? = null ): CanonicalFeatureVector</ID>
+    <ID>LongMethod:V3PpgFeatureParityTest.kt$V3PpgFeatureParityTest$private fun assertFeatureParity(fixture: File, featureOrder: List&lt;String&gt;, sensorChannel: String)</ID>
+    <ID>LoopWithTooManyJumpStatements:V3PpgFeatureParityTest.kt$V3PpgFeatureParityTest$while</ID>
+    <ID>MagicNumber:Contracts.kt$ModelSessionContract$240</ID>
+    <ID>MagicNumber:Contracts.kt$ProbabilityCalibration$28</ID>
+    <ID>MagicNumber:StressInferenceEngine.kt$StressInferenceEngine$1_000_000.0</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$0.04</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$0.15</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$0.25</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$0.30</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$0.40</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$0.5</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$0.75</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$0.8</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$0.999</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$1.0e-12</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$1.0e-6</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$1.0e-9</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$1.5</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$1000.0</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$12</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$15</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$1_000.0</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$256</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$3</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$3.0</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$4</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$4.0</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$50.0</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$6.0</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$60_000.0</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$8</ID>
+    <ID>MagicNumber:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor.WelchTableCache$0.5</ID>
+    <ID>NestedBlockDepth:V3PpgFeatureParityTest.kt$V3PpgFeatureParityTest$private fun assertFeatureParity(fixture: File, featureOrder: List&lt;String&gt;, sensorChannel: String)</ID>
+    <ID>ReturnCount:StressInferenceEngine.kt$StressInferenceEngine$fun inferFeatures(features: FloatArray, qualityTier: String): InferenceResult</ID>
+    <ID>ReturnCount:StressInferenceEngine.kt$StressInferenceEngine$fun validateRawWindow(window: RawPpgWindow): InferenceResult?</ID>
+    <ID>ReturnCount:StressInferenceEngine.kt$StressInferenceEngine$private fun initialize(): EngineInitialization</ID>
+    <ID>ReturnCount:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$private fun frequencyFeatures(ibi: DoubleArray): FrequencyFeatures</ID>
+    <ID>ReturnCount:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$private fun interpolate(x: Double, xp: DoubleArray, fp: DoubleArray): Double</ID>
+    <ID>ReturnCount:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$private fun timestampMetrics(timestampsMillis: LongArray?, valuesSize: Int, samplingRateHz: Double): TimestampMetrics</ID>
+    <ID>ReturnCount:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$private fun unbiasedFisherKurtosis(values: DoubleArray): Double</ID>
+    <ID>ReturnCount:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor$private fun unbiasedSkew(values: DoubleArray): Double</ID>
+    <ID>TooGenericExceptionCaught:StressInferenceEngine.kt$StressInferenceEngine$error: Throwable</ID>
+    <ID>TooManyFunctions:V3PpgFeatureExtractor.kt$V3PpgFeatureExtractor</ID>
+  </CurrentIssues>
+</SmellBaseline>

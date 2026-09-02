@@ -1,0 +1,246 @@
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "com.google.devtools.ksp"
+    id "org.jetbrains.kotlin.plugin.compose"
+}
+
+android {
+    namespace "com.stressdetector.mobile"
+    // Compose UI 1.9's Android artifact requires compileSdk 35; targetSdk
+    // remains 34 so runtime behavior does not change in this remediation.
+    compileSdk 35
+    ndkVersion = "28.0.13004108"
+
+    defaultConfig {
+        applicationId "com.stressdetector"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "0.1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders = [appLabel: "Stress Detector"]
+        // The static Sherpa distribution is supplied for these ABIs. Excluding
+        // x86 prevents its shared-ORT fallback from reintroducing a duplicate
+        // libonnxruntime.so into the final APK.
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a", "x86_64"
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+        compose true
+    }
+
+    flavorDimensions "evidence"
+    productFlavors {
+        production {
+            dimension "evidence"
+            buildConfigField "boolean", "RESEARCH_MODEL_MODE", "false"
+        }
+        research {
+            dimension "evidence"
+            applicationIdSuffix ".research"
+            versionNameSuffix "-research"
+            buildConfigField "boolean", "RESEARCH_MODEL_MODE", "true"
+            manifestPlaceholders = [appLabel: "Stress Detector Research"]
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+            // Upstream's static AAR retains an x86 shared fallback. x86 is not
+            // a supported ABI for this app, so exclude both of its JNI files
+            // explicitly rather than arbitrarily picking either ORT binary.
+            excludes.add("lib/x86/libonnxruntime.so")
+            excludes.add("lib/x86/libsherpa-onnx-jni.so")
+            pickFirsts.add("lib/**/libc++_shared.so")
+        }
+    }
+
+    sourceSets {
+        main.assets.srcDirs = ["src/main/canonicalAssets"]
+    }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+dependencies {
+    // Compose UI 1.9.0 is the smallest line whose lint artifacts support the
+    // AGP 8.8.2+ analysis API required by the Kotlin 2.x toolchain.
+    def composeUiVersion = "1.9.0"
+    // The extended icons artifact has an independent release cadence.
+    def composeMaterialIconsVersion = "1.7.8"
+    implementation project(":shared")
+    implementation project(":inference")
+    implementation "androidx.activity:activity-compose:1.7.2"
+    implementation "androidx.compose.material3:material3:1.1.2"
+    implementation "androidx.navigation:navigation-compose:2.7.6"
+    implementation "androidx.compose.ui:ui:${composeUiVersion}"
+    implementation "androidx.compose.material:material-icons-extended:${composeMaterialIconsVersion}"
+    implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.6.2"
+    implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2"
+    implementation "androidx.lifecycle:lifecycle-service:2.6.2"
+    // Room 2.7.x is the first stable line that supports Kotlin 2.x and KSP2.
+    implementation "androidx.room:room-runtime:2.7.2"
+    implementation "androidx.room:room-ktx:2.7.2"
+    // Dedicated knowledge-base database encryption. The legacy stress DB is
+    // intentionally kept separate so the migration can be verified before
+    // any old plaintext document rows are retired.
+    implementation "net.zetetic:sqlcipher-android:4.17.0@aar"
+    implementation "androidx.sqlite:sqlite:2.6.2"
+    implementation "com.google.android.gms:play-services-wearable:18.1.0"
+    implementation "com.microsoft.onnxruntime:onnxruntime-android:1.22.0"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
+    implementation "org.jetbrains.kotlinx:kotlinx-datetime:0.4.1"
+    implementation "javax.inject:javax.inject:1"
+    implementation "com.google.code.gson:gson:2.11.0"
+    implementation "androidx.compose.material3:material3-window-size-class:1.1.2"
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
+    implementation "com.fleeksoft.ksoup:ksoup:0.2.6"
+    // LiteRT-LM assets are user-imported and accepted only after signed-manifest
+    // and SHA-256 validation by ModelManager.
+    implementation "androidx.security:security-crypto:1.1.0-alpha06"
+    implementation "androidx.work:work-runtime-ktx:2.9.0"
+    // Official upstream binding; model weights remain user-downloaded and app-private.
+    implementation files("libs/sherpa-onnx-static-link-onnxruntime-1.13.4.aar")
+    implementation "org.apache.commons:commons-compress:1.28.0"
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
+    implementation "com.tom-roush:pdfbox-android:2.0.27.0"
+    // Bundled model: scanned clinical PDFs remain readable offline without an external OCR API.
+    implementation "com.google.mlkit:text-recognition:16.0.1"
+    ksp "androidx.room:room-compiler:2.7.2"
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "com.microsoft.onnxruntime:onnxruntime:1.22.0"
+    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3"
+    testImplementation "org.mockito:mockito-core:5.3.1"
+    testImplementation "com.squareup.okhttp3:mockwebserver:4.12.0"
+    testImplementation "com.squareup.okhttp3:okhttp-tls:4.12.0"
+    androidTestImplementation "androidx.test.ext:junit:1.1.5"
+    androidTestImplementation "androidx.test.espresso:espresso-core:3.5.1"
+    androidTestImplementation "androidx.compose.ui:ui-test-junit4:${composeUiVersion}"
+    debugImplementation "androidx.compose.ui:ui-test-manifest:${composeUiVersion}"
+}
+
+tasks.register("verifyNoLegacyModelAssets") {
+    dependsOn("mergeProductionDebugAssets")
+    doLast {
+        def mergedAssets = file("$buildDir/intermediates/assets/productionDebug/mergeProductionDebugAssets")
+        def legacyAssetDir = new File(mergedAssets, "model")
+        def packagedLegacyFiles = legacyAssetDir.exists()
+            ? fileTree(legacyAssetDir).matching { include("**/*") }.files.findAll { it.isFile() }
+            : []
+        if (!packagedLegacyFiles.isEmpty()) {
+            throw new GradleException("Legacy/quarantined model assets reached the APK merge: ${packagedLegacyFiles}")
+        }
+        def liveMonitorConfig = new File(mergedAssets, "live_monitor_config.json")
+        if (!liveMonitorConfig.isFile()) {
+            throw new GradleException("Missing packaged live monitor configuration")
+        }
+        def liveConfig = new groovy.json.JsonSlurper().parse(liveMonitorConfig)
+        if (liveConfig.primary_channel != "ppg_green" || liveConfig.fallback_channel != "ppg_ir" ||
+            liveConfig.bpm_window_seconds != 30 || liveConfig.bpm_baseline_window_seconds != 60 ||
+            liveConfig.bpm_rise_sustain_seconds != 10 || liveConfig.bpm_recovery_within_seconds != 60) {
+            throw new GradleException("Packaged live monitor configuration violates Green/IR or BPM marker contract")
+        }
+    }
+}
+
+def ragYamlConfig = file("../../configs/rag.yaml")
+def ragContractGenerator = file("../../scripts/generate_rag_runtime_contract.py")
+def ragRuntimeContractAsset = file("src/main/canonicalAssets/ai/rag_runtime_contract.json")
+def ragContractPython = providers.gradleProperty("pythonExecutable").orElse("python").get()
+
+tasks.register("verifyRagRuntimeContract", Exec) {
+    group = "verification"
+    description = "Fails when the Android RAG asset drifts from configs/rag.yaml."
+    inputs.files(ragYamlConfig, ragContractGenerator)
+    outputs.file(ragRuntimeContractAsset)
+    commandLine(
+        ragContractPython,
+        ragContractGenerator.absolutePath,
+        "--config",
+        ragYamlConfig.absolutePath,
+        "--output",
+        ragRuntimeContractAsset.absolutePath,
+        "--check"
+    )
+}
+
+def staticSherpaAar = file("libs/sherpa-onnx-static-link-onnxruntime-1.13.4.aar")
+def verifiedAbis = ["armeabi-v7a", "arm64-v8a", "x86_64"] as Set
+def sha256File = { File source ->
+    def digest = java.security.MessageDigest.getInstance("SHA-256")
+    source.withInputStream { stream ->
+        byte[] buffer = new byte[1024 * 1024]
+        int count
+        while ((count = stream.read(buffer)) != -1) digest.update(buffer, 0, count)
+    }
+    digest.digest().collect { String.format("%02x", it) }.join()
+}
+
+tasks.register("verifyStaticSherpaRuntime") {
+    inputs.file(staticSherpaAar)
+    doLast {
+        if (!staticSherpaAar.isFile()) {
+            throw new GradleException("Missing static Sherpa runtime AAR")
+        }
+        if (sha256File(staticSherpaAar) != "dc5ac19a28dee3bffc5e5a5d50cb6afa977703fc4a7ee535a308506990fdd295") {
+            throw new GradleException("Static Sherpa runtime checksum mismatch")
+        }
+        def duplicated = zipTree(staticSherpaAar).matching {
+            verifiedAbis.each { abi -> include("jni/${abi}/libonnxruntime.so") }
+        }.files
+        if (!duplicated.isEmpty()) {
+            throw new GradleException("Static Sherpa AAR must not package libonnxruntime.so for supported ABIs: ${duplicated}")
+        }
+    }
+}
+
+tasks.register("verifyNativeRuntimeContract") {
+    dependsOn("packageProductionDebug", "verifyStaticSherpaRuntime")
+    doLast {
+        def apk = file("$buildDir/outputs/apk/production/debug/app-production-debug.apk")
+        if (!apk.isFile()) throw new GradleException("Debug APK was not produced for native runtime verification")
+        def ortByAbi = [:].withDefault { 0 }
+        zipTree(apk).matching { include("lib/**/libonnxruntime.so") }.visit { details ->
+            if (!details.isDirectory()) {
+                def parts = details.relativePath.pathString.tokenize("/")
+                if (parts.size() == 3) ortByAbi[parts[1]] = ortByAbi[parts[1]] + 1
+            }
+        }
+        if (ortByAbi.keySet() != verifiedAbis || verifiedAbis.any { ortByAbi[it] != 1 }) {
+            throw new GradleException("Expected exactly one Microsoft libonnxruntime.so per ABI; found ${ortByAbi}")
+        }
+    }
+}
+
+tasks.named("check").configure {
+    dependsOn("verifyNoLegacyModelAssets", "verifyNativeRuntimeContract", "verifyRagRuntimeContract")
+}
+
+tasks.matching { it.name == "assembleProductionDebug" }.configureEach {
+    dependsOn("verifyNoLegacyModelAssets", "verifyNativeRuntimeContract", "verifyRagRuntimeContract")
+}
+
+tasks.matching { it.name == "assembleResearchDebug" }.configureEach {
+    dependsOn("verifyStaticSherpaRuntime", "verifyRagRuntimeContract")
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("verifyRagRuntimeContract")
+}

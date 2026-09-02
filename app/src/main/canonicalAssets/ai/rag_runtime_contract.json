@@ -1,0 +1,100 @@
+{
+  "chunking": {
+    "boundaries": [
+      "sentence",
+      "paragraph",
+      "heading",
+      "table"
+    ],
+    "cross_docx_top_level_section": false,
+    "cross_pdf_page": false,
+    "hard_max_tokens": 256,
+    "overlap_tokens": 32,
+    "policy_version": "e5_wordpiece_224_256_32_v1",
+    "silent_embedding_truncation": false,
+    "target_tokens": 224
+  },
+  "config_version": "rag_e5_v1",
+  "contract_sha256": "e40282ef67e9558ffac53d6d5803f82811654ccce7b970a7ef83ff8957bd59b2",
+  "embedding": {
+    "dimension": 384,
+    "max_tokens": 512,
+    "model": "intfloat/multilingual-e5-small",
+    "normalization": "l2",
+    "passage_prefix": "passage: ",
+    "pooling": "attention_mask_mean",
+    "query_prefix": "query: ",
+    "require_model_and_tokenizer_checksum": true,
+    "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+    "unavailable_mode": "lexical_only_visible"
+  },
+  "formats": {
+    "partial_extraction_default_retrieval": false,
+    "rejected": [
+      "doc"
+    ],
+    "supported": [
+      "pdf",
+      "docx",
+      "txt_utf8",
+      "markdown"
+    ]
+  },
+  "persona": {
+    "allowed_fields": [
+      "language",
+      "tone",
+      "response_length",
+      "reflective_questions",
+      "focus_note"
+    ],
+    "focus_note_max_words": 1500,
+    "profile_type": "structured",
+    "reject_crisis_bypass": true,
+    "reject_diagnosis_or_medication_instruction": true,
+    "reject_role_markers": true,
+    "reject_safety_bypass": true
+  },
+  "release_gates": {
+    "encrypted_database_passed": false,
+    "encrypted_source_storage_passed": false,
+    "physical_end_to_end_validation_passed": false,
+    "retrieval_benchmark_passed": false,
+    "signed_e5_artifact_parity_passed": false,
+    "sqlite_fts5_integrated": false
+  },
+  "retrieval": {
+    "in_memory_backend_scope": "development_only",
+    "lexical_candidates": 30,
+    "max_chunks_per_document": 3,
+    "max_chunks_per_page": 2,
+    "max_evidence_chunks": 4,
+    "mmr_lambda": 0.75,
+    "production_status": "blocked_until_benchmark_and_physical_validation",
+    "release_required_lexical_backend": "sqlite_fts5_bm25",
+    "rrf_k": 60,
+    "runtime_lexical_backend": "sqlite_fts5_bm25",
+    "semantic_candidates": 30,
+    "threshold_policy": "benchmark_calibrated",
+    "uncalibrated_behavior": "abstain"
+  },
+  "safety": {
+    "buffer_generation_until_final_guard": true,
+    "crisis_interception_before_retrieval": true,
+    "exact_prompt_visible_citation_binding": true,
+    "grounded_answer_without_valid_citation": "abstain",
+    "imported_document_is_untrusted_evidence": true,
+    "llm_tool_permissions": "none",
+    "web_search_requires_explicit_consent": true
+  },
+  "schema_version": "android_rag_contract_v1",
+  "source_config_sha256": "26350798c7fc3bab65b219e366671dd12e0fb3de0581f48ac62ec29e26273b30",
+  "storage": {
+    "atomic_generation_required": true,
+    "database_encryption_runtime_status": "implemented_unverified",
+    "incompatible_policy_action": "reindex_required",
+    "knowledge_database_encryption_required": "sqlcipher_keystore_wrapped_passphrase",
+    "source_encryption_required": "aes_gcm_android_keystore",
+    "source_encryption_runtime_status": "implemented_unverified"
+  }
+}

@@ -1,0 +1,239 @@
+{
+  "schemaVersion": 1,
+  "artifacts": [
+    {
+      "id": "gemma_4_e2b",
+      "kind": "GEMMA_LLM",
+      "version": "gemma-4-E2B-it-litertlm",
+      "revision": "6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94",
+        "runtimeVersion": "litertlm-android-0.13.1",
+      "sourcePage": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/tree/6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94",
+      "license": "Apache-2.0",
+      "allowedRedirectHosts": ["huggingface.co", "*.huggingface.co", "hf.co", "*.hf.co"],
+      "files": [
+        {
+          "role": "payload",
+          "path": "gemma-4-E2B-it.litertlm",
+          "url": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94/gemma-4-E2B-it.litertlm",
+          "sizeBytes": 2588147712,
+          "sha256": "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c"
+        }
+      ]
+    },
+    {
+      "id": "multilingual_e5_small",
+      "kind": "MULTILINGUAL_EMBEDDING",
+      "version": "multilingual-e5-small-onnx-fp32",
+      "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+      "runtimeVersion": "onnxruntime-1.22.0",
+      "sourcePage": "https://huggingface.co/intfloat/multilingual-e5-small/tree/614241f622f53c4eeff9890bdc4f31cfecc418b3/onnx",
+      "license": "MIT",
+      "allowedRedirectHosts": ["huggingface.co", "*.huggingface.co", "hf.co", "*.hf.co"],
+      "runtimeContract": {
+        "dimensions": 384,
+        "maxTokens": 512,
+        "prefixes": ["query: ", "passage: "],
+        "pooling": "attention_mask_mean",
+        "normalization": "l2"
+      },
+      "files": [
+        {
+          "role": "model",
+          "path": "model.onnx",
+          "url": "https://huggingface.co/intfloat/multilingual-e5-small/resolve/614241f622f53c4eeff9890bdc4f31cfecc418b3/onnx/model.onnx",
+          "sizeBytes": 470268510,
+          "sha256": "ca456c06b3a9505ddfd9131408916dd79290368331e7d76bb621f1cba6bc8665"
+        },
+        {
+          "role": "tokenizer",
+          "path": "tokenizer.json",
+          "url": "https://huggingface.co/intfloat/multilingual-e5-small/resolve/614241f622f53c4eeff9890bdc4f31cfecc418b3/onnx/tokenizer.json",
+          "sizeBytes": 17082730,
+          "sha256": "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
+        }
+      ]
+    },
+    {
+      "id": "asr-omnilingual-ctc-v2-int8",
+      "kind": "SPEECH_COMPONENT",
+      "version": "2026-02-05",
+      "revision": "github-asset-350979837",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://k2-fsa.github.io/sherpa/onnx/omnilingual-asr/index.html",
+      "license": "Apache-2.0",
+      "allowedRedirectHosts": ["api.github.com", "release-assets.githubusercontent.com"],
+      "files": [
+        {"role":"download","path":"omnilingual-ctc-v2-int8.tar.bz2","url":"https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/assets/350979837","sizeBytes":292313120,"sha256":"951b32409aade32bd525310bb39e9666773ba3fc611a39e817f620936d76c631"},
+        {"role":"runtime","path":"asr/model.int8.onnx","bundlePath":"asr/model.int8.onnx","archiveEntrySuffix":"/model.int8.onnx","sizeBytes":365841453,"sha256":"e3042b2f3b3ef0af2211bf99d2b4bf94a21f5ac0e9898827e7dd6d003a860e91"},
+        {"role":"runtime","path":"asr/tokens.txt","bundlePath":"asr/tokens.txt","archiveEntrySuffix":"/tokens.txt","sizeBytes":90630,"sha256":"7d99997ef207ff14c2cfe825f2aa037528ea250113cc3c6392bfe49326884ba6"}
+      ]
+    },
+    {
+      "id": "vad-silero",
+      "kind": "SPEECH_COMPONENT",
+      "version": "sherpa-release-asr-models",
+      "revision": "github-asset-271935959",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://k2-fsa.github.io/sherpa/onnx/vad.html",
+      "license": "MIT",
+      "allowedRedirectHosts": ["api.github.com", "release-assets.githubusercontent.com"],
+      "files": [
+        {"role":"download","path":"silero_vad.onnx","url":"https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/assets/271935959","sizeBytes":643854,"sha256":"9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"},
+        {"role":"runtime","path":"vad/silero_vad.onnx","bundlePath":"vad/silero_vad.onnx","sizeBytes":643854,"sha256":"9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"}
+      ]
+    },
+    {
+      "id": "diarization-pyannote-segmentation",
+      "kind": "SPEECH_COMPONENT",
+      "version": "pyannote-segmentation-3.0",
+      "revision": "github-asset-197666131",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://k2-fsa.github.io/sherpa/onnx/speaker-diarization/index.html",
+      "license": "Apache-2.0",
+      "allowedRedirectHosts": ["api.github.com", "release-assets.githubusercontent.com"],
+      "files": [
+        {"role":"download","path":"pyannote-segmentation-3-0.tar.bz2","url":"https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/assets/197666131","sizeBytes":6958444,"sha256":"24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488"},
+        {"role":"runtime","path":"diarization/segmentation.onnx","bundlePath":"diarization/segmentation.onnx","archiveEntrySuffix":"/model.onnx","sizeBytes":5992913,"sha256":"220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079"}
+      ]
+    },
+    {
+      "id": "diarization-3dspeaker-embedding",
+      "kind": "SPEECH_COMPONENT",
+      "version": "3dspeaker-eres2net-base",
+      "revision": "github-asset-198893098",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://k2-fsa.github.io/sherpa/onnx/speaker-diarization/index.html",
+      "license": "Apache-2.0",
+      "allowedRedirectHosts": ["api.github.com", "release-assets.githubusercontent.com"],
+      "files": [
+        {"role":"download","path":"3dspeaker-embedding.onnx","url":"https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/assets/198893098","sizeBytes":39593761,"sha256":"1a331345f04805badbb495c775a6ddffcdd1a732567d5ec8b3d5749e3c7a5e4b"},
+        {"role":"runtime","path":"diarization/embedding.onnx","bundlePath":"diarization/embedding.onnx","sizeBytes":39593761,"sha256":"1a331345f04805badbb495c775a6ddffcdd1a732567d5ec8b3d5749e3c7a5e4b"}
+      ]
+    },
+    {
+      "id": "tts-id-id_ID-news_tts-medium",
+      "kind": "SPEECH_COMPONENT",
+      "version": "id_ID-news_tts-medium",
+      "revision": "github-asset-324609214",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://k2-fsa.github.io/sherpa/onnx/tts/all/Indonesian/vits-piper-id_ID-news_tts-medium.html",
+      "license": "Piper voice license; see bundled MODEL_CARD",
+      "allowedRedirectHosts": ["api.github.com", "release-assets.githubusercontent.com"],
+      "files": [
+        {"role":"download","path":"vits-piper-id_ID-news_tts-medium.tar.bz2","url":"https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/assets/324609214","sizeBytes":67243848,"sha256":"634b0169fe41c368e9fafe128f30647f9e0301e852ce503cd78146db524f1f12"},
+        {"role":"runtime","path":"tts/id_ID-news_tts-medium.tar.bz2","bundlePath":"tts/id_ID-news_tts-medium.tar.bz2","sizeBytes":67243848,"sha256":"634b0169fe41c368e9fafe128f30647f9e0301e852ce503cd78146db524f1f12"}
+      ]
+    },
+    {
+      "id": "tts-en-en_US-lessac-medium",
+      "kind": "SPEECH_COMPONENT",
+      "version": "en_US-lessac-medium",
+      "revision": "github-asset-323261600",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://k2-fsa.github.io/sherpa/onnx/tts/all/English/vits-piper-en_US-lessac-medium.html",
+      "license": "Piper voice license; see bundled MODEL_CARD",
+      "allowedRedirectHosts": ["api.github.com", "release-assets.githubusercontent.com"],
+      "files": [
+        {"role":"download","path":"vits-piper-en_US-lessac-medium.tar.bz2","url":"https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/assets/323261600","sizeBytes":67230653,"sha256":"9e3febfacf0abf4270172d2958bcec246032b7e88efc2720840cc80c93de334e"},
+        {"role":"runtime","path":"tts/en_US-lessac-medium.tar.bz2","bundlePath":"tts/en_US-lessac-medium.tar.bz2","sizeBytes":67230653,"sha256":"9e3febfacf0abf4270172d2958bcec246032b7e88efc2720840cc80c93de334e"}
+      ]
+    },
+    {
+      "id": "tts-supertonic3-int8",
+      "kind": "SPEECH_COMPONENT",
+      "version": "supertonic-3-int8-2026-05-11",
+      "revision": "github-asset-418881054",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://k2-fsa.github.io/sherpa/onnx/tts/supertonic.html",
+      "license": "OpenRAIL-M",
+      "allowedRedirectHosts": ["api.github.com", "release-assets.githubusercontent.com"],
+      "files": [
+        {"role":"download","path":"sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2","url":"https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/assets/418881054","sizeBytes":128774318,"sha256":"82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427"},
+        {"role":"runtime","path":"tts/supertonic3/duration_predictor.int8.onnx","bundlePath":"tts/supertonic3/duration_predictor.int8.onnx","archiveEntrySuffix":"/duration_predictor.int8.onnx","sizeBytes":3700147,"sha256":"c3eb91414d5ff8a7a239b7fe9e34e7e2bf8a8140d8375ffb14718b1c639325db"},
+        {"role":"runtime","path":"tts/supertonic3/text_encoder.int8.onnx","bundlePath":"tts/supertonic3/text_encoder.int8.onnx","archiveEntrySuffix":"/text_encoder.int8.onnx","sizeBytes":36416150,"sha256":"c7befd5ea8c3119769e8a6c1486c4edc6a3bc8365c67621c881bbb774b9902ff"},
+        {"role":"runtime","path":"tts/supertonic3/vector_estimator.int8.onnx","bundlePath":"tts/supertonic3/vector_estimator.int8.onnx","archiveEntrySuffix":"/vector_estimator.int8.onnx","sizeBytes":78400833,"sha256":"20cd86fa5c6effedfda0e7cffe5b0569ca401c440a0c3a1d72bf39286c0db3fd"},
+        {"role":"runtime","path":"tts/supertonic3/vocoder.int8.onnx","bundlePath":"tts/supertonic3/vocoder.int8.onnx","archiveEntrySuffix":"/vocoder.int8.onnx","sizeBytes":25991073,"sha256":"e923d60f53f95eb1ce235f1dc33ec56d9c057823c96fa6f8acf98f32b0da6152"},
+        {"role":"runtime","path":"tts/supertonic3/tts.json","bundlePath":"tts/supertonic3/tts.json","archiveEntrySuffix":"/tts.json","sizeBytes":8253,"sha256":"42078d3aef1cd43ab43021f3c54f47d2d75ceb4e75f627f118890128b06a0d09"},
+        {"role":"runtime","path":"tts/supertonic3/unicode_indexer.bin","bundlePath":"tts/supertonic3/unicode_indexer.bin","archiveEntrySuffix":"/unicode_indexer.bin","sizeBytes":262144,"sha256":"8402ca48e5189a8950138580b0fff64db6f072f24ac07cd54ba8b2fbb9883b30"},
+        {"role":"runtime","path":"tts/supertonic3/voice.bin","bundlePath":"tts/supertonic3/voice.bin","archiveEntrySuffix":"/voice.bin","sizeBytes":517168,"sha256":"67d5209b0ee8ce6c74105ffbe12fe6a7628aea3b4ba2fcb308a4a67938a93ce8"}
+      ]
+    },
+    {
+      "id": "asr-indonesian-zipformer2-int8",
+      "kind": "SPEECH_COMPONENT",
+      "version": "iter-100000-avg-15-chunk-32-left-256",
+      "revision": "4e5a13cbe3e9cd4e3775447d86178ef51759096f",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://huggingface.co/spacewave/sherpa-onnx-streaming-zipformer2-id/tree/4e5a13cbe3e9cd4e3775447d86178ef51759096f",
+      "license": "MIT",
+      "allowedRedirectHosts": ["huggingface.co", "*.huggingface.co", "hf.co", "*.hf.co"],
+      "files": [
+        {"role":"download","path":"id-encoder.int8.onnx","url":"https://huggingface.co/spacewave/sherpa-onnx-streaming-zipformer2-id/resolve/4e5a13cbe3e9cd4e3775447d86178ef51759096f/encoder-iter-100000-avg-15-chunk-32-left-256.int8.onnx","sizeBytes":70103186,"sha256":"3a6f85f5d199ad0d495562988af017a75d4ae81b51126db240d959b065d6eaad"},
+        {"role":"runtime","path":"asr/id/encoder.int8.onnx","bundlePath":"asr/id/encoder.int8.onnx","sizeBytes":70103186,"sha256":"3a6f85f5d199ad0d495562988af017a75d4ae81b51126db240d959b065d6eaad"}
+      ]
+    },
+    {
+      "id": "asr-indonesian-zipformer2-int8-decoder",
+      "kind": "SPEECH_COMPONENT",
+      "version": "iter-100000-avg-15-chunk-32-left-256",
+      "revision": "4e5a13cbe3e9cd4e3775447d86178ef51759096f",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://huggingface.co/spacewave/sherpa-onnx-streaming-zipformer2-id/tree/4e5a13cbe3e9cd4e3775447d86178ef51759096f",
+      "license": "MIT",
+      "allowedRedirectHosts": ["huggingface.co", "*.huggingface.co", "hf.co", "*.hf.co"],
+      "files": [
+        {"role":"download","path":"id-decoder.int8.onnx","url":"https://huggingface.co/spacewave/sherpa-onnx-streaming-zipformer2-id/resolve/4e5a13cbe3e9cd4e3775447d86178ef51759096f/decoder-iter-100000-avg-15-chunk-32-left-256.int8.onnx","sizeBytes":540688,"sha256":"6544848ca80b557ec3c8569169522dc6243b5bc9b296ea73791728510caacb4a"},
+        {"role":"runtime","path":"asr/id/decoder.int8.onnx","bundlePath":"asr/id/decoder.int8.onnx","sizeBytes":540688,"sha256":"6544848ca80b557ec3c8569169522dc6243b5bc9b296ea73791728510caacb4a"}
+      ]
+    },
+    {
+      "id": "asr-indonesian-zipformer2-int8-joiner",
+      "kind": "SPEECH_COMPONENT",
+      "version": "iter-100000-avg-15-chunk-32-left-256",
+      "revision": "4e5a13cbe3e9cd4e3775447d86178ef51759096f",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://huggingface.co/spacewave/sherpa-onnx-streaming-zipformer2-id/tree/4e5a13cbe3e9cd4e3775447d86178ef51759096f",
+      "license": "MIT",
+      "allowedRedirectHosts": ["huggingface.co", "*.huggingface.co", "hf.co", "*.hf.co"],
+      "files": [
+        {"role":"download","path":"id-joiner.int8.onnx","url":"https://huggingface.co/spacewave/sherpa-onnx-streaming-zipformer2-id/resolve/4e5a13cbe3e9cd4e3775447d86178ef51759096f/joiner-iter-100000-avg-15-chunk-32-left-256.int8.onnx","sizeBytes":259417,"sha256":"4b89d96292460a92dedcb39e0b17904f10dbad335a8ab11015e567b4864102e0"},
+        {"role":"runtime","path":"asr/id/joiner.int8.onnx","bundlePath":"asr/id/joiner.int8.onnx","sizeBytes":259417,"sha256":"4b89d96292460a92dedcb39e0b17904f10dbad335a8ab11015e567b4864102e0"}
+      ]
+    },
+    {
+      "id": "asr-indonesian-zipformer2-int8-tokens",
+      "kind": "SPEECH_COMPONENT",
+      "version": "iter-100000-avg-15-chunk-32-left-256",
+      "revision": "4e5a13cbe3e9cd4e3775447d86178ef51759096f",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://huggingface.co/spacewave/sherpa-onnx-streaming-zipformer2-id/tree/4e5a13cbe3e9cd4e3775447d86178ef51759096f",
+      "license": "MIT",
+      "allowedRedirectHosts": ["huggingface.co", "*.huggingface.co", "hf.co", "*.hf.co"],
+      "files": [
+        {"role":"download","path":"id-tokens.txt","url":"https://huggingface.co/spacewave/sherpa-onnx-streaming-zipformer2-id/resolve/4e5a13cbe3e9cd4e3775447d86178ef51759096f/tokens.txt","sizeBytes":5403,"sha256":"f0b6f5bf602d96f60d79bb17192c51eeffb6189250f132b1dfdf72b130d66968"},
+        {"role":"runtime","path":"asr/id/tokens.txt","bundlePath":"asr/id/tokens.txt","sizeBytes":5403,"sha256":"f0b6f5bf602d96f60d79bb17192c51eeffb6189250f132b1dfdf72b130d66968"}
+      ]
+    }
+  ],
+  "speechBundle": {
+    "bundleVersion": "sherpa-onnx-1.13.4-omnilingual-ctc-v3-supertonic3",
+    "runtimeVersion": "1.13.4",
+    "sampleRateHz": 16000,
+    "languages": ["id", "en"],
+    "speakerCount": 2,
+    "runtimeSource": "https://github.com/k2-fsa/sherpa-onnx/releases/tag/v1.13.4",
+    "componentIds": [
+      "asr-omnilingual-ctc-v2-int8",
+      "vad-silero",
+      "diarization-pyannote-segmentation",
+      "diarization-3dspeaker-embedding",
+      "tts-id-id_ID-news_tts-medium",
+      "tts-en-en_US-lessac-medium",
+      "tts-supertonic3-int8",
+      "asr-indonesian-zipformer2-int8",
+      "asr-indonesian-zipformer2-int8-decoder",
+      "asr-indonesian-zipformer2-int8-joiner",
+      "asr-indonesian-zipformer2-int8-tokens"
+    ]
+  }
+}

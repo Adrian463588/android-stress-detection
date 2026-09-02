@@ -1,0 +1,617 @@
+import groovy.json.JsonSlurper
+import groovy.json.JsonOutput
+import java.security.MessageDigest
+
+plugins {
+    id "com.android.library"
+    id "org.jetbrains.kotlin.android"
+}
+
+android {
+    namespace "com.stressdetector.inference"
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 26
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    buildFeatures { buildConfig true }
+    flavorDimensions "evidence"
+    productFlavors {
+        production {
+            dimension "evidence"
+            buildConfigField "boolean", "RESEARCH_MODEL_MODE", "false"
+        }
+        research {
+            dimension "evidence"
+            buildConfigField "boolean", "RESEARCH_MODEL_MODE", "true"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+    sourceSets {
+        production.assets.srcDir("$buildDir/generated/inferenceAssets")
+        research.assets.srcDir("$buildDir/generated/researchInferenceAssets")
+        androidTest.assets.srcDirs = [
+            "../../tests/fixtures/android_parity",
+            "$buildDir/generated/candidateInferenceAssets",
+        ]
+    }
+}
+
+def exportRoot = file("../../data/artifacts/export").canonicalFile
+def projectRoot = file("../..").canonicalFile
+def modelIndex = new File(exportRoot, "model_index.json")
+def candidateModelIndex = new File(exportRoot, "candidate_model_index.json")
+def generatedAssets = file("$buildDir/generated/inferenceAssets")
+def generatedCandidateAssets = file("$buildDir/generated/candidateInferenceAssets")
+def generatedResearchAssets = file("$buildDir/generated/researchInferenceAssets")
+def runsDir = file("../../data/artifacts/runs").canonicalFile
+def defaultResearchIndex = {
+    if (!runsDir.isDirectory()) return null
+    def candidates = runsDir.listFiles()?.findAll {
+        new File(it, "export/research/research_model_index.json").isFile()
+    }?.sort { it.name }
+    return candidates ? new File(candidates.last(), "export/research/research_model_index.json") : null
+}()
+def researchModelIndexValue = providers.gradleProperty("researchModelIndex").orNull
+def researchModelIndex = (researchModelIndexValue != null && !researchModelIndexValue.trim().isEmpty())
+    ? file(researchModelIndexValue).canonicalFile
+    : (defaultResearchIndex ?: new File(buildDir, "missing-research-model-index.json"))
+def modelIndexValidator = file("../../PipelinePython/03_stress_onnx/tools/validate_model_index.py").canonicalFile
+def isWindowsHost = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("windows")
+def venvPython = file(isWindowsHost ? "../../.venv/Scripts/python.exe" : "../../.venv/bin/python").canonicalFile
+
+/**
+ * The Python exporter writes a policy and its content address into every
+ * candidate manifest. Gradle materialises one immutable asset from that
+ * evidence; it never owns a second set of performance thresholds.
+ */
+def resolveCandidatePerformancePolicy = {
+    if (!candidateModelIndex.isFile()) {
+        throw new GradleException("Missing candidate_model_index.json; performance policy cannot be packaged")
+    }
+    def index = new JsonSlurper().parse(candidateModelIndex)
+    if (!(index.models instanceof List) || index.models.isEmpty()) {
+        throw new GradleException("Candidate model index has no policy-bearing models")
+    }
+    def resolved = index.models.collect { candidate ->
+        def manifestDescriptor = candidate.files?.manifest
+        if (!(manifestDescriptor instanceof Map)) {
+            throw new GradleException("Candidate manifest descriptor missing for ${candidate.sensor_channel}")
+        }
+        def manifestFile = new File(exportRoot, manifestDescriptor.path as String).canonicalFile
+        if (!manifestFile.path.startsWith(exportRoot.path + File.separator) || !manifestFile.isFile()) {
+            throw new GradleException("Candidate manifest path is missing or unsafe for ${candidate.sensor_channel}")
+        }
+        def manifest = new JsonSlurper().parse(manifestFile)
+        def policy = manifest.performance_policy
+        if (!(policy instanceof Map) || !policy.version || !policy.minimum_research || !policy.preferred ||
+            !policy.research_disclaimer || policy.accuracy_is_gate != false ||
+            candidate.performance_policy_version != policy.version ||
+            candidate.performance_policy_sha256 != manifest.performance_policy_sha256 ||
+            manifest.performance_policy_version != policy.version ||
+            !(manifest.performance_policy_sha256 ==~ /[0-9a-f]{64}/)) {
+            throw new GradleException("Candidate performance policy contract is invalid for ${candidate.sensor_channel}")
+        }
+        [policy: policy, sha256: manifest.performance_policy_sha256]
+    }
+    def baseline = resolved.first()
+    if (!resolved.every { it.policy == baseline.policy && it.sha256 == baseline.sha256 }) {
+        throw new GradleException("Candidate models disagree on the performance policy")
+    }
+    [
+        schema_version: "1.0.0",
+        performance_policy_version: baseline.policy.version,
+        performance_policy_sha256: baseline.sha256,
+        minimum_research: baseline.policy.minimum_research,
+        preferred: baseline.policy.preferred,
+        research_disclaimer: baseline.policy.research_disclaimer,
+        accuracy_is_gate: baseline.policy.accuracy_is_gate,
+    ]
+}
+
+def writePerformancePolicyAsset = { File destination ->
+    def policy = resolveCandidatePerformancePolicy()
+    new File(destination, "performance_policy.json").setText(
+        JsonOutput.prettyPrint(JsonOutput.toJson(policy)),
+        "UTF-8"
+    )
+    policy
+}
+
+def requirePolicyCompatibleModel = { candidate, manifest, policy ->
+    def minimum = policy.minimum_research
+    def preferred = policy.preferred
+    def holdoutMetrics = [
+        balanced_accuracy: candidate.balanced_accuracy_holdout as BigDecimal,
+        f1: candidate.f1_holdout as BigDecimal,
+        roc_auc: candidate.roc_auc_holdout as BigDecimal,
+    ]
+    def conservativeMetrics = [
+        balanced_accuracy: candidate.balanced_accuracy_conservative as BigDecimal,
+        f1: candidate.f1_conservative as BigDecimal,
+        roc_auc: candidate.roc_auc_conservative as BigDecimal,
+    ]
+    def minimumPassed = holdoutMetrics.every { name, value -> value >= (minimum[name] as BigDecimal) } &&
+        conservativeMetrics.every { name, value -> value >= (minimum[name] as BigDecimal) }
+    def preferredPassed = conservativeMetrics.every { name, value -> value >= (preferred[name] as BigDecimal) }
+    def expectedTier = !minimumPassed ? "below_minimum" : preferredPassed ? "preferred" : "research_usable"
+    def expectedScope = expectedTier == "preferred" ? "standard" : expectedTier == "research_usable" ? "research" : "none"
+    if (!minimumPassed || candidate.performance_tier != expectedTier ||
+        candidate.deployment_scope != expectedScope ||
+        candidate.performance_policy_version != policy.performance_policy_version ||
+        candidate.performance_policy_sha256 != policy.performance_policy_sha256 ||
+        manifest.performance_policy_version != policy.performance_policy_version ||
+        manifest.performance_policy_sha256 != policy.performance_policy_sha256 ||
+        manifest.performance_tier != expectedTier || manifest.deployment_scope != expectedScope ||
+        (expectedTier == "research_usable" &&
+            (candidate.research_disclaimer != policy.research_disclaimer ||
+                manifest.research_disclaimer != policy.research_disclaimer ||
+                manifest.disclaimer_required != true))) {
+        throw new GradleException("Performance policy mismatch for ${candidate.model_version}/${candidate.sensor_channel}")
+    }
+}
+
+def sha256 = { File source ->
+    def digest = MessageDigest.getInstance("SHA-256")
+    source.withInputStream { stream ->
+        byte[] buffer = new byte[1024 * 1024]
+        int count
+        while ((count = stream.read(buffer)) != -1) digest.update(buffer, 0, count)
+    }
+    digest.digest().collect { String.format("%02x", it) }.join()
+}
+
+tasks.register("syncInferenceAssets") {
+    inputs.file(modelIndex)
+    inputs.dir(exportRoot)
+    outputs.dir(generatedAssets)
+    doLast {
+        if (!modelIndex.isFile()) {
+            throw new GradleException("Missing canonical model_index.json; inference packaging is blocked")
+        }
+        def index = new JsonSlurper().parse(modelIndex)
+        if (index.schema_version != "1.0.0" || !(index.models instanceof List)) {
+            throw new GradleException("Invalid canonical model index schema")
+        }
+        if (index.models.isEmpty() && (index.release_status as String).startsWith("blocked_")) {
+            // A blocked production index is a valid fail-closed application
+            // state. Package only the index so Home/Verbatim can expose a
+            // typed unavailable reason while physical candidate parity runs
+            // from the separate androidTest APK assets.
+            delete(generatedAssets)
+            generatedAssets.mkdirs()
+            copy { from(modelIndex); into(generatedAssets) }
+            writePerformancePolicyAsset(generatedAssets)
+            return
+        }
+        // Red is a research-only artifact until the Watch has a proven Red
+        // acquisition path and Android physical parity. Production Home and
+        // Verbatim therefore accept only independently validated Green/IR.
+        def expectedSensors = ["ppg_green", "ppg_ir"] as Set
+        def indexedSensors = index.models.collect { it.sensor_channel as String }
+        if (indexedSensors.isEmpty() || indexedSensors.size() > expectedSensors.size() ||
+            indexedSensors.toSet().size() != indexedSensors.size() ||
+            !indexedSensors.every { it in expectedSensors }) {
+            throw new GradleException("Canonical release must contain unique accepted independent PPG channels; got ${indexedSensors}")
+        }
+        delete(generatedAssets)
+        generatedAssets.mkdirs()
+        copy { from(modelIndex); into(generatedAssets) }
+        def policy = writePerformancePolicyAsset(generatedAssets)
+
+        index.models.each { candidate ->
+            if (candidate.release_status != "accepted") {
+                throw new GradleException("Rejected model in accepted index: ${candidate.model_version}/${candidate.sensor_channel}")
+            }
+            // ML gates alone do not constitute Android release evidence. The
+            // promotion flag remains false until physical-device parity and
+            // acceptance evidence are recorded.
+            if (candidate.android_ready != true) {
+                throw new GradleException("Android packaging blocked until android_ready=true: ${candidate.model_version}/${candidate.sensor_channel}")
+            }
+            if (candidate.source_rate_hz == null || (candidate.source_rate_hz as BigDecimal) <= 0G ||
+                candidate.model_rate_hz == null || (candidate.model_rate_hz as BigDecimal) <= 0G) {
+                throw new GradleException("Missing positive source/model sampling rates: ${candidate.model_version}/${candidate.sensor_channel}")
+            }
+            def sensor = candidate.sensor_channel as String
+            def version = candidate.model_version as String
+            if (!(sensor in expectedSensors) || !version.matches("[A-Za-z0-9._-]+")) {
+                throw new GradleException("Unsafe model index identity: ${version}/${sensor}")
+            }
+            def expectedSourceRate = sensor == "ppg_green" ? 25G : 100G
+            if ((candidate.source_rate_hz as BigDecimal) != expectedSourceRate) {
+                throw new GradleException("PDSatu source-rate contract mismatch: ${version}/${sensor}")
+            }
+            def required = ["model", "manifest", "parity", "test_vectors", "device_parity_receipt"]
+            if (!(candidate.files instanceof Map) || !required.every { candidate.files.containsKey(it) }) {
+                def missing = required.findAll { !candidate.files?.containsKey(it) }
+                throw new GradleException("Incomplete artifact set for ${version}/${sensor}: missing ${missing}")
+            }
+            // Validate holdout cohort is within locked ID-29..ID-32 per PRD §2
+            def cohort = (candidate.cohort_ids as List)
+            def validCohort = ["ID-29", "ID-30", "ID-31", "ID-32"]
+            if (!(cohort as Set).every { it in validCohort } || cohort.size() == 0) {
+                throw new GradleException("Holdout cohort must be a non-empty subset of ID-29..ID-32 for ${version}/${sensor}; got: ${cohort}")
+            }
+
+            def destination = new File(generatedAssets, "models/${version}/${sensor}")
+            def resolved = [:]
+            required.each { kind ->
+                def descriptor = candidate.files[kind]
+                def descriptorPath = descriptor.path as String
+                def source = descriptorPath.startsWith("data/artifacts/export/")
+                    ? new File(projectRoot, descriptorPath).canonicalFile
+                    : new File(exportRoot, descriptorPath).canonicalFile
+                if (!source.path.startsWith(exportRoot.path + File.separator) || !source.isFile()) {
+                    throw new GradleException("Missing or unsafe ${kind} artifact: ${descriptor.path}")
+                }
+                if (!(descriptor.sha256 ==~ /[0-9a-f]{64}/) || sha256(source) != descriptor.sha256) {
+                    throw new GradleException("Checksum failed for ${descriptor.path}")
+                }
+                resolved[kind] = source
+                copy { from(source); into(destination) }
+            }
+
+            // Validate the canonical Python manifest contract.
+            def manifest = new JsonSlurper().parse(resolved.manifest)
+            requirePolicyCompatibleModel(candidate, manifest, policy)
+            if (manifest.gate_passed != true || manifest.release_status != "accepted") {
+                throw new GradleException("gate_passed/release_status is not accepted for ${version}/${sensor}")
+            }
+            if (manifest.android_ready != true) {
+                throw new GradleException("Manifest is not Android-ready for ${version}/${sensor}")
+            }
+            if (manifest.source_rate_hz == null || (manifest.source_rate_hz as BigDecimal) <= 0G ||
+                manifest.model_rate_hz == null || (manifest.model_rate_hz as BigDecimal) <= 0G) {
+                throw new GradleException("Manifest is missing positive source/model sampling rates for ${version}/${sensor}")
+            }
+            if ((manifest.source_rate_hz as BigDecimal) != expectedSourceRate) {
+                throw new GradleException("Manifest PDSatu source-rate contract mismatch for ${version}/${sensor}")
+            }
+            def filter = manifest.filter_contract
+            def expectedHighCut = sensor == "ppg_green" ? 5G : 8G
+            if (!(filter instanceof Map) ||
+                filter.algorithm != "butterworth_sosfiltfilt" ||
+                filter.order != 4 ||
+                (filter.low_cut_hz as BigDecimal) != 0.5G ||
+                (filter.high_cut_hz as BigDecimal) != expectedHighCut ||
+                filter.zero_phase != true ||
+                filter.pad_policy != "scipy_odd_sosfiltfilt_default" ||
+                filter.design_version != "sos_zpk_bilinear_v1" ||
+                !(filter.fingerprint ==~ /[0-9a-f]{64}/) ||
+                manifest.filter_algorithm != filter.algorithm ||
+                manifest.filter_order != filter.order ||
+                manifest.filter_low_cut_hz != filter.low_cut_hz ||
+                manifest.filter_high_cut_hz != filter.high_cut_hz ||
+                manifest.filter_zero_phase != filter.zero_phase ||
+                manifest.filter_pad_policy != filter.pad_policy ||
+                manifest.filter_design_version != filter.design_version ||
+                manifest.filter_contract_fingerprint != filter.fingerprint) {
+                throw new GradleException("Manifest filter contract is missing or inconsistent for ${version}/${sensor}")
+            }
+            if (manifest.analysis_seconds != 240 || manifest.window_seconds == null ||
+                manifest.stride_seconds == null || manifest.expected_windows_per_session == null ||
+                (manifest.window_seconds as Integer) <= 0 ||
+                (manifest.window_seconds as Integer) > (manifest.analysis_seconds as Integer) ||
+                (manifest.stride_seconds as Integer) <= 0 ||
+                (((manifest.analysis_seconds as Integer) - (manifest.window_seconds as Integer)) %
+                    (manifest.stride_seconds as Integer)) != 0 ||
+                (manifest.expected_windows_per_session as Integer) !=
+                    (((manifest.analysis_seconds as Integer) - (manifest.window_seconds as Integer)) /
+                        (manifest.stride_seconds as Integer)) + 1) {
+                throw new GradleException("Manifest window contract is invalid for ${version}/${sensor}")
+            }
+            def deviceReceipt = new JsonSlurper().parse(resolved.device_parity_receipt)
+            if (!(manifest.device_parity_receipt_sha256 ==~ /[0-9a-f]{64}/) ||
+                manifest.device_parity_receipt_sha256 != deviceReceipt.receipt_sha256 ||
+                deviceReceipt.model_version != version || deviceReceipt.sensor_channel != sensor ||
+                deviceReceipt.onnx_sha256 != manifest.onnx_sha256 ||
+                deviceReceipt.vector_count != 100 ||
+                deviceReceipt.max_abs_diff == null ||
+                (deviceReceipt.max_abs_diff as BigDecimal) >= 0.00001G ||
+                (sensor == "ppg_red" && deviceReceipt.actual_sensor_acquisition != true)) {
+                throw new GradleException("Device parity receipt mismatch for ${version}/${sensor}")
+            }
+            // Accept either top-level balanced_accuracy_holdout or nested acceptance_metrics.balanced_accuracy
+            def manifestBA = manifest.balanced_accuracy_holdout != null
+                ? manifest.balanced_accuracy_holdout as BigDecimal
+                : manifest.holdout_metrics?.balanced_accuracy != null
+                ? manifest.holdout_metrics.balanced_accuracy as BigDecimal
+                : (manifest.acceptance_metrics?.balanced_accuracy as BigDecimal)
+            def manifestF1 = manifest.f1_holdout as BigDecimal
+            def manifestRocAuc = manifest.roc_auc_holdout as BigDecimal
+            if (manifestBA == null || manifestF1 == null || manifestRocAuc == null) {
+                throw new GradleException("Manifest holdout metrics are incomplete for ${version}/${sensor}")
+            }
+            if (manifest.output?.name != "stress_probability" || manifest.output?.dtype != "float32" || manifest.output?.shape != [1]) {
+                throw new GradleException("Manifest output contract must be stress_probability float32 [1] for ${version}/${sensor}")
+            }
+            def inputShape = manifest.inputs instanceof List && manifest.inputs.size() == 1
+                ? manifest.inputs[0]?.shape : null
+            if (!(inputShape instanceof List) || inputShape.size() != 2 || inputShape[0] != 1 ||
+                !(inputShape[1] instanceof Number) || (inputShape[1] as Integer) <= 0 ||
+                manifest.inputs[0]?.dtype != "float32" ||
+                manifest.feature_order?.size() != (inputShape[1] as Integer)) {
+                throw new GradleException("Manifest input contract must match its versioned feature_order for ${version}/${sensor}")
+            }
+            if (manifest.sensor_channel != sensor) {
+                throw new GradleException("Manifest sensor_channel mismatch: expected ${sensor}, got ${manifest.sensor_channel}")
+            }
+            if (!(manifest.probability_calibration?.version as String)?.trim() ||
+                manifest.probability_calibration?.calibration_status != "validated_development_oof") {
+                throw new GradleException("Calibration metadata mismatch or unvalidated for ${version}/${sensor}")
+            }
+
+            // Validate parity evidence: accept multiple parity field naming conventions
+            def parity = new JsonSlurper().parse(resolved.parity)
+            def maxDiff = parity.max_abs_diff != null ? parity.max_abs_diff
+                        : parity.max_diff != null ? parity.max_diff
+                        : parity.parity_max_diff != null ? parity.parity_max_diff
+                        : parity.parity_probability_max_abs_diff
+            if (maxDiff == null || (maxDiff as BigDecimal) >= 0.00001G) {
+                throw new GradleException("ONNX parity max_abs_diff (${maxDiff}) >= 1e-5 for ${version}/${sensor}")
+            }
+            def parityStatus = parity.parity_status
+            if (parityStatus != null && parityStatus != "ok") {
+                throw new GradleException("ONNX parity_status='${parityStatus}' (not ok) for ${version}/${sensor}")
+            }
+
+            // Validate test vectors: require exactly 100 deterministic cases
+            def vectors = new JsonSlurper().parse(resolved.test_vectors)
+            if (vectors.python_vectors_passed != 100 || vectors.python_vector_status != "passed") {
+                throw new GradleException("Python vector evidence is incomplete for ${version}/${sensor}")
+            }
+            if (vectors.android_instrumentation_status != "passed" || vectors.android_ready != true) {
+                throw new GradleException("Android instrumentation evidence is incomplete for ${version}/${sensor}")
+            }
+            if (!(vectors.cases instanceof List) || vectors.cases.size() != 100) {
+                throw new GradleException("Exactly 100 deterministic vectors required for ${version}/${sensor}; got ${vectors.cases?.size() ?: 0}")
+            }
+            if (vectors.vector_schema_version != "2.0.0" ||
+                (vectors.source_rate_hz as BigDecimal) != (manifest.source_rate_hz as BigDecimal) ||
+                (vectors.model_rate_hz as BigDecimal) != (manifest.model_rate_hz as BigDecimal) ||
+                !(vectors.filter_contract instanceof Map) ||
+                vectors.filter_contract.fingerprint != filter.fingerprint) {
+                throw new GradleException("Vector rate/filter contract mismatch for ${version}/${sensor}")
+            }
+            vectors.cases.findAll { it.kind == "valid_raw_window" }.each { vector ->
+                if ((vector.source_rate_hz as BigDecimal) != (manifest.source_rate_hz as BigDecimal) ||
+                    (vector.model_rate_hz as BigDecimal) != (manifest.model_rate_hz as BigDecimal) ||
+                    (vector.sampling_rate_hz as BigDecimal) != (manifest.model_rate_hz as BigDecimal) ||
+                    !(vector.filter_contract instanceof Map) ||
+                    vector.filter_contract.fingerprint != filter.fingerprint) {
+                    throw new GradleException("Valid vector metadata mismatch for ${version}/${sensor}/${vector.case_id}")
+                }
+            }
+        }
+    }
+}
+
+tasks.register("validateCanonicalModelIndex", Exec) {
+    inputs.file(modelIndex)
+    inputs.file(modelIndexValidator)
+    inputs.dir(exportRoot)
+    outputs.upToDateWhen { false }
+    workingDir(projectRoot)
+    doFirst {
+        if (!venvPython.isFile()) {
+            throw new GradleException("Missing project Python environment: ${venvPython}")
+        }
+        if (!modelIndexValidator.isFile()) {
+            throw new GradleException("Missing canonical model-index validator: ${modelIndexValidator}")
+        }
+    }
+    commandLine(venvPython, modelIndexValidator)
+}
+
+tasks.register("syncCandidateInferenceAssets") {
+    inputs.file(candidateModelIndex)
+    inputs.dir(exportRoot)
+    outputs.dir(generatedCandidateAssets)
+    doLast {
+        if (!candidateModelIndex.isFile()) {
+            throw new GradleException("Missing candidate_model_index.json; physical parity is pending")
+        }
+        def index = new JsonSlurper().parse(candidateModelIndex)
+        if (index.schema_version != "1.0.0" ||
+            index.release_status != "candidate_physical_parity_pending" ||
+            !(index.models instanceof List) || index.models.isEmpty()) {
+            throw new GradleException("Invalid or empty candidate model index")
+        }
+        def acceptedSensors = ["ppg_green", "ppg_ir"] as Set
+        def sensors = index.models.collect { it.sensor_channel as String }
+        if (sensors.toSet().size() != sensors.size() || !sensors.every { it in acceptedSensors }) {
+            throw new GradleException("Candidate index channels are invalid: ${sensors}")
+        }
+        delete(generatedCandidateAssets)
+        generatedCandidateAssets.mkdirs()
+        copy { from(candidateModelIndex); into(generatedCandidateAssets) }
+        writePerformancePolicyAsset(generatedCandidateAssets)
+        index.models.each { candidate ->
+            if (candidate.release_status != "candidate_physical_parity_pending" ||
+                candidate.android_ready != false) {
+                throw new GradleException("Candidate assets must remain non-production")
+            }
+            def sensor = candidate.sensor_channel as String
+            def version = candidate.model_version as String
+            def required = ["model", "manifest", "parity", "test_vectors"]
+            if (!(candidate.files instanceof Map) || !required.every { candidate.files.containsKey(it) }) {
+                throw new GradleException("Candidate artifact set is incomplete for ${version}/${sensor}")
+            }
+            def destination = new File(generatedCandidateAssets, "candidate_models/${version}/${sensor}")
+            required.each { kind ->
+                def descriptor = candidate.files[kind]
+                def source = new File(exportRoot, descriptor.path as String).canonicalFile
+                if (!source.path.startsWith(exportRoot.path + File.separator) || !source.isFile() ||
+                    !(descriptor.sha256 ==~ /[0-9a-f]{64}/) || sha256(source) != descriptor.sha256) {
+                    throw new GradleException("Candidate ${kind} checksum/path failed for ${version}/${sensor}")
+                }
+                copy { from(source); into(destination) }
+            }
+        }
+    }
+}
+
+tasks.register("syncResearchInferenceAssets") {
+    inputs.file(researchModelIndex)
+    outputs.dir(generatedResearchAssets)
+    doLast {
+        def runsRoot = new File(projectRoot, "data/artifacts/runs").canonicalFile
+        if (researchModelIndex == null || !researchModelIndex.isFile() ||
+            !researchModelIndex.path.startsWith(runsRoot.path + File.separator)) {
+            throw new GradleException(
+                "Research build requires -PresearchModelIndex=<run-scoped research_model_index.json> or an existing run in data/artifacts/runs"
+            )
+        }
+        def index = new JsonSlurper().parse(researchModelIndex)
+        if (index.schema_version != "1.0.0" ||
+            index.artifact_status != "research_candidate" ||
+            index.evaluation_scope != "development_only" ||
+            index.release_status != "research_candidate" ||
+            index.deployment_scope != "research" ||
+            index.android_ready != false ||
+            !(index.models instanceof List) || index.models.isEmpty()) {
+            throw new GradleException("Invalid research model index contract")
+        }
+        def acceptedSensors = ["ppg_green", "ppg_ir"] as Set
+        def sensors = index.models.collect { it.sensor_channel as String }
+        if (sensors.toSet().size() != sensors.size() || !sensors.every { it in acceptedSensors }) {
+            throw new GradleException("Research index channels are invalid: ${sensors}")
+        }
+        delete(generatedResearchAssets)
+        generatedResearchAssets.mkdirs()
+        copy {
+            from(researchModelIndex)
+            into(generatedResearchAssets)
+            rename { "model_index.json" }
+        }
+        def policies = []
+        index.models.each { candidate ->
+            if (candidate.artifact_status != "research_candidate" ||
+                candidate.evaluation_scope != "development_only" ||
+                candidate.release_status != "blocked_existing_holdout_contract_mismatch" ||
+                candidate.deployment_scope != "research" ||
+                candidate.android_ready != false) {
+                throw new GradleException("Research entry is not development-only for ${candidate.sensor_channel}")
+            }
+            def sensor = candidate.sensor_channel as String
+            def version = candidate.model_version as String
+            if (!(sensor in acceptedSensors) || !version.matches("[A-Za-z0-9._-]+")) {
+                throw new GradleException("Unsafe research model identity: ${version}/${sensor}")
+            }
+            def required = ["model", "manifest", "parity", "test_vectors"]
+            if (!(candidate.files instanceof Map) || !required.every { candidate.files.containsKey(it) }) {
+                throw new GradleException("Incomplete research artifact set for ${version}/${sensor}")
+            }
+            def destination = new File(generatedResearchAssets, "models/${version}/${sensor}")
+            def resolved = [:]
+            required.each { kind ->
+                def descriptor = candidate.files[kind]
+                def source = new File(projectRoot, descriptor.path as String).canonicalFile
+                if (!source.path.startsWith(runsRoot.path + File.separator) || !source.isFile() ||
+                    !(descriptor.sha256 ==~ /[0-9a-f]{64}/) || sha256(source) != descriptor.sha256) {
+                    throw new GradleException("Research ${kind} checksum/path failed for ${version}/${sensor}")
+                }
+                resolved[kind] = source
+                copy { from(source); into(destination) }
+            }
+            def manifest = new JsonSlurper().parse(resolved.manifest)
+            if (manifest.schema_version != "onnx-research-v1" ||
+                manifest.artifact_status != "research_candidate" ||
+                manifest.evaluation_scope != "development_only" ||
+                manifest.release_status != candidate.release_status ||
+                manifest.deployment_scope != "research" ||
+                manifest.android_ready != false || manifest.holdout_evaluated != false ||
+                manifest.containsKey("holdout_metrics") || manifest.containsKey("holdout_raw_metrics") ||
+                manifest.clinical_validation_status != "external_validation_required") {
+                throw new GradleException("Research manifest contains release/holdout evidence for ${version}/${sensor}")
+            }
+            def policy = manifest.performance_policy
+            def minimum = policy?.minimum_research
+            if (!(policy instanceof Map) || !(minimum instanceof Map) ||
+                !minimum.every { name, gate ->
+                    def value = manifest.development_metrics[name]
+                    value != null && (value as BigDecimal) >= (gate as BigDecimal)
+                } || candidate.performance_policy_sha256 != manifest.performance_policy_sha256) {
+                throw new GradleException("Research development metrics/policy failed for ${version}/${sensor}")
+            }
+            def cohort = manifest.validation_cohort_ids as List
+            def allowedDevelopment = (1..28).collect { String.format("ID-%02d", it) } as Set
+            if (cohort.size() < 26 || cohort.toSet().size() != cohort.size() ||
+                !cohort.every { it in allowedDevelopment }) {
+                throw new GradleException("Research validation cohort is not ID-01..ID-28 for ${version}/${sensor}")
+            }
+            def parity = new JsonSlurper().parse(resolved.parity)
+            if (parity.passed != true || parity.onnx_checker_passed != true ||
+                parity.real_batch1_inference_passed != true ||
+                (parity.checked_samples as Integer) < 100 ||
+                (parity.max_abs_diff as BigDecimal) >= 0.00001G) {
+                throw new GradleException("Research ONNX parity failed for ${version}/${sensor}")
+            }
+            def vectors = new JsonSlurper().parse(resolved.test_vectors)
+            if (vectors.evaluation_scope != "development_only" ||
+                vectors.synthetic_data_used != false ||
+                (vectors.count as Integer) < 100 ||
+                !(vectors.cases instanceof List) || vectors.cases.size() < 100 ||
+                !vectors.cases.every { it.participant_id in allowedDevelopment }) {
+                throw new GradleException("Research vectors are not real development rows for ${version}/${sensor}")
+            }
+            policies << [policy: policy, sha256: manifest.performance_policy_sha256]
+        }
+        def baseline = policies.first()
+        if (!policies.every { it == baseline }) {
+            throw new GradleException("Research models disagree on performance policy")
+        }
+        def policy = baseline.policy
+        new File(generatedResearchAssets, "performance_policy.json").setText(
+            JsonOutput.prettyPrint(JsonOutput.toJson([
+                schema_version: "1.0.0",
+                performance_policy_version: policy.version,
+                performance_policy_sha256: baseline.sha256,
+                minimum_research: policy.minimum_research,
+                preferred: policy.preferred,
+                research_disclaimer: policy.research_disclaimer,
+                accuracy_is_gate: policy.accuracy_is_gate,
+            ])),
+            "UTF-8"
+        )
+    }
+}
+
+tasks.named("syncInferenceAssets").configure {
+    dependsOn("validateCanonicalModelIndex")
+}
+tasks.configureEach { task ->
+    if (task.name in ["preProductionDebugBuild", "preProductionReleaseBuild"] ||
+        task.name.startsWith("mergeProduction")) {
+        task.dependsOn("syncInferenceAssets")
+    }
+    if (task.name in ["preResearchDebugBuild", "preResearchReleaseBuild"] ||
+        task.name.startsWith("mergeResearch")) {
+        task.dependsOn("syncResearchInferenceAssets")
+    }
+    if (task.name == "mergeDebugAndroidTestAssets") {
+        task.dependsOn("syncCandidateInferenceAssets")
+    }
+}
+
+dependencies {
+    implementation "com.microsoft.onnxruntime:onnxruntime-android:1.22.0"
+    implementation "com.google.code.gson:gson:2.11.0"
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "com.microsoft.onnxruntime:onnxruntime:1.22.0"
+    androidTestImplementation "androidx.test:runner:1.6.2"
+    androidTestImplementation "androidx.test.ext:junit:1.2.1"
+}
+dependencies {
+    implementation project(":shared")
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"
+}

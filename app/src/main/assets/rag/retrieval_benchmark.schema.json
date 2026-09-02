@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "local://stressdetector/rag-retrieval-benchmark-v1",
+  "title": "Local RAG retrieval benchmark artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "artifactVersion",
+    "querySetSha256",
+    "corpusSha256",
+    "embeddingModelSha256",
+    "tokenizerSha256",
+    "chunkPolicyVersion",
+    "implementationVersion",
+    "createdAtEpochMillis",
+    "queries"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "rag-retrieval-benchmark-v1"},
+    "artifactVersion": {"type": "string", "minLength": 1},
+    "querySetSha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+    "corpusSha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+    "embeddingModelSha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+    "tokenizerSha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+    "chunkPolicyVersion": {"type": "string", "minLength": 1},
+    "implementationVersion": {"type": "string", "minLength": 1},
+    "createdAtEpochMillis": {"type": "integer", "minimum": 1},
+    "queries": {
+      "type": "array",
+      "minItems": 60,
+      "maxItems": 60,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["queryId", "language", "answerable", "expectedChunkIds"],
+        "properties": {
+          "queryId": {"type": "string", "minLength": 1},
+          "language": {"enum": ["INDONESIAN", "ENGLISH", "MIXED_LANGUAGE"]},
+          "answerable": {"type": "boolean"},
+          "expectedChunkIds": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recallAt5", "mrrAt5", "noAnswerPrecision", "citationLocatorAccuracy"],
+      "properties": {
+        "recallAt5": {"type": "number", "minimum": 0, "maximum": 1},
+        "mrrAt5": {"type": "number", "minimum": 0, "maximum": 1},
+        "noAnswerPrecision": {"type": "number", "minimum": 0, "maximum": 1},
+        "citationLocatorAccuracy": {"type": "number", "const": 1}
+      }
+    },
+    "thresholdCalibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calibrationVersion", "semanticHybridMinimumRrf", "lexicalOnlyMinimumRrf"],
+      "properties": {
+        "calibrationVersion": {"type": "string", "minLength": 1},
+        "semanticHybridMinimumRrf": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+        "lexicalOnlyMinimumRrf": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}
+      }
+    }
+  }
+}

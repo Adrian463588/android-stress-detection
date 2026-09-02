@@ -1,0 +1,59 @@
+# Built application files
+*.apk
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+build/
+*/build/
+
+# Gradle files
+.gradle/
+.gradle-codex/
+.gradle-devsecops/
+.gradle-rag-*
+/build/
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Log Files
+*.log
+build_errors*.txt
+
+# Android Studio captures folder
+captures/
+device-backups/
+
+# IntelliJ
+*.iml
+.idea/
+
+# Keystore files (Security: Prevent leaking signing keys)
+*.jks
+*.keystore
+
+# External native build folder
+.externalNativeBuild
+.cxx/
+
+# Google Services / Secrets (DevSecOps)
+google-services.json
+.env
+
+# Project specific
+scratch.kt
+TestFilter.kt
+*.log
+data/
+wear/libs/*.aar
+test_vectors*.json

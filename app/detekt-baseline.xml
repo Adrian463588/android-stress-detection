@@ -1,0 +1,770 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:DocxTextExtractor.kt$DocxTextExtractor$!inRun || hiddenRun || deletedDepth &gt; 0 || fieldInstructionDepth &gt; 0</ID>
+    <ID>ComplexCondition:HistoryDetailScreen.kt$mean == null || median == null || observationCount &lt;= 0 || validPeakCount &lt;= 0</ID>
+    <ID>ComplexCondition:LiteRTLlmEngine.kt$LiteRTLlmEngine$engine != null &amp;&amp; loadedModelFingerprint == modelFingerprint(readyModel) &amp;&amp; ( successfulPreflightFingerprint == fingerprint || preflightPreferences.getString(PREF_SUCCESS_FINGERPRINT, null) == fingerprint )</ID>
+    <ID>ComplexCondition:MediaAudioPlaybackEngine.kt$MediaAudioPlaybackEngine$isActive &amp;&amp; !closed &amp;&amp; player === active &amp;&amp; prepared</ID>
+    <ID>ComplexCondition:PiperVoiceOutputEngine.kt$TtsArchiveExtractor$File(target, profile.model).isFile &amp;&amp; File(target, profile.tokens).isFile &amp;&amp; File(target, profile.dataDir).isDirectory &amp;&amp; marker.isFile &amp;&amp; marker.readText() == archiveFingerprint</ID>
+    <ID>ComplexCondition:PpgRepository.kt$PpgRepositoryImpl$currentIdentity.sessionId != rejection.sessionId || currentIdentity.nonce != rejection.sessionNonce || (current.sourceNodeId != null &amp;&amp; current.sourceNodeId != sourceNodeId)</ID>
+    <ID>ComplexCondition:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress || address.isSiteLocalAddress || address.isMulticastAddress</ID>
+    <ID>ComplexCondition:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$start != offset || end &lt; start || end &gt;= total || declaredTotal != total</ID>
+    <ID>ComplexCondition:SpeechBundleDownloadManager.kt$SpeechBundleDownloadManager$stateStore.state.value !is SpeechBundleDownloadState.Downloading &amp;&amp; stateStore.state.value !is SpeechBundleDownloadState.Verifying &amp;&amp; stateStore.state.value !is SpeechBundleDownloadState.Assembling &amp;&amp; stateStore.state.value !is SpeechBundleDownloadState.Installing</ID>
+    <ID>ComplexCondition:SpeechBundleDownloadManager.kt$SpeechBundleDownloadManager$stateStore.state.value is SpeechBundleDownloadState.Downloading || stateStore.state.value is SpeechBundleDownloadState.Verifying || stateStore.state.value is SpeechBundleDownloadState.Assembling || stateStore.state.value is SpeechBundleDownloadState.Installing || stateStore.state.value is SpeechBundleDownloadState.Cancelling || stateStore.state.value is SpeechBundleDownloadState.Deleting</ID>
+    <ID>ComplexCondition:SpeechModelBundleManager.kt$SpeechModelBundleManager$materialized.isDirectory &amp;&amp; marker.isFile &amp;&amp; marker.readText() == fingerprint &amp;&amp; manifest.files.keys.all { File(materialized, it).isFile }</ID>
+    <ID>ComplexCondition:StressViewModel.kt$StressViewModel$!current.isHomeStressSession() || current.protocolRejected || frame.sessionId == null || frame.sessionId != current.sessionId || frame.sessionNonce != current.sessionNonce || frame.protocolVersion != current.protocolVersion</ID>
+    <ID>ComplexCondition:StressViewModel.kt$StressViewModel$current.sessionId == null &amp;&amp; !current.isRecording &amp;&amp; current.greenSamples == 0 &amp;&amp; current.irSamples == 0 &amp;&amp; current.redDiagnosticSamples == 0 &amp;&amp; current.greenChart.isEmpty &amp;&amp; current.irChart.isEmpty &amp;&amp; current.redChart.isEmpty</ID>
+    <ID>ComplexCondition:UnifiedSessionEngine.kt$UnifiedSessionEngine$!acceptingSessionEvents || currentSessionId != expectedSessionId || segment.sessionId.isBlank() || segment.sessionId != expectedSessionId</ID>
+    <ID>ComplexCondition:UnifiedSessionEngine.kt$UnifiedSessionEngine$(!acceptingSessionEvents &amp;&amp; sessionStopCutoff == null) || currentSessionId != expectedSessionId || analysis.sessionId != expectedSessionId</ID>
+    <ID>ComplexCondition:UnifiedSessionEngine.kt$UnifiedSessionEngine$(!acceptingSessionEvents &amp;&amp; sessionStopCutoff == null) || currentSessionId != expectedSessionId || segment.sessionId != expectedSessionId</ID>
+    <ID>ComplexCondition:UnifiedSessionEngine.kt$UnifiedSessionEngine$(!acceptingSessionEvents &amp;&amp; sessionStopCutoff == null) || currentSessionId != sessionId || snapshot.sessionId != sessionId || snapshot.sessionGeneration != timeline.generation</ID>
+    <ID>ComplexCondition:UnifiedSessionScreen.kt$uiState.isFinalizing || uiState.sessionCommandState is SessionCommandState.Starting || uiState.sessionCommandState is SessionCommandState.Pausing || uiState.sessionCommandState is SessionCommandState.Resuming || uiState.sessionCommandState is SessionCommandState.Stopping</ID>
+    <ID>ComplexCondition:UnifiedSessionViewModel.kt$UnifiedSessionViewModel$audioKey != preparedSessionKey &amp;&amp; audioKey != loadingSessionKey &amp;&amp; detail.summary.finalizationStatus == "COMPLETED" &amp;&amp; (detail.summary.audioFilePath.isNotBlank() || detail.summary.artifactFolderPath.isNotBlank())</ID>
+    <ID>ComplexCondition:UnifiedSessionViewModel.kt$UnifiedSessionViewModel$live.sessionId == null || selected == null || live.sessionId != selected || !isLiveSessionGenerationAccepted(current.sessionGeneration, live)</ID>
+    <ID>ComplexCondition:VerbatimArtifactLocationResolver.kt$CanonicalVerbatimArtifactLocationResolver$folder.startsWith("verbatim_sessions/") &amp;&amp; !folder.contains("..") &amp;&amp; !folder.endsWith("/") &amp;&amp; folder.substringAfter("verbatim_sessions/").isNotBlank()</ID>
+    <ID>ComplexCondition:WebUrlPolicy.kt$SecureWebUrlPolicy$normalized == "::1" || normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80:")</ID>
+    <ID>ConstructorParameterNaming:LocalEmbeddingModel.kt$LocalEmbeddingModel$_context: Context</ID>
+    <ID>CyclomaticComplexMethod:AcousticAnalysis.kt$AcousticFrameAnalyzer$fun analyze(frame: AcousticAudioFrame): AcousticAnalysisSnapshot</ID>
+    <ID>CyclomaticComplexMethod:AiCounselorScreen.kt$@Composable fun AiCounselorScreen( viewModel: CounselorViewModel, windowSizeClass: WindowWidthSizeClass = WindowWidthSizeClass.Compact, onNavigateToLibrary: () -&gt; Unit )</ID>
+    <ID>CyclomaticComplexMethod:AiCounselorScreen.kt$@Composable private fun ChatMessageBubble( message: UiChatMessage, isSpeaking: Boolean, isVoiceStopping: Boolean, onSpeak: (String, String) -&gt; Unit, onStopSpeaking: () -&gt; Unit, onOpenCitation: (String) -&gt; Unit, onOpenCrisisSupport: (CrisisSupportAction) -&gt; Unit )</ID>
+    <ID>CyclomaticComplexMethod:AudioRecordVoiceInputEngine.kt$AudioRecordVoiceInputEngine$private suspend fun captureTurn(language: VoiceLanguage)</ID>
+    <ID>CyclomaticComplexMethod:ChatExportUtil.kt$ChatExportUtil$fun exportChatToPdf(context: Context, messages: List&lt;ChatMessageEntity&gt;, sessionTitle: String): Result&lt;String&gt;</ID>
+    <ID>CyclomaticComplexMethod:ClinicalEntities.kt$DocumentChunkEntity$override fun equals(other: Any?): Boolean</ID>
+    <ID>CyclomaticComplexMethod:CounselorOutputGuard.kt$CounselorOutputGuard.Default$override fun validate( text: String, mode: RagMode, citations: List&lt;KnowledgeCitation&gt;, registry: CitationRegistry ): GuardedCounselorOutput</ID>
+    <ID>CyclomaticComplexMethod:CounselorViewModel.kt$CounselorViewModel$private fun startGeneration( promptText: String, rawUserText: String, userMessage: UiChatMessage?, persistUserMessage: Boolean, inputMode: String, localRetrievalOverride: RagRetrievalResult? = null, webGroundingOverride: WebGroundingResult? = null, webStatusMessage: String? = null )</ID>
+    <ID>CyclomaticComplexMethod:DocumentDetailScreen.kt$@Composable fun DocumentDetailScreen(documentId: String, viewModel: DocumentLibraryViewModel, onBack: () -&gt; Unit)</ID>
+    <ID>CyclomaticComplexMethod:DocumentIngestionService.kt$DocumentIngestionService$private suspend fun indexPreparedFile( documentId: String, title: String, sourceFileName: String, importedFile: File, sourcePath: String, format: DocumentFormat, uploadedAtMillis: Long, processingStartedAtMillis: Long, processingRevision: Int, allowPartialExtraction: Boolean, onProgress: suspend (DocumentIngestionProgress) -&gt; Unit, skipDuplicateCheck: Boolean = false ): DocumentIngestionResult</ID>
+    <ID>CyclomaticComplexMethod:DocumentLibraryScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun DocumentLibraryScreen( viewModel: DocumentLibraryViewModel, windowSizeClass: WindowWidthSizeClass, onBack: () -&gt; Unit, onDocumentSelected: (String) -&gt; Unit = {} )</ID>
+    <ID>CyclomaticComplexMethod:DocumentProcessingContract.kt$DocumentProcessingFailure.Companion$fun from(error: Throwable): DocumentProcessingFailure</ID>
+    <ID>CyclomaticComplexMethod:DocxTextExtractor.kt$DocxTextExtractor$private fun parseXml(input: InputStream, documentId: String): List&lt;DocumentBlock&gt;</ID>
+    <ID>CyclomaticComplexMethod:EmbeddingArtifactManager.kt$EmbeddingReindexWorker$override suspend fun doWork(): Result</ID>
+    <ID>CyclomaticComplexMethod:EncryptedStorageService.kt$AndroidEncryptedStorageService$override fun writeEncryptedFile(userId: String, fileName: String, data: InputStream): EncryptedFileRef</ID>
+    <ID>CyclomaticComplexMethod:GemmaRangeResumeWorker.kt$GemmaRangeResumeWorker$override suspend fun doWork(): Result</ID>
+    <ID>CyclomaticComplexMethod:HistoryChartProjector.kt$GapAwareHistoryChartProjector$private fun observedSegments(series: HistoryChartSeries): List&lt;List&lt;HistoryChartPoint&gt;&gt;</ID>
+    <ID>CyclomaticComplexMethod:HistoryDetailScreen.kt$@Composable private fun HistorySeriesChart(series: HistoryChartSeries)</ID>
+    <ID>CyclomaticComplexMethod:HomeSessionFinalizer.kt$HomeSessionFinalizer$suspend fun finalize( snapshot: HomeSessionSnapshot, aggregatedGreen: StressPrediction?, aggregatedIr: StressPrediction?, report: FinalizedSessionReport? = null ): HomeFinalizationResult</ID>
+    <ID>CyclomaticComplexMethod:HomeSessionStatusCard.kt$@Composable fun HomeSessionStatusCard(state: HomeUiState, onEvent: (HomeEvent) -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>CyclomaticComplexMethod:KnowledgeBaseEntities.kt$KnowledgeBaseChunkEntity$override fun equals(other: Any?): Boolean</ID>
+    <ID>CyclomaticComplexMethod:LocalEmbeddingModel.kt$LocalEmbeddingModel$@Synchronized private fun embed(text: String, kind: EmbeddingInputKind): EmbeddingResult</ID>
+    <ID>CyclomaticComplexMethod:LocalRagRetrieverImpl.kt$LocalRagRetrieverImpl$@Suppress("UNUSED_PARAMETER") override suspend fun retrieveRelevantPassages(query: String, maxResults: Int, minRelevanceThreshold: Float): RagRetrievalResult</ID>
+    <ID>CyclomaticComplexMethod:LocalRagRetrieverImpl.kt$LocalRagRetrieverImpl$private suspend fun retrieveFromEncryptedIndex(dao: KnowledgeBaseDao, query: String, maxResults: Int): RagRetrievalResult</ID>
+    <ID>CyclomaticComplexMethod:MainActivity.kt$@Composable private fun StressDetectorApp( viewModel: StressViewModel, unifiedSessionViewModel: com.stressdetector.mobile.ui.viewmodels.UnifiedSessionViewModel, counselorViewModel: CounselorViewModel, profileViewModel: ProfileViewModel, documentLibraryViewModel: DocumentLibraryViewModel, counselorPersonaViewModel: CounselorPersonaViewModel, historyDetailViewModel: HistoryDetailViewModel, permissionStatus: PermissionStatus, windowSizeClass: WindowWidthSizeClass, onGrantPermissions: () -&gt; Unit, onOpenSettings: () -&gt; Unit )</ID>
+    <ID>CyclomaticComplexMethod:ModelManager.kt$ModelManager$suspend fun reconcileDownloadState(): ModelReadiness</ID>
+    <ID>CyclomaticComplexMethod:ModelStorageManager.kt$ModelStorageManager$suspend fun restoreSpeechBundleIfMissing( bundleTarget: File, manifestTarget: File, generation: String? = null, forceRestorePair: Boolean = false, validateCandidatePair: (bundle: File, manifest: File) -&gt; Boolean ): Boolean</ID>
+    <ID>CyclomaticComplexMethod:OnnxTest.kt$OnnxTest$private fun extractScalar(value: Any?): Float?</ID>
+    <ID>CyclomaticComplexMethod:PiperVoiceOutputEngine.kt$TtsArchiveExtractor$fun ensureExtracted(runtimeRoot: File, profile: SpeechTtsProfileManifest, destination: File, archiveFingerprint: String): File</ID>
+    <ID>CyclomaticComplexMethod:PpgRepository.kt$PpgRepositoryImpl$override fun append(batch: PpgBatch, sourceNodeId: String?): PpgBatchAppendResult</ID>
+    <ID>CyclomaticComplexMethod:ProfileScreen.kt$@Composable fun ProfileScreen( viewModel: ProfileViewModel, modifier: Modifier = Modifier, documentLibraryViewModel: DocumentLibraryViewModel? = null, onNavigateToLibrary: () -&gt; Unit = {}, onNavigateToPersona: () -&gt; Unit = {} )</ID>
+    <ID>CyclomaticComplexMethod:ProfileScreen.kt$internal fun DurableArtifactRecovery.profileLabel(): String</ID>
+    <ID>CyclomaticComplexMethod:ProfileScreen.kt$private fun embeddingContextualAction( state: ArtifactState, recovery: DurableArtifactRecovery?, storageConnected: Boolean, onConnect: () -&gt; Unit, onSync: () -&gt; Unit, onDownload: () -&gt; Unit, onShowDetails: () -&gt; Unit ): ArtifactAction?</ID>
+    <ID>CyclomaticComplexMethod:ProfileScreen.kt$private fun gemmaContextualAction( activation: ModelActivationState, downloadState: ModelDownloadState, recovery: DurableArtifactRecovery?, storageConnected: Boolean, onConnect: () -&gt; Unit, onSync: () -&gt; Unit, onDownload: () -&gt; Unit, onRetryDownload: () -&gt; Unit, onCancel: () -&gt; Unit, onRetryRuntime: () -&gt; Unit, onShowDetails: () -&gt; Unit ): ArtifactAction?</ID>
+    <ID>CyclomaticComplexMethod:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$override suspend fun stopRecordingWithTranscript(): AudioOperationResult&lt;AudioRecordingStopResult&gt;</ID>
+    <ID>CyclomaticComplexMethod:RealLiveBiosignalEngine.kt$RealLiveBiosignalEngine$override fun startMonitoring(sessionId: String): LiveMonitorStartResult</ID>
+    <ID>CyclomaticComplexMethod:RealLiveBiosignalEngine.kt$RealLiveBiosignalEngine$private suspend fun processAndPersist(sessionId: String)</ID>
+    <ID>CyclomaticComplexMethod:RealtimeInferenceEngineImpl.kt$RealtimeInferenceEngineImpl$override fun processPpgWindows(windows: Map&lt;PpgType, WindowSnapshot&gt;)</ID>
+    <ID>CyclomaticComplexMethod:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$private fun isPrivateAddress(address: InetAddress): Boolean</ID>
+    <ID>CyclomaticComplexMethod:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$suspend fun download( url: String, destination: File, expectedBytes: Long, label: String, policy: ArtifactDownloadPolicy = ArtifactDownloadPolicy.forPinnedArtifact(url), network: Network? = null, onProgress: suspend (Long) -&gt; Unit = {} ): File</ID>
+    <ID>CyclomaticComplexMethod:RetrievalBenchmark.kt$RetrievalBenchmarkArtifact$fun validate(): RetrievalBenchmarkValidation</ID>
+    <ID>CyclomaticComplexMethod:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime$private suspend fun preflightInternal(candidateManifest: SpeechBundleManifest?): SpeechRuntimeState</ID>
+    <ID>CyclomaticComplexMethod:SignalQualityGate.kt$SignalQualityGate$private fun evaluate( type: com.stressdetector.shared.PpgType, timestampsMillis: LongArray, values: DoubleArray, requiredSamples: Int, expectedRateHz: Double, providedMissingRatio: Double = 0.0 ): SignalQualitySummary</ID>
+    <ID>CyclomaticComplexMethod:SpeechBundleDownloadManager.kt$SpeechBundleDownloadManager$private suspend fun reconcileLocked()</ID>
+    <ID>CyclomaticComplexMethod:SpeechBundleDownloadManager.kt$SpeechBundleDownloadManager$suspend fun enqueue(): Boolean</ID>
+    <ID>CyclomaticComplexMethod:SpeechBundleDownloadManager.kt$SpeechBundleDownloadStateStore$private fun read(): SpeechBundleDownloadState</ID>
+    <ID>CyclomaticComplexMethod:SpeechBundleDownloadManager.kt$SpeechBundleDownloadWorker$override suspend fun doWork(): Result</ID>
+    <ID>CyclomaticComplexMethod:SpeechModelBundleManager.kt$SpeechModelBundleManager$private fun validateBundle(file: File): SpeechBundleManifest</ID>
+    <ID>CyclomaticComplexMethod:StressViewModel.kt$StressViewModel$private fun evaluateCoreChannel( channel: PpgType, fullSession: WindowSnapshot, transportMissingSequenceCount: Long ): CoreChannelEvaluation</ID>
+    <ID>CyclomaticComplexMethod:StressViewModel.kt$StressViewModel$private fun requestFinalization(sessionId: String?, force: Boolean = false, completionReason: String = "session_finalized")</ID>
+    <ID>CyclomaticComplexMethod:TimestampAwarePpgResampler.kt$TimestampAwarePpgResampler$fun resample(timestampsMillis: LongArray, values: DoubleArray, targetRateHz: Int, maxGapMillis: Long = 500L): TimestampResampledPpg?</ID>
+    <ID>CyclomaticComplexMethod:UnifiedSessionEngine.kt$UnifiedSessionEngine$private suspend fun stopSessionInternal()</ID>
+    <ID>CyclomaticComplexMethod:UnifiedSessionViewModel.kt$UnifiedSessionViewModel$fun deleteAllSessions()</ID>
+    <ID>CyclomaticComplexMethod:UnifiedSessionViewModel.kt$UnifiedSessionViewModel$fun deleteSession(sessionId: String?)</ID>
+    <ID>CyclomaticComplexMethod:WearBatchListenerService.kt$WearBatchListenerService$override fun onMessageReceived(messageEvent: MessageEvent)</ID>
+    <ID>CyclomaticComplexMethod:WearConnectionRepository.kt$WearConnectionRepositoryImpl$override fun markRecording(recording: Boolean)</ID>
+    <ID>CyclomaticComplexMethod:WearSessionCoordinator.kt$WearSessionCoordinator$override suspend fun start(sessionId: String, mode: WearSessionMode): Result&lt;Unit&gt;</ID>
+    <ID>CyclomaticComplexMethod:WearablePpgWindowPreprocessor.kt$WearablePpgWindowPreprocessor$private fun prepareInternal(snapshot: WindowSnapshot, targetDurationSeconds: Int?): PpgPreprocessResult</ID>
+    <ID>CyclomaticComplexMethod:WebUrlPolicy.kt$SecureWebUrlPolicy$private fun isPotentiallyPublicHost(host: String): Boolean</ID>
+    <ID>EmptyCatchBlock:AndroidAudioCaptureEngine.kt$AndroidAudioCaptureEngine${ }</ID>
+    <ID>EmptyCatchBlock:EngineApiTest.kt$EngineApiTest${}</ID>
+    <ID>ExceptionRaisedInUnexpectedLocation:VerbatimSessionFinalizer.kt$VerbatimSessionFinalizer$suspend fun finalize( userId: String, sessionId: String, customSessionName: String, recordedAudio: RecordedAudio, transcriptSegments: List&lt;SpeechSegment&gt;, divergenceEvents: List&lt;DivergenceEventEntity&gt;, monitorStatus: String, annotations: List&lt;DomainAnnotation&gt; = emptyList() ): VerbatimSessionArtifacts</ID>
+    <ID>FunctionNaming:AiCounselorScreen.kt$@Composable @OptIn(ExperimentalMaterial3Api::class) private fun ChatSessionCard(session: UiChatSession, selected: Boolean, onClick: () -&gt; Unit, onDelete: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:AiCounselorScreen.kt$@Composable fun AiCounselorScreen( viewModel: CounselorViewModel, windowSizeClass: WindowWidthSizeClass = WindowWidthSizeClass.Compact, onNavigateToLibrary: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:AiCounselorScreen.kt$@Composable private fun ChatMessageBubble( message: UiChatMessage, isSpeaking: Boolean, isVoiceStopping: Boolean, onSpeak: (String, String) -&gt; Unit, onStopSpeaking: () -&gt; Unit, onOpenCitation: (String) -&gt; Unit, onOpenCrisisSupport: (CrisisSupportAction) -&gt; Unit )</ID>
+    <ID>FunctionNaming:AiCounselorScreen.kt$@Composable private fun ChatSessionSidebar( sessions: List&lt;UiChatSession&gt;, activeSessionId: String, onNewChat: () -&gt; Unit, onSelectSession: (String) -&gt; Unit, onDeleteSession: (UiChatSession) -&gt; Unit, onDeleteAll: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:AiCounselorScreen.kt$@Composable private fun CitationEvidence( citation: com.stressdetector.mobile.domain.engine.KnowledgeCitation, webCitationNumber: Int, onOpenCitation: (String) -&gt; Unit )</ID>
+    <ID>FunctionNaming:AiCounselorScreen.kt$@Composable private fun CrisisPersistenceRetryCard(message: String, onRetry: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:AiCounselorScreen.kt$@Composable private fun ModelMissingCard(downloadState: ModelDownloadState)</ID>
+    <ID>FunctionNaming:AiCounselorScreen.kt$@Composable private fun RuntimeErrorCard( message: String, technicalMessage: String?, showTechnicalDetails: Boolean, onToggleTechnicalDetails: () -&gt; Unit, onRetry: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:CounselorPersonaScreen.kt$@Composable fun CounselorPersonaScreen(viewModel: CounselorPersonaViewModel, onBack: () -&gt; Unit, onConnectStorage: () -&gt; Unit = {})</ID>
+    <ID>FunctionNaming:DocumentDetailScreen.kt$@Composable fun DocumentDetailScreen(documentId: String, viewModel: DocumentLibraryViewModel, onBack: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:DocumentDetailScreen.kt$@Composable private fun DetailLine(label: String, value: String, isError: Boolean = false)</ID>
+    <ID>FunctionNaming:DocumentDetailScreen.kt$@Composable private fun DetailSection(title: String, content: @Composable () -&gt; Unit)</ID>
+    <ID>FunctionNaming:DocumentLibraryScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun DocumentLibraryScreen( viewModel: DocumentLibraryViewModel, windowSizeClass: WindowWidthSizeClass, onBack: () -&gt; Unit, onDocumentSelected: (String) -&gt; Unit = {} )</ID>
+    <ID>FunctionNaming:HistoryDetailScreen.kt$@Composable fun HistoryDetailScreen(sessionId: String, viewModel: HistoryDetailViewModel, onBack: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:HistoryDetailScreen.kt$@Composable private fun HistoryChartSection(artifact: HistoryChartArtifact?)</ID>
+    <ID>FunctionNaming:HistoryDetailScreen.kt$@Composable private fun HistoryDetailContent(state: HistoryDetailUiState, onRetry: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:HistoryDetailScreen.kt$@Composable private fun HistorySeriesChart(series: HistoryChartSeries)</ID>
+    <ID>FunctionNaming:HistoryDetailScreen.kt$@Composable private fun HistoryStatusChip(status: HistoryResultStatus)</ID>
+    <ID>FunctionNaming:HistoryDetailScreen.kt$@Composable private fun ReportSummaryCard(report: StressSessionReportEntity)</ID>
+    <ID>FunctionNaming:HistoryDetailScreen.kt$@Composable private fun SessionSummaryCard(session: StressSessionEntity, report: StressSessionReportEntity?)</ID>
+    <ID>FunctionNaming:HistoryDetailScreen.kt$@Composable private fun WindowEvaluationCard(evaluation: StressWindowEvaluationEntity)</ID>
+    <ID>FunctionNaming:HistoryDetailScreen.kt$@Composable private fun WindowEvaluationSection(windows: List&lt;StressWindowEvaluationEntity&gt;)</ID>
+    <ID>FunctionNaming:HomeSessionStatusCard.kt$@Composable fun HomeSessionStatusCard(state: HomeUiState, onEvent: (HomeEvent) -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:HomeSessionStatusCard.kt$@Composable private fun PredictionSummary(state: HomePredictionUiState)</ID>
+    <ID>FunctionNaming:HomeSessionStatusCard.kt$@Composable private fun ReadyPredictionMetrics(prediction: StressPrediction, state: HomePredictionUiState)</ID>
+    <ID>FunctionNaming:HomeSessionStatusCard.kt$@Composable private fun ReadyPredictionTitle(prediction: StressPrediction, accent: Color)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun AppBottomNav(selectedDestination: Screen, onSelect: (Screen) -&gt; Unit)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun AppNavigationRail(selectedDestination: Screen, onSelect: (Screen) -&gt; Unit)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun CalendarCard(state: MobileUiState, viewModel: StressViewModel)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun CalendarDayCell(day: CalendarDayItem, selected: Boolean, onClick: () -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun HistoryRow(session: StressSessionEntity, onClick: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun PermissionGateCard(status: PermissionStatus, onGrantPermissions: () -&gt; Unit, onOpenSettings: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:MainActivity.kt$@Composable private fun StressDetectorApp( viewModel: StressViewModel, unifiedSessionViewModel: com.stressdetector.mobile.ui.viewmodels.UnifiedSessionViewModel, counselorViewModel: CounselorViewModel, profileViewModel: ProfileViewModel, documentLibraryViewModel: DocumentLibraryViewModel, counselorPersonaViewModel: CounselorPersonaViewModel, historyDetailViewModel: HistoryDetailViewModel, permissionStatus: PermissionStatus, windowSizeClass: WindowWidthSizeClass, onGrantPermissions: () -&gt; Unit, onOpenSettings: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:MonitoringScreen.kt$@Composable fun DualPpgChartSection( green: PpgChartData, ir: PpgChartData, greenSamples: Int, irSamples: Int, red: PpgChartData = PpgChartData.empty("Menunggu data diagnostik"), redSamples: Int = 0, twoColumnLayout: Boolean = false, modifier: Modifier = Modifier )</ID>
+    <ID>FunctionNaming:MonitoringScreen.kt$@Composable fun MonitoringScreen( progress: Float, elapsedMillis: Long, greenSamples: Int, irSamples: Int, redDiagnosticSamples: Int = 0, greenChart: PpgChartData = PpgChartData.empty(), irChart: PpgChartData = PpgChartData.empty(), redChart: PpgChartData = PpgChartData.empty("Menunggu data diagnostik"), connectionStatus: WatchConnectionStatus = WatchConnectionStatus.RECORDING, connectionPhase: String = "STREAMING", phoneMessage: String = "Menunggu status phone", terminalReceiptReceived: Boolean = false, transportComplete: Boolean = false, transportIncomplete: Boolean = false, transportFailureReason: String? = null, observedDataElapsedMillis: Long = 0L, appliedBatchCount: Int = 0, duplicateBatchCount: Int = 0, outOfOrderBatchCount: Int = 0, missingSequenceCount: Long = 0L, highestGreenSequence: Long = 0L, highestIrSequence: Long = 0L, highestRedDiagnosticSequence: Long = 0L, modelStatus: String = "Warm-up / menunggu core", onStop: () -&gt; Unit )</ID>
+    <ID>FunctionNaming:MonitoringScreen.kt$@Composable private fun InstructionCard()</ID>
+    <ID>FunctionNaming:MonitoringScreen.kt$@Composable private fun LivePpgChartCard(title: String, color: Color, data: PpgChartData, samples: Int, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:MonitoringScreen.kt$@Composable private fun MonitoringHeader(progress: Float, elapsedMillis: Long, connectionPhase: String)</ID>
+    <ID>FunctionNaming:MonitoringScreen.kt$@Composable private fun StopButton(onStop: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:NavGraph.kt$@Composable fun AppNavGraph( navController: NavHostController, innerPadding: PaddingValues, homeScreen: @Composable () -&gt; Unit, historyScreen: @Composable () -&gt; Unit, historyDetailScreen: @Composable (String) -&gt; Unit, verbatimScreen: @Composable () -&gt; Unit, counselorScreen: @Composable () -&gt; Unit, profileScreen: @Composable () -&gt; Unit, counselorPersonaScreen: @Composable () -&gt; Unit, documentLibraryScreen: @Composable () -&gt; Unit, documentDetailScreen: @Composable (String) -&gt; Unit )</ID>
+    <ID>FunctionNaming:ProfileScreen.kt$@Composable fun ProfileScreen( viewModel: ProfileViewModel, modifier: Modifier = Modifier, documentLibraryViewModel: DocumentLibraryViewModel? = null, onNavigateToLibrary: () -&gt; Unit = {}, onNavigateToPersona: () -&gt; Unit = {} )</ID>
+    <ID>FunctionNaming:ProfileScreen.kt$@Composable private fun ArtifactSettingsRow( title: String, status: String, supporting: String? = null, action: ArtifactAction?, progress: Float? = null, progressLabel: String? = null )</ID>
+    <ID>FunctionNaming:ProfileScreen.kt$@Composable private fun DestructiveActionButton(label: String, onClick: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:ProfileScreen.kt$@Composable private fun ProfileStatusRow(label: String, status: String, emphasized: Boolean)</ID>
+    <ID>FunctionNaming:ProfileScreen.kt$@Composable private fun SettingToggleRow(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -&gt; Unit)</ID>
+    <ID>FunctionNaming:ProfileScreen.kt$@Composable private fun SettingsSection(title: String, subtitle: String? = null, content: @Composable () -&gt; Unit)</ID>
+    <ID>FunctionNaming:ProfileScreen.kt$@Composable private fun TechnicalLine(label: String, value: String, isError: Boolean = false)</ID>
+    <ID>FunctionNaming:ProfileScreen.kt$@Composable private fun TechnicalStorageDetails( report: DurableSyncReport?, provider: String?, treeUri: String?, providerRoot: String?, resolvedDocument: String?, modelPath: String, readPermission: Boolean, writePermission: Boolean, availableBytes: Long?, lastAuditAtMillis: Long?, legacyLocations: List&lt;String&gt;, storageError: String?, modelMetadata: String?, runtimeTechnicalMessage: String? )</ID>
+    <ID>FunctionNaming:SharedComponents.kt$@Composable fun MetricRow(label: String, value: String, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:SharedComponents.kt$@Composable fun PremiumCard( modifier: Modifier = Modifier, borderColor: Color = Color.Transparent, backgroundColor: Color = MaterialTheme.colorScheme.surface, content: @Composable () -&gt; Unit )</ID>
+    <ID>FunctionNaming:SharedComponents.kt$@Composable fun StatusDot(color: Color, size: Dp = 8.dp)</ID>
+    <ID>FunctionNaming:TransportDiagnosticsCard.kt$@Composable fun TransportDiagnosticsCard(state: TransportUiState, modifier: Modifier = Modifier)</ID>
+    <ID>FunctionNaming:WebSearchComponents.kt$@Composable fun WebSearchModeDialog(mode: WebSearchMode, onModeSelected: (WebSearchMode) -&gt; Unit, onDismiss: () -&gt; Unit)</ID>
+    <ID>FunctionNaming:WebSearchComponents.kt$@Composable private fun WebSearchModeOption(title: String, description: String, selected: Boolean, onClick: () -&gt; Unit)</ID>
+    <ID>FunctionOnlyReturningConstant:DurableModelStoragePolicy.kt$DurableModelStoragePolicy$fun requiresFolderReselectionAfterUninstall(): Boolean</ID>
+    <ID>ImplicitDefaultLocale:SignalQualityGate.kt$SignalQualityGate$String.format("%.2f", flatlineRatio)</ID>
+    <ID>ImplicitDefaultLocale:SignalQualityGate.kt$SignalQualityGate$String.format("%.2f", qualityScore)</ID>
+    <ID>ImplicitDefaultLocale:SignalQualityGate.kt$SignalQualityGate$String.format("%.3f", artifactRatio)</ID>
+    <ID>ImplicitDefaultLocale:SignalQualityGate.kt$SignalQualityGate$String.format("%.3f", clippingRatio)</ID>
+    <ID>ImplicitDefaultLocale:SignalQualityGate.kt$SignalQualityGate$String.format("%.3f", missingRatio)</ID>
+    <ID>ImplicitDefaultLocale:SignalQualityGate.kt$SignalQualityGate$String.format("%.3f", samplingJitter)</ID>
+    <ID>InstanceOfCheckForException:DocumentParser.kt$DocumentParser$error is DocumentParseException</ID>
+    <ID>InstanceOfCheckForException:WearSessionCoordinator.kt$WearSessionCoordinator$error is PpgSessionBusyException</ID>
+    <ID>InvalidPackageDeclaration:PpgFeatureExtractorTest.kt$package com.stressdetector.signal</ID>
+    <ID>LargeClass:CounselorViewModel.kt$CounselorViewModel : ViewModel</ID>
+    <ID>LargeClass:ModelManager.kt$ModelManager</ID>
+    <ID>LargeClass:ModelStorageManager.kt$ModelStorageManager</ID>
+    <ID>LargeClass:ProfileViewModel.kt$ProfileViewModel : ViewModel</ID>
+    <ID>LargeClass:StressViewModel.kt$StressViewModel : AndroidViewModel</ID>
+    <ID>LargeClass:UnifiedSessionEngine.kt$UnifiedSessionEngine</ID>
+    <ID>LargeClass:UnifiedSessionViewModel.kt$UnifiedSessionViewModel : ViewModel</ID>
+    <ID>LongMethod:AcousticAnalysis.kt$AcousticFrameAnalyzer$fun analyze(frame: AcousticAudioFrame): AcousticAnalysisSnapshot</ID>
+    <ID>LongMethod:AiCounselorScreen.kt$@Composable fun AiCounselorScreen( viewModel: CounselorViewModel, windowSizeClass: WindowWidthSizeClass = WindowWidthSizeClass.Compact, onNavigateToLibrary: () -&gt; Unit )</ID>
+    <ID>LongMethod:AiCounselorScreen.kt$@Composable private fun ChatMessageBubble( message: UiChatMessage, isSpeaking: Boolean, isVoiceStopping: Boolean, onSpeak: (String, String) -&gt; Unit, onStopSpeaking: () -&gt; Unit, onOpenCitation: (String) -&gt; Unit, onOpenCrisisSupport: (CrisisSupportAction) -&gt; Unit )</ID>
+    <ID>LongMethod:AudioRecordVoiceInputEngine.kt$AudioRecordVoiceInputEngine$private suspend fun captureTurn(language: VoiceLanguage)</ID>
+    <ID>LongMethod:ChatExportUtil.kt$ChatExportUtil$fun exportChatToPdf(context: Context, messages: List&lt;ChatMessageEntity&gt;, sessionTitle: String): Result&lt;String&gt;</ID>
+    <ID>LongMethod:CounselorPersonaScreen.kt$@Composable fun CounselorPersonaScreen(viewModel: CounselorPersonaViewModel, onBack: () -&gt; Unit, onConnectStorage: () -&gt; Unit = {})</ID>
+    <ID>LongMethod:CounselorViewModel.kt$CounselorViewModel$private fun beginWebFlow(request: PendingWebRequest)</ID>
+    <ID>LongMethod:CounselorViewModel.kt$CounselorViewModel$private fun startGeneration( promptText: String, rawUserText: String, userMessage: UiChatMessage?, persistUserMessage: Boolean, inputMode: String, localRetrievalOverride: RagRetrievalResult? = null, webGroundingOverride: WebGroundingResult? = null, webStatusMessage: String? = null )</ID>
+    <ID>LongMethod:CounselorViewModel.kt$CounselorViewModel$private suspend fun dispatchMessage(rawText: String, inputMode: String)</ID>
+    <ID>LongMethod:DocumentDetailScreen.kt$@Composable fun DocumentDetailScreen(documentId: String, viewModel: DocumentLibraryViewModel, onBack: () -&gt; Unit)</ID>
+    <ID>LongMethod:DocumentIngestionService.kt$DocumentIngestionService$private suspend fun indexPreparedFile( documentId: String, title: String, sourceFileName: String, importedFile: File, sourcePath: String, format: DocumentFormat, uploadedAtMillis: Long, processingStartedAtMillis: Long, processingRevision: Int, allowPartialExtraction: Boolean, onProgress: suspend (DocumentIngestionProgress) -&gt; Unit, skipDuplicateCheck: Boolean = false ): DocumentIngestionResult</ID>
+    <ID>LongMethod:DocumentIngestionService.kt$DocumentIngestionService$suspend fun reindex( documentId: String, allowPartialExtraction: Boolean = false, onProgress: suspend (DocumentIngestionProgress) -&gt; Unit = {} ): DocumentIngestionResult</ID>
+    <ID>LongMethod:DocumentLibraryScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun DocumentLibraryScreen( viewModel: DocumentLibraryViewModel, windowSizeClass: WindowWidthSizeClass, onBack: () -&gt; Unit, onDocumentSelected: (String) -&gt; Unit = {} )</ID>
+    <ID>LongMethod:DocumentProcessingContract.kt$DocumentProcessingFailure.Companion$fun from(error: Throwable): DocumentProcessingFailure</ID>
+    <ID>LongMethod:GemmaRangeResumeWorker.kt$GemmaRangeResumeWorker$override suspend fun doWork(): Result</ID>
+    <ID>LongMethod:HomePpgProcessingCoordinator.kt$HomePpgProcessingCoordinator$private fun evaluatePrepared( channel: PpgType, rawSampleCount: Int, timestampsMillis: LongArray, prepared: PreparedPpgWindow, fingerprint: String, chartMode: PpgChartMode ): PpgProcessingSnapshot</ID>
+    <ID>LongMethod:HomeSessionStatusCard.kt$@Composable fun HomeSessionStatusCard(state: HomeUiState, onEvent: (HomeEvent) -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>LongMethod:HomeSessionStatusCard.kt$@Composable private fun PredictionSummary(state: HomePredictionUiState)</ID>
+    <ID>LongMethod:KnowledgeBaseIndexPublisher.kt$KnowledgeBaseIndexPublisher$suspend fun publishSnapshot(): KnowledgeBasePublicationResult</ID>
+    <ID>LongMethod:LiteRTLlmEngine.kt$LiteRTLlmEngine$private suspend fun preflightInternal(): LlmRuntimeReadiness</ID>
+    <ID>LongMethod:LocalRagRetrieverImpl.kt$LocalRagRetrieverImpl$@Suppress("UNUSED_PARAMETER") override suspend fun retrieveRelevantPassages(query: String, maxResults: Int, minRelevanceThreshold: Float): RagRetrievalResult</ID>
+    <ID>LongMethod:LocalRagRetrieverImpl.kt$LocalRagRetrieverImpl$private suspend fun retrieveFromEncryptedIndex(dao: KnowledgeBaseDao, query: String, maxResults: Int): RagRetrievalResult</ID>
+    <ID>LongMethod:MainActivity.kt$@Composable private fun StressDetectorApp( viewModel: StressViewModel, unifiedSessionViewModel: com.stressdetector.mobile.ui.viewmodels.UnifiedSessionViewModel, counselorViewModel: CounselorViewModel, profileViewModel: ProfileViewModel, documentLibraryViewModel: DocumentLibraryViewModel, counselorPersonaViewModel: CounselorPersonaViewModel, historyDetailViewModel: HistoryDetailViewModel, permissionStatus: PermissionStatus, windowSizeClass: WindowWidthSizeClass, onGrantPermissions: () -&gt; Unit, onOpenSettings: () -&gt; Unit )</ID>
+    <ID>LongMethod:ModelManager.kt$ModelManager$suspend fun reconcileDownloadState(): ModelReadiness</ID>
+    <ID>LongMethod:ModelStorageManager.kt$ModelStorageManager$suspend fun publishGeneration( slot: ModelStorageSlot, generation: String, version: String, revision: String?, payloads: List&lt;SafGenerationPayload&gt; ): Result&lt;Unit&gt;</ID>
+    <ID>LongMethod:ModelStorageManager.kt$ModelStorageManager$suspend fun restoreSpeechBundleIfMissing( bundleTarget: File, manifestTarget: File, generation: String? = null, forceRestorePair: Boolean = false, validateCandidatePair: (bundle: File, manifest: File) -&gt; Boolean ): Boolean</ID>
+    <ID>LongMethod:MonitoringScreen.kt$@Composable private fun LivePpgChartCard(title: String, color: Color, data: PpgChartData, samples: Int, modifier: Modifier = Modifier)</ID>
+    <ID>LongMethod:PiperVoiceOutputEngine.kt$PiperVoiceOutputEngine$override suspend fun speak(messageId: String, text: String, language: VoiceLanguage): Result&lt;VoiceBackend&gt;</ID>
+    <ID>LongMethod:PpgRepository.kt$PpgRepositoryImpl$override fun append(batch: PpgBatch, sourceNodeId: String?): PpgBatchAppendResult</ID>
+    <ID>LongMethod:PpgRepository.kt$PpgRepositoryImpl$private fun applyTerminalReceiptLocked(receipt: PpgTerminalReceipt): PpgTerminalReceiptResult</ID>
+    <ID>LongMethod:ProfileScreen.kt$@Composable fun ProfileScreen( viewModel: ProfileViewModel, modifier: Modifier = Modifier, documentLibraryViewModel: DocumentLibraryViewModel? = null, onNavigateToLibrary: () -&gt; Unit = {}, onNavigateToPersona: () -&gt; Unit = {} )</ID>
+    <ID>LongMethod:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$override suspend fun stopRecordingWithTranscript(): AudioOperationResult&lt;AudioRecordingStopResult&gt;</ID>
+    <ID>LongMethod:RealLiveBiosignalEngine.kt$RealLiveBiosignalEngine$override fun startMonitoring(sessionId: String): LiveMonitorStartResult</ID>
+    <ID>LongMethod:RealtimeInferenceEngineImpl.kt$RealtimeInferenceEngineImpl$override fun processPpgWindows(windows: Map&lt;PpgType, WindowSnapshot&gt;)</ID>
+    <ID>LongMethod:RealtimeInferenceEngineImpl.kt$RealtimeInferenceEngineImpl$override fun startMonitoringResult(sessionId: String): LiveMonitorStartResult</ID>
+    <ID>LongMethod:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$suspend fun download( url: String, destination: File, expectedBytes: Long, label: String, policy: ArtifactDownloadPolicy = ArtifactDownloadPolicy.forPinnedArtifact(url), network: Network? = null, onProgress: suspend (Long) -&gt; Unit = {} ): File</ID>
+    <ID>LongMethod:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime$private suspend fun preflightInternal(candidateManifest: SpeechBundleManifest?): SpeechRuntimeState</ID>
+    <ID>LongMethod:SignalQualityGate.kt$SignalQualityGate$private fun evaluate( type: com.stressdetector.shared.PpgType, timestampsMillis: LongArray, values: DoubleArray, requiredSamples: Int, expectedRateHz: Double, providedMissingRatio: Double = 0.0 ): SignalQualitySummary</ID>
+    <ID>LongMethod:SpeechBundleArchiveAssembler.kt$SpeechBundleArchiveAssembler$fun assemble( descriptor: SpeechBundleDescriptor, downloadedFiles: Map&lt;String, File&gt;, destination: File, onProgress: (SpeechAssemblyProgress) -&gt; Unit = {} ): SpeechBundleManifest</ID>
+    <ID>LongMethod:SpeechBundleCatalogTest.kt$SpeechBundleCatalogTest$@Test fun canonicalCatalogIsPinnedAndComplete()</ID>
+    <ID>LongMethod:SpeechBundleDownloadManager.kt$SpeechBundleDownloadManager$private suspend fun reconcileLocked()</ID>
+    <ID>LongMethod:SpeechBundleDownloadManager.kt$SpeechBundleDownloadManager$suspend fun enqueue(): Boolean</ID>
+    <ID>LongMethod:SpeechBundleDownloadManager.kt$SpeechBundleDownloadWorker$override suspend fun doWork(): Result</ID>
+    <ID>LongMethod:SpeechModelBundleManager.kt$SpeechModelBundleManager$private fun validateBundle(file: File): SpeechBundleManifest</ID>
+    <ID>LongMethod:StressAggregator.kt$StressAggregator$fun aggregate(primarySensor: PpgType, attemptedWindowCount: Int = -1): WindowAggregationResult</ID>
+    <ID>LongMethod:StressViewModel.kt$StressViewModel$fun startWatchTracking()</ID>
+    <ID>LongMethod:StressViewModel.kt$StressViewModel$private fun evaluateCoreChannel( channel: PpgType, fullSession: WindowSnapshot, transportMissingSequenceCount: Long ): CoreChannelEvaluation</ID>
+    <ID>LongMethod:StressViewModel.kt$StressViewModel$private fun requestFinalization(sessionId: String?, force: Boolean = false, completionReason: String = "session_finalized")</ID>
+    <ID>LongMethod:TransportDiagnosticsCard.kt$@Composable fun TransportDiagnosticsCard(state: TransportUiState, modifier: Modifier = Modifier)</ID>
+    <ID>LongMethod:UnifiedSessionEngine.kt$UnifiedSessionEngine$private suspend fun stopSessionInternal()</ID>
+    <ID>LongMethod:UnifiedSessionViewModel.kt$UnifiedSessionViewModel$fun selectSession(sessionId: String)</ID>
+    <ID>LongMethod:UnifiedSessionViewModel.kt$UnifiedSessionViewModel$fun startSession(sessionName: String = "Session")</ID>
+    <ID>LongMethod:VerbatimSessionFinalizer.kt$VerbatimSessionFinalizer$suspend fun finalize( userId: String, sessionId: String, customSessionName: String, recordedAudio: RecordedAudio, transcriptSegments: List&lt;SpeechSegment&gt;, divergenceEvents: List&lt;DivergenceEventEntity&gt;, monitorStatus: String, annotations: List&lt;DomainAnnotation&gt; = emptyList() ): VerbatimSessionArtifacts</ID>
+    <ID>LongMethod:WearBatchListenerService.kt$WearBatchListenerService$override fun onMessageReceived(messageEvent: MessageEvent)</ID>
+    <ID>LongMethod:WearConnectionRepository.kt$WearConnectionRepositoryImpl$private suspend fun refreshAndPingLocked(context: Context): WearConnectionState</ID>
+    <ID>LongMethod:WearSessionCoordinator.kt$WearSessionCoordinator$override suspend fun start(sessionId: String, mode: WearSessionMode): Result&lt;Unit&gt;</ID>
+    <ID>LongMethod:WearablePpgWindowPreprocessor.kt$WearablePpgWindowPreprocessor$private fun prepareInternal(snapshot: WindowSnapshot, targetDurationSeconds: Int?): PpgPreprocessResult</ID>
+    <ID>LongParameterList:AiCounselorScreen.kt$( message: UiChatMessage, isSpeaking: Boolean, isVoiceStopping: Boolean, onSpeak: (String, String) -&gt; Unit, onStopSpeaking: () -&gt; Unit, onOpenCitation: (String) -&gt; Unit, onOpenCrisisSupport: (CrisisSupportAction) -&gt; Unit )</ID>
+    <ID>LongParameterList:AiCounselorScreen.kt$( sessions: List&lt;UiChatSession&gt;, activeSessionId: String, onNewChat: () -&gt; Unit, onSelectSession: (String) -&gt; Unit, onDeleteSession: (UiChatSession) -&gt; Unit, onDeleteAll: () -&gt; Unit )</ID>
+    <ID>LongParameterList:ClinicalDaos.kt$DocumentDao$( documentId: String, isProcessed: Boolean, processingState: String, processingError: String?, processingErrorCode: String?, embeddingStatus: String, processingUpdatedAtMillis: Long )</ID>
+    <ID>LongParameterList:ConsentManager.kt$ConsentManager$( userId: String, sessionId: String, scope: ConsentScope, isMultiParty: Boolean, appVersion: String, policyVersion: String )</ID>
+    <ID>LongParameterList:CounselorContextReceipt.kt$CounselorContextReceiptFactory$( retrieval: RagRetrievalResult, policyBinding: RetrievalPolicyBinding, personaVersion: String?, stressHistorySessionIds: Collection&lt;String&gt;, excludedHistoryReasons: Collection&lt;String&gt;, llmModelVersion: String? )</ID>
+    <ID>LongParameterList:CounselorViewModel.kt$CounselorViewModel$( private val llmEngine: OnDeviceLlmEngine, private val ragRetriever: RagRetriever, private val chatDao: ChatDao, private val modelManager: ModelManager, private val safetyInterceptor: SafetyInterceptor = ClinicalSafetyInterceptor(), private val crisisResponseTemplateProvider: CrisisResponseTemplateProvider = IndonesianCrisisResponseTemplateProvider, private val promptAssetProvider: PromptAssetProvider = PromptAssetProvider.Static(DEFAULT_PROMPT), private val personaRepository: CounselorPersonaRepository = CounselorPersonaRepository.Empty, private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO, private val voiceInputEngine: VoiceInputEngine? = null, private val voiceOutputEngine: VoiceOutputEngine? = null, private val voiceSettingsRepository: VoiceSettingsRepository? = null, private val webGroundingGateway: WebGroundingGateway = WebGroundingGateway.Unavailable, private val stressHistoryContextProvider: StressHistoryContextProvider = StressHistoryContextProvider.Unavailable, private val aiConsentGranted: suspend () -&gt; Boolean = { true }, private val webConsentStore: WebConsentStore = WebConsentStore.Unavailable, private val outputGuard: CounselorOutputGuard = CounselorOutputGuard.Default, private val sessionSelectionStore: CounselorSessionSelectionStore = CounselorSessionSelectionStore.None, private val crisisTurnRepository: CrisisTurnRepository = RoomCrisisTurnRepository(chatDao), private val retrievalPolicyBinding: RetrievalPolicyBinding = RetrievalPolicyBinding.Uncalibrated( reason = "benchmark_artifact_missing" ) )</ID>
+    <ID>LongParameterList:CounselorViewModel.kt$CounselorViewModel$( promptText: String, rawUserText: String, userMessage: UiChatMessage?, persistUserMessage: Boolean, inputMode: String, localRetrievalOverride: RagRetrievalResult? = null, webGroundingOverride: WebGroundingResult? = null, webStatusMessage: String? = null )</ID>
+    <ID>LongParameterList:DocumentBlock.kt$DocumentBlockAccumulator$( blockType: BlockType, text: String, pageNumber: Int? = null, sectionPath: List&lt;String&gt; = emptyList(), paragraphIndex: Int? = null, tableRowIndex: Int? = null, extractionStatus: ExtractionStatus = ExtractionStatus.COMPLETE )</ID>
+    <ID>LongParameterList:DocumentIngestionService.kt$DocumentIngestionService$( context: Context, private val documentDao: DocumentDao, private val parser: DocumentParser, private val sourceStore: EncryptedDocumentSourceStore, private val legacyMigrator: LegacyKnowledgeBaseMigrator, private val knowledgeBasePublisher: KnowledgeBaseIndexPublisher, private val chunker: TextChunker, private val embedder: LocalEmbeddingModel, private val chunkingConfig: TextChunker.Config = TextChunker.Config(), private val nowMillis: () -&gt; Long = System::currentTimeMillis )</ID>
+    <ID>LongParameterList:DocumentIngestionService.kt$DocumentIngestionService$( documentId: String, title: String, sourceFileName: String, importedFile: File, sourcePath: String, format: DocumentFormat, uploadedAtMillis: Long, processingStartedAtMillis: Long, processingRevision: Int, allowPartialExtraction: Boolean, onProgress: suspend (DocumentIngestionProgress) -&gt; Unit, skipDuplicateCheck: Boolean = false )</ID>
+    <ID>LongParameterList:DocumentIngestionService.kt$DocumentIngestionService$( documentId: String, title: String, sourceFileName: String, sourcePath: String, checksum: String, uploadedAtMillis: Long, processingStartedAtMillis: Long, processingRevision: Int )</ID>
+    <ID>LongParameterList:HomePpgProcessingCoordinator.kt$HomePpgProcessingCoordinator$( channel: PpgType, rawSampleCount: Int, timestampsMillis: LongArray, prepared: PreparedPpgWindow, fingerprint: String, chartMode: PpgChartMode )</ID>
+    <ID>LongParameterList:HybridRetrieval.kt$HybridRetrievalRanker$( query: String, queryVector: FloatArray?, candidates: List&lt;RetrievalCandidate&gt;, semanticLimit: Int = 30, lexicalLimit: Int = 30, resultLimit: Int = 4, maxPerDocument: Int = 3, maxPerPage: Int = 2, lexicalCandidates: List&lt;Pair&lt;RetrievalCandidate, Float&gt;&gt;? = null )</ID>
+    <ID>LongParameterList:IPpgRepository.kt$IPpgRepository$( sessionId: String, sessionNonce: String = "", sourceNodeId: String? = null, peerNodeId: String = "", generation: Long = 0L, mode: WearSessionMode? = null )</ID>
+    <ID>LongParameterList:LocalRagRetrieverTest.kt$LocalRagRetrieverTest$(id: String, documentId: String, index: Int, page: Int, text: String, vector: FloatArray)</ID>
+    <ID>LongParameterList:MainActivity.kt$( viewModel: StressViewModel, unifiedSessionViewModel: com.stressdetector.mobile.ui.viewmodels.UnifiedSessionViewModel, counselorViewModel: CounselorViewModel, profileViewModel: ProfileViewModel, documentLibraryViewModel: DocumentLibraryViewModel, counselorPersonaViewModel: CounselorPersonaViewModel, historyDetailViewModel: HistoryDetailViewModel, permissionStatus: PermissionStatus, windowSizeClass: WindowWidthSizeClass, onGrantPermissions: () -&gt; Unit, onOpenSettings: () -&gt; Unit )</ID>
+    <ID>LongParameterList:ModelManager.kt$ModelManager$( context: Context, private val downloadTransport: ModelDownloadTransport = AndroidDownloadManagerTransport(context), private val downloadStateStore: ModelDownloadStateStore = ModelDownloadStateStore(context), storageOverride: ModelStorage? = null, private val storageSpaceProvider: StorageSpaceProvider = AndroidStorageSpaceProvider(context), private val durableStorage: ModelStorageManager? = null, private val artifactCatalog: LocalArtifactCatalog? = null, private val candidatePreflight: GemmaCandidatePreflight = LiteRtGemmaCandidatePreflight(context), private val networkEvaluator: GemmaNetworkEvaluator = AndroidGemmaNetworkEvaluator(context) )</ID>
+    <ID>LongParameterList:ModelStorageManager.kt$ModelStorageManager$( directory: Uri, slot: ModelStorageSlot, generation: String, version: String, revision: String?, payloads: List&lt;SafGenerationPayload&gt; )</ID>
+    <ID>LongParameterList:ModelStorageManager.kt$ModelStorageManager$( slot: ModelStorageSlot, fileName: String, target: File, expectedSizeBytes: Long, expectedSha256: String, generation: String? = null )</ID>
+    <ID>LongParameterList:ModelStorageManager.kt$SafTreeDocumentPolicy$( authority: String, requestedDocumentId: String, returnedDocumentId: String, mimeType: String, documentFlags: Int, availableBytes: Long?, requiredBytes: Long )</ID>
+    <ID>LongParameterList:MonitoringScreen.kt$( green: PpgChartData, ir: PpgChartData, greenSamples: Int, irSamples: Int, red: PpgChartData = PpgChartData.empty("Menunggu data diagnostik"), redSamples: Int = 0, twoColumnLayout: Boolean = false, modifier: Modifier = Modifier )</ID>
+    <ID>LongParameterList:MonitoringScreen.kt$( points: FloatArray, timestampsMillis: LongArray, color: Color, axisStartMillis: Long?, axisEndMillis: Long?, gapThresholdMillis: Long )</ID>
+    <ID>LongParameterList:MonitoringScreen.kt$( progress: Float, elapsedMillis: Long, greenSamples: Int, irSamples: Int, redDiagnosticSamples: Int = 0, greenChart: PpgChartData = PpgChartData.empty(), irChart: PpgChartData = PpgChartData.empty(), redChart: PpgChartData = PpgChartData.empty("Menunggu data diagnostik"), connectionStatus: WatchConnectionStatus = WatchConnectionStatus.RECORDING, connectionPhase: String = "STREAMING", phoneMessage: String = "Menunggu status phone", terminalReceiptReceived: Boolean = false, transportComplete: Boolean = false, transportIncomplete: Boolean = false, transportFailureReason: String? = null, observedDataElapsedMillis: Long = 0L, appliedBatchCount: Int = 0, duplicateBatchCount: Int = 0, outOfOrderBatchCount: Int = 0, missingSequenceCount: Long = 0L, highestGreenSequence: Long = 0L, highestIrSequence: Long = 0L, highestRedDiagnosticSequence: Long = 0L, modelStatus: String = "Warm-up / menunggu core", onStop: () -&gt; Unit )</ID>
+    <ID>LongParameterList:NavGraph.kt$( navController: NavHostController, innerPadding: PaddingValues, homeScreen: @Composable () -&gt; Unit, historyScreen: @Composable () -&gt; Unit, historyDetailScreen: @Composable (String) -&gt; Unit, verbatimScreen: @Composable () -&gt; Unit, counselorScreen: @Composable () -&gt; Unit, profileScreen: @Composable () -&gt; Unit, counselorPersonaScreen: @Composable () -&gt; Unit, documentLibraryScreen: @Composable () -&gt; Unit, documentDetailScreen: @Composable (String) -&gt; Unit )</ID>
+    <ID>LongParameterList:ProfileScreen.kt$( activation: ModelActivationState, downloadState: ModelDownloadState, recovery: DurableArtifactRecovery?, storageConnected: Boolean, onConnect: () -&gt; Unit, onSync: () -&gt; Unit, onDownload: () -&gt; Unit, onRetryDownload: () -&gt; Unit, onCancel: () -&gt; Unit, onRetryRuntime: () -&gt; Unit, onShowDetails: () -&gt; Unit )</ID>
+    <ID>LongParameterList:ProfileScreen.kt$( recovery: DurableArtifactRecovery?, readiness: SpeechBundleReadiness, downloadState: SpeechBundleDownloadState, storageConnected: Boolean, onConnect: () -&gt; Unit, onSync: () -&gt; Unit, onCancel: () -&gt; Unit, onRetry: () -&gt; Unit, onPrepare: () -&gt; Unit, onShowDetails: () -&gt; Unit )</ID>
+    <ID>LongParameterList:ProfileScreen.kt$( report: DurableSyncReport?, provider: String?, treeUri: String?, providerRoot: String?, resolvedDocument: String?, modelPath: String, readPermission: Boolean, writePermission: Boolean, availableBytes: Long?, lastAuditAtMillis: Long?, legacyLocations: List&lt;String&gt;, storageError: String?, modelMetadata: String?, runtimeTechnicalMessage: String? )</ID>
+    <ID>LongParameterList:ProfileScreen.kt$( state: ArtifactState, recovery: DurableArtifactRecovery?, storageConnected: Boolean, onConnect: () -&gt; Unit, onSync: () -&gt; Unit, onDownload: () -&gt; Unit, onShowDetails: () -&gt; Unit )</ID>
+    <ID>LongParameterList:ProfileScreen.kt$( title: String, status: String, supporting: String? = null, action: ArtifactAction?, progress: Float? = null, progressLabel: String? = null )</ID>
+    <ID>LongParameterList:ProfileViewModel.kt$ProfileViewModel$( private val consentDao: ConsentDao, private val modelManager: com.stressdetector.mobile.ml.llm.ModelManager, private val dataLifecycleService: DataLifecycleService, private val keyManager: KeyManager, private val llmEngine: OnDeviceLlmEngine? = null, private val speechBundleManager: SpeechModelBundleManager, private val speechBundleDownloadManager: SpeechBundleDownloadManager, private val speechRuntime: LocalSpeechRuntime? = null, private val voiceSettingsRepository: VoiceSettingsRepository? = null, private val modelStorageManager: ModelStorageManager, private val durableArtifactCoordinator: DurableArtifactCoordinator, private val stressHistoryContextProvider: StressHistoryContextProvider? = null, private val documentIngestionService: DocumentIngestionService? = null, private val embeddingArtifactManager: EmbeddingArtifactManager )</ID>
+    <ID>LongParameterList:RealtimePpgChartProjector.kt$RealtimePpgChartProjector$( mode: PpgChartMode, indices: List&lt;Int&gt;, elapsedMillis: LongArray, values: FloatArray, interpolatedMask: BooleanArray, acceptedSampleCount: Int, message: String, sourceFingerprint: String, axisStartMillis: Long, axisEndMillis: Long )</ID>
+    <ID>LongParameterList:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$( connection: HttpURLConnection, partial: File, append: Boolean, startingBytes: Long, expectedBytes: Long, label: String, onProgress: suspend (Long) -&gt; Unit )</ID>
+    <ID>LongParameterList:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$( initialUrl: URL, offset: Long, validator: ResumeValidator?, policy: ArtifactDownloadPolicy, network: Network?, label: String )</ID>
+    <ID>LongParameterList:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$( url: String, destination: File, expectedBytes: Long, label: String, policy: ArtifactDownloadPolicy = ArtifactDownloadPolicy.forPinnedArtifact(url), network: Network? = null, onProgress: suspend (Long) -&gt; Unit = {} )</ID>
+    <ID>LongParameterList:SignalQualityGate.kt$SignalQualityGate$( type: com.stressdetector.shared.PpgType, timestampsMillis: LongArray, values: DoubleArray, requiredSamples: Int, expectedRateHz: Double, providedMissingRatio: Double = 0.0 )</ID>
+    <ID>LongParameterList:SpeechBundleArchiveAssembler.kt$SpeechBundleArchiveAssembler$( archive: File, suffix: String, destination: File, component: String, expectedBytes: Long?, onProgress: (SpeechAssemblyProgress) -&gt; Unit )</ID>
+    <ID>LongParameterList:SpeechBundleArchiveAssembler.kt$SpeechBundleArchiveAssembler$( input: java.io.InputStream, output: java.io.OutputStream, maxBytes: Long, component: String, totalBytes: Long, stage: SpeechAssemblyStage, onProgress: (SpeechAssemblyProgress) -&gt; Unit )</ID>
+    <ID>LongParameterList:UnifiedSessionEngine.kt$UnifiedSessionEngine$( private val repository: UnifiedSessionRepository, private val audioEngine: AudioIntelligenceEngine, private val biosignalEngine: LiveBiosignalEngine, private val watchSessionCoordinator: WatchSessionCoordinator, private val consentRepository: ConsentRepository, private val finalizer: VerbatimSessionFinalizer, private val annotationRepository: AnnotationRepository, private val timelineFactory: (String) -&gt; SessionTimeline = { sessionId -&gt; SessionTimeline.start(sessionId) } )</ID>
+    <ID>LongParameterList:UnifiedSessionViewModel.kt$UnifiedSessionViewModel$( context: android.content.Context, private val unifiedSessionEngine: UnifiedSessionEngine, private val audioIntelligenceEngine: AudioIntelligenceEngine, private val liveBiosignalEngine: LiveBiosignalEngine, private val modelManager: com.stressdetector.mobile.ml.llm.ModelManager, private val consentRepository: ConsentRepository, private val artifactService: VerbatimArtifactService, private val sessionRepository: VerbatimSessionRepository, private val playbackCoordinator: VerbatimPlaybackCoordinator, private val annotationRepository: AnnotationRepository )</ID>
+    <ID>LongParameterList:VerbatimSessionFinalizer.kt$VerbatimSessionFinalizer$( userId: String, sessionId: String, customSessionName: String, recordedAudio: RecordedAudio, transcriptSegments: List&lt;SpeechSegment&gt;, divergenceEvents: List&lt;DivergenceEventEntity&gt;, monitorStatus: String, annotations: List&lt;DomainAnnotation&gt; = emptyList() )</ID>
+    <ID>LongParameterList:VerifiedArtifactDownloadManager.kt$VerifiedArtifactDownloadManager$( artifact: CatalogArtifactEntry, file: CatalogArtifactFile, destination: File, onProgress: suspend (Long) -&gt; Unit = {}, onVerificationProgress: suspend (ArtifactVerificationProgress) -&gt; Unit = {}, network: Network? = null )</ID>
+    <ID>LongParameterList:WearCommandSender.kt$WearCommandSender$( watchNodeId: String, sessionId: String, mode: WearSessionMode, sessionNonce: String = "", phonePeerNodeId: String, generation: Long )</ID>
+    <ID>LongParameterList:WearCommandSender.kt$WearCommandSender$( watchNodeId: String, sessionId: String?, sessionNonce: String = "", completionExpected: Boolean = false, phonePeerNodeId: String = "", generation: Long = 0L )</ID>
+    <ID>LongParameterList:WearSessionCoordinator.kt$WearCommandGateway$( watchNodeId: String, sessionId: String, mode: WearSessionMode, sessionNonce: String, phonePeerNodeId: String, generation: Long )</ID>
+    <ID>LongParameterList:WearSessionCoordinator.kt$WearCommandGateway$( watchNodeId: String, sessionId: String?, sessionNonce: String, completionExpected: Boolean, phonePeerNodeId: String, generation: Long )</ID>
+    <ID>LoopWithTooManyJumpStatements:AudioRecordVoiceInputEngine.kt$AudioRecordVoiceInputEngine$while</ID>
+    <ID>LoopWithTooManyJumpStatements:DocumentParser.kt$DocumentParser$while</ID>
+    <ID>LoopWithTooManyJumpStatements:EmbeddingArtifactManager.kt$EmbeddingReindexWorker$while</ID>
+    <ID>LoopWithTooManyJumpStatements:EncryptedDocumentSourceStore.kt$AndroidEncryptedDocumentSourceStore$while</ID>
+    <ID>LoopWithTooManyJumpStatements:HistoryChartArtifactStore.kt$HistoryChartArtifactCodec$for</ID>
+    <ID>LoopWithTooManyJumpStatements:HybridRetrieval.kt$HybridRetrievalRanker$while</ID>
+    <ID>LoopWithTooManyJumpStatements:LocalRagRetrieverImpl.kt$LocalRagRetrieverImpl$while</ID>
+    <ID>LoopWithTooManyJumpStatements:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$while</ID>
+    <ID>LoopWithTooManyJumpStatements:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$while</ID>
+    <ID>LoopWithTooManyJumpStatements:SpeechBundleArchiveAssembler.kt$SpeechBundleArchiveAssembler$while</ID>
+    <ID>MagicNumber:AcousticAnalysis.kt$AcousticAnalysisConfig$55f</ID>
+    <ID>MagicNumber:AcousticAnalysis.kt$AcousticFrameAnalyzer$20.0</ID>
+    <ID>MagicNumber:AiCounselorScreen.kt$0.85f</ID>
+    <ID>MagicNumber:AiCounselorScreen.kt$420</ID>
+    <ID>MagicNumber:AndroidAudioCaptureEngine.kt$AndroidAudioCaptureEngine$1001</ID>
+    <ID>MagicNumber:AndroidAudioCaptureEngine.kt$AndroidAudioCaptureEngine$16000</ID>
+    <ID>MagicNumber:AndroidAudioCaptureEngine.kt$AndroidAudioCaptureEngine$32000</ID>
+    <ID>MagicNumber:AppLocator.kt$AppLocator$10</ID>
+    <ID>MagicNumber:AppLocator.kt$AppLocator$15</ID>
+    <ID>MagicNumber:AppLocator.kt$AppLocator$20</ID>
+    <ID>MagicNumber:AudioRecordVoiceInputEngine.kt$AudioRecordVoiceInputEngine$10</ID>
+    <ID>MagicNumber:AudioRecordVoiceInputEngine.kt$AudioRecordVoiceInputEngine$1_000L</ID>
+    <ID>MagicNumber:AudioSink.kt$AndroidAudioSink$4_096</ID>
+    <ID>MagicNumber:AudioSink.kt$AudioOutputFormat$16_000</ID>
+    <ID>MagicNumber:AudioSink.kt$AudioOutputFormat$22_050</ID>
+    <ID>MagicNumber:AudioSink.kt$AudioOutputFormat$24_000</ID>
+    <ID>MagicNumber:AudioSink.kt$AudioOutputFormat$48_000</ID>
+    <ID>MagicNumber:ChatExportUtil.kt$ChatExportUtil$14f</ID>
+    <ID>MagicNumber:ChatExportUtil.kt$ChatExportUtil$18f</ID>
+    <ID>MagicNumber:ChatExportUtil.kt$ChatExportUtil$20f</ID>
+    <ID>MagicNumber:ChatExportUtil.kt$ChatExportUtil$40f</ID>
+    <ID>MagicNumber:ChatExportUtil.kt$ChatExportUtil$50f</ID>
+    <ID>MagicNumber:ChatExportUtil.kt$ChatExportUtil$595</ID>
+    <ID>MagicNumber:ChatExportUtil.kt$ChatExportUtil$595f</ID>
+    <ID>MagicNumber:ChatExportUtil.kt$ChatExportUtil$780f</ID>
+    <ID>MagicNumber:ChatExportUtil.kt$ChatExportUtil$842</ID>
+    <ID>MagicNumber:CounselorPromptBuilder.kt$CounselorPromptBuilder$900</ID>
+    <ID>MagicNumber:CounselorPromptBuilder.kt$PromptBudget$4</ID>
+    <ID>MagicNumber:CounselorViewModel.kt$160</ID>
+    <ID>MagicNumber:CounselorViewModel.kt$CounselorViewModel$12</ID>
+    <ID>MagicNumber:CounselorViewModel.kt$CounselorViewModel$42</ID>
+    <ID>MagicNumber:DivergenceEpisodeTracker.kt$DivergenceEpisodeTracker$100</ID>
+    <ID>MagicNumber:DocumentFormat.kt$StrictUtf8TextReader$31</ID>
+    <ID>MagicNumber:DocumentLibraryViewModel.kt$DocumentLibraryViewModel$5000</ID>
+    <ID>MagicNumber:DocumentParser.kt$DocumentParser$120</ID>
+    <ID>MagicNumber:DocumentParser.kt$DocumentParser$8</ID>
+    <ID>MagicNumber:DocumentWorkIdentity.kt$DocumentWorkIdentity$0xff</ID>
+    <ID>MagicNumber:DocumentWorkIdentity.kt$DocumentWorkIdentity$20</ID>
+    <ID>MagicNumber:DocumentWorkIdentity.kt$DocumentWorkIdentity$32</ID>
+    <ID>MagicNumber:DocxTextExtractor.kt$DocxTextExtractor$6</ID>
+    <ID>MagicNumber:E5EmbeddingContract.kt$E5EmbeddingRuntimeContract$384</ID>
+    <ID>MagicNumber:E5EmbeddingContract.kt$E5EmbeddingRuntimeContract$512</ID>
+    <ID>MagicNumber:EmbeddingArtifactManager.kt$EmbeddingArtifactManager$12</ID>
+    <ID>MagicNumber:EmbeddingArtifactManager.kt$EmbeddingArtifactManager$30</ID>
+    <ID>MagicNumber:EncryptedConsentRepository.kt$EncryptedConsentRepository$3</ID>
+    <ID>MagicNumber:EncryptedConsentRepository.kt$EncryptedConsentRepository$5</ID>
+    <ID>MagicNumber:EncryptedDocumentSourceStore.kt$AndroidEncryptedDocumentSourceStore$120</ID>
+    <ID>MagicNumber:EncryptedStorageService.kt$AesGcmFileCipher$12</ID>
+    <ID>MagicNumber:EncryptedStorageService.kt$AesGcmFileCipher$16</ID>
+    <ID>MagicNumber:GemmaModelStorage.kt$GemmaModelStorage$1024</ID>
+    <ID>MagicNumber:HistoryDetailScreen.kt$0xFF00C98B</ID>
+    <ID>MagicNumber:HistoryDetailScreen.kt$0xFF4D8DFF</ID>
+    <ID>MagicNumber:HistoryDetailScreen.kt$0xFFFFC107</ID>
+    <ID>MagicNumber:HistoryDetailScreen.kt$1000</ID>
+    <ID>MagicNumber:HistoryDetailScreen.kt$100f</ID>
+    <ID>MagicNumber:HistoryDetailScreen.kt$1_000</ID>
+    <ID>MagicNumber:HistoryDetailScreen.kt$1_000f</ID>
+    <ID>MagicNumber:HistoryDetailScreen.kt$50</ID>
+    <ID>MagicNumber:HomePpgProcessingCoordinator.kt$0.5f</ID>
+    <ID>MagicNumber:HomePpgProcessingCoordinator.kt$500L</ID>
+    <ID>MagicNumber:HomePpgProcessingCoordinator.kt$5L</ID>
+    <ID>MagicNumber:HomeSessionStatusCard.kt$0xFF10B981</ID>
+    <ID>MagicNumber:HomeSessionStatusCard.kt$0xFF3B82F6</ID>
+    <ID>MagicNumber:HomeSessionStatusCard.kt$0xFF94A3B8</ID>
+    <ID>MagicNumber:HomeSessionStatusCard.kt$0xFFEF4444</ID>
+    <ID>MagicNumber:HomeSessionStatusCard.kt$0xFFF59E0B</ID>
+    <ID>MagicNumber:HomeSessionStatusCard.kt$100f</ID>
+    <ID>MagicNumber:HomeSessionStatusCard.kt$1_000L</ID>
+    <ID>MagicNumber:HomeSessionStatusCard.kt$300L</ID>
+    <ID>MagicNumber:HomeSessionStatusCard.kt$60L</ID>
+    <ID>MagicNumber:HybridRetrieval.kt$InMemoryBm25CandidateSource$0.5</ID>
+    <ID>MagicNumber:KeyManager.kt$AndroidKeystoreKeyManager$256</ID>
+    <ID>MagicNumber:KnowledgeBaseDaos.kt$KnowledgeBaseDao$30</ID>
+    <ID>MagicNumber:LiteRTLlmEngine.kt$LiteRTLlmEngine$1_000</ID>
+    <ID>MagicNumber:LiveMonitorRuntimeContract.kt$LiveModelContract$240</ID>
+    <ID>MagicNumber:LiveMonitorRuntimeContract.kt$LiveMonitorConfig$10</ID>
+    <ID>MagicNumber:LiveMonitorRuntimeContract.kt$LiveMonitorConfig$30</ID>
+    <ID>MagicNumber:LiveMonitorRuntimeContract.kt$LiveMonitorConfig$60</ID>
+    <ID>MagicNumber:LocalArtifactCatalog.kt$LocalArtifactCatalog.Companion$384</ID>
+    <ID>MagicNumber:LocalArtifactCatalog.kt$LocalArtifactCatalog.Companion$512</ID>
+    <ID>MagicNumber:LocalEmbeddingModel.kt$LocalEmbeddingModel$3</ID>
+    <ID>MagicNumber:LocalEmbeddingModel.kt$LocalEmbeddingModel.Companion$4</ID>
+    <ID>MagicNumber:LocalRagRetrieverImpl.kt$LocalRagRetrievalPolicy$4</ID>
+    <ID>MagicNumber:MainActivity.kt$0.80f</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF0F172A</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF10B981</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF1E293B</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF3B82F6</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFF94A3B8</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFFEF4444</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFFF1F5F9</ID>
+    <ID>MagicNumber:MainActivity.kt$0xFFF59E0B</ID>
+    <ID>MagicNumber:MainActivity.kt$100</ID>
+    <ID>MagicNumber:MainActivity.kt$100f</ID>
+    <ID>MagicNumber:MainActivity.kt$200</ID>
+    <ID>MagicNumber:MainActivity.kt$300</ID>
+    <ID>MagicNumber:MainActivity.kt$31</ID>
+    <ID>MagicNumber:MainActivity.kt$33</ID>
+    <ID>MagicNumber:MainActivity.kt$7</ID>
+    <ID>MagicNumber:ModelManager.kt$ModelManager$1024</ID>
+    <ID>MagicNumber:ModelManager.kt$ModelManager$12</ID>
+    <ID>MagicNumber:ModelManager.kt$ModelManager$1_000L</ID>
+    <ID>MagicNumber:ModelManager.kt$ModelManager$30</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0.25f</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0.5f</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0.75f</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0xFF0F172A</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0xFF10B981</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0xFF1E293B</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0xFF263447</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0xFF334155</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0xFF3B82F6</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0xFF94A3B8</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0xFFEF4444</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0xFFF1F5F9</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0xFFF59E0B</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$0xFFF97316</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$100</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$1000</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$1000f</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$10f</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$1_000</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$1_000_000</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$1_000f</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$60</ID>
+    <ID>MagicNumber:MonitoringScreen.kt$800</ID>
+    <ID>MagicNumber:MotionAnnotation.kt$MotionArtifactAnnotator$1.0e-9</ID>
+    <ID>MagicNumber:PiperVoiceOutputEngine.kt$AndroidTextToSpeechVoiceOutputEngine$0.98f</ID>
+    <ID>MagicNumber:PiperVoiceOutputEngine.kt$AndroidTextToSpeechVoiceOutputEngine$5_000L</ID>
+    <ID>MagicNumber:PiperVoiceOutputEngine.kt$AndroidTextToSpeechVoiceOutputEngine$60_000L</ID>
+    <ID>MagicNumber:PpgBpmMarkerDetector.kt$BpmPhysiologicalMarkerDetector$1_000L</ID>
+    <ID>MagicNumber:PpgBpmMarkerDetector.kt$PpgBpmEstimator$1_000.0</ID>
+    <ID>MagicNumber:PpgBpmMarkerDetector.kt$PpgBpmEstimator$60_000.0</ID>
+    <ID>MagicNumber:PreparedPpgWindowSlicer.kt$PreparedPpgWindowSlicer$1_000L</ID>
+    <ID>MagicNumber:ProfileScreen.kt$1024.0</ID>
+    <ID>MagicNumber:ProfileScreen.kt$1024L</ID>
+    <ID>MagicNumber:ProfileViewModel.kt$ProfileViewModel$100L</ID>
+    <ID>MagicNumber:ProfileViewModel.kt$ProfileViewModel$12</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$0xff</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$10</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$12</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$16</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$1_000_000L</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$20</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$22</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$24</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$28</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$32</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$34</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$36</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$4</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$40</ID>
+    <ID>MagicNumber:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$8</ID>
+    <ID>MagicNumber:RealLiveBiosignalEngine.kt$RealLiveBiosignalEngine$1000L</ID>
+    <ID>MagicNumber:RealtimeInferenceEngineImpl.kt$RealtimeInferenceEngineImpl$1000L</ID>
+    <ID>MagicNumber:RealtimeInferenceEngineImpl.kt$RealtimeInferenceEngineImpl$10_000L</ID>
+    <ID>MagicNumber:RealtimeInferenceEngineImpl.kt$RealtimeInferenceEngineImpl$1_000L</ID>
+    <ID>MagicNumber:RealtimePpgChartProjector.kt$RealtimePpgChartProjector$0.02f</ID>
+    <ID>MagicNumber:RealtimePpgChartProjector.kt$RealtimePpgChartProjector$0.05f</ID>
+    <ID>MagicNumber:RealtimePpgChartProjector.kt$RealtimePpgChartProjector$0.95f</ID>
+    <ID>MagicNumber:ReportModels.kt$ReportCalculator$42</ID>
+    <ID>MagicNumber:ReportModels.kt$ReportCalculator$6</ID>
+    <ID>MagicNumber:ReportModels.kt$ReportCalculator$7</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$0xfc</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$0xfe</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$0xff</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$10</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$100</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$113</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$127</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$16</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$168</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$169</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$172</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$18</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$19</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$192</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$198</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$203</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$224</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$254</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$3</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$31</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$4</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$51</ID>
+    <ID>MagicNumber:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$64</ID>
+    <ID>MagicNumber:RobotsTxtPolicy.kt$RobotsRules.Companion$1_000.0</ID>
+    <ID>MagicNumber:RobotsTxtPolicy.kt$RobotsTxtPolicy$404</ID>
+    <ID>MagicNumber:RollingPpgBuffer.kt$RollingPpgBuffer$0.5f</ID>
+    <ID>MagicNumber:RollingPpgBuffer.kt$RollingPpgBuffer$1_000.0</ID>
+    <ID>MagicNumber:RollingPpgBuffer.kt$RollingPpgBuffer$1_000f</ID>
+    <ID>MagicNumber:SafArtifactRootResolver.kt$SafArtifactRootCandidateEvidence$4</ID>
+    <ID>MagicNumber:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime$0.25f</ID>
+    <ID>MagicNumber:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime$0.3f</ID>
+    <ID>MagicNumber:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime$0.5f</ID>
+    <ID>MagicNumber:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime$1_000L</ID>
+    <ID>MagicNumber:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime$20.0f</ID>
+    <ID>MagicNumber:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime$512</ID>
+    <ID>MagicNumber:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime$80</ID>
+    <ID>MagicNumber:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime.RollingSpeakerWindow$1000L</ID>
+    <ID>MagicNumber:SignalQualityGate.kt$SignalQualityGate$0.999</ID>
+    <ID>MagicNumber:SignalQualityGate.kt$SignalQualityGate$1000.0</ID>
+    <ID>MagicNumber:SignalQualityGate.kt$SignalQualityGate$1_000.0</ID>
+    <ID>MagicNumber:SignalQualityGate.kt$SignalQualityGate$3.0</ID>
+    <ID>MagicNumber:SpeechBundleDownloadManager.kt$SpeechBundleDownloadManager$1024</ID>
+    <ID>MagicNumber:SpeechBundleDownloadManager.kt$SpeechBundleDownloadManager$30</ID>
+    <ID>MagicNumber:SpeechModelBundleManager.kt$SpeechModelBundleManager$12</ID>
+    <ID>MagicNumber:SpeechSegmentQuality.kt$SpeechSegmentQuality$0.98f</ID>
+    <ID>MagicNumber:SpeechSegmentQuality.kt$SpeechSegmentQuality$20f</ID>
+    <ID>MagicNumber:SpeechUtteranceSegmenter.kt$SpeechUtteranceSegmenter$1_000L</ID>
+    <ID>MagicNumber:StressHistoryContext.kt$StressHistoryContextSnapshot$12</ID>
+    <ID>MagicNumber:StressHistoryContext.kt$StressHistoryContextSnapshot$1_000L</ID>
+    <ID>MagicNumber:StressHistoryReader.kt$StressHistoryFormatter$100f</ID>
+    <ID>MagicNumber:TimestampAwarePpgResampler.kt$TimestampAwarePpgResampler$1_000.0</ID>
+    <ID>MagicNumber:TransportDiagnosticsCard.kt$1_000L</ID>
+    <ID>MagicNumber:TransportDiagnosticsCard.kt$60L</ID>
+    <ID>MagicNumber:UnifiedSessionRepository.kt$UnifiedSessionRepository$1000</ID>
+    <ID>MagicNumber:UnifiedSessionRepository.kt$UnifiedSessionRepository$1000L</ID>
+    <ID>MagicNumber:UnifiedSessionScreen.kt$0.55f</ID>
+    <ID>MagicNumber:UnifiedSessionScreen.kt$100</ID>
+    <ID>MagicNumber:UnifiedSessionScreen.kt$100f</ID>
+    <ID>MagicNumber:UnifiedSessionScreen.kt$1_000L</ID>
+    <ID>MagicNumber:UnifiedSessionScreen.kt$33</ID>
+    <ID>MagicNumber:UnifiedSessionScreen.kt$500</ID>
+    <ID>MagicNumber:UnifiedSessionScreen.kt$500L</ID>
+    <ID>MagicNumber:UnifiedSessionScreen.kt$60</ID>
+    <ID>MagicNumber:UnifiedSessionScreen.kt$80</ID>
+    <ID>MagicNumber:UnifiedSessionViewModel.kt$UnifiedSessionViewModel$1_000L</ID>
+    <ID>MagicNumber:VerbatimArtifactService.kt$WavFileValidator$0xff</ID>
+    <ID>MagicNumber:VerbatimArtifactService.kt$WavFileValidator$12</ID>
+    <ID>MagicNumber:VerbatimArtifactService.kt$WavFileValidator$16</ID>
+    <ID>MagicNumber:VerbatimArtifactService.kt$WavFileValidator$24</ID>
+    <ID>MagicNumber:VerbatimArtifactService.kt$WavFileValidator$3</ID>
+    <ID>MagicNumber:VerbatimArtifactService.kt$WavFileValidator$4</ID>
+    <ID>MagicNumber:VerbatimArtifactService.kt$WavFileValidator$44</ID>
+    <ID>MagicNumber:VerbatimArtifactService.kt$WavFileValidator$7</ID>
+    <ID>MagicNumber:VerbatimArtifactService.kt$WavFileValidator$8</ID>
+    <ID>MagicNumber:VerbatimSessionFinalizer.kt$VerbatimSessionFinalizer$3</ID>
+    <ID>MagicNumber:VoiceTurnAssembler.kt$1_000L</ID>
+    <ID>MagicNumber:VoiceTurnAssembler.kt$VoiceTurn$1_000L</ID>
+    <ID>MagicNumber:WearSessionCoordinator.kt$WearSessionCoordinator$1_000L</ID>
+    <ID>MagicNumber:WearSessionCoordinator.kt$WearSessionCoordinator$250L</ID>
+    <ID>MagicNumber:WearablePpgWindowPreprocessor.kt$WearablePpgWindowPreprocessor$1_000.0</ID>
+    <ID>MagicNumber:WebUrlPolicy.kt$SecureWebUrlPolicy$10</ID>
+    <ID>MagicNumber:WebUrlPolicy.kt$SecureWebUrlPolicy$127</ID>
+    <ID>MagicNumber:WebUrlPolicy.kt$SecureWebUrlPolicy$16</ID>
+    <ID>MagicNumber:WebUrlPolicy.kt$SecureWebUrlPolicy$168</ID>
+    <ID>MagicNumber:WebUrlPolicy.kt$SecureWebUrlPolicy$169</ID>
+    <ID>MagicNumber:WebUrlPolicy.kt$SecureWebUrlPolicy$172</ID>
+    <ID>MagicNumber:WebUrlPolicy.kt$SecureWebUrlPolicy$192</ID>
+    <ID>MagicNumber:WebUrlPolicy.kt$SecureWebUrlPolicy$224</ID>
+    <ID>MagicNumber:WebUrlPolicy.kt$SecureWebUrlPolicy$254</ID>
+    <ID>MagicNumber:WebUrlPolicy.kt$SecureWebUrlPolicy$255</ID>
+    <ID>MagicNumber:WebUrlPolicy.kt$SecureWebUrlPolicy$31</ID>
+    <ID>MagicNumber:WebUrlPolicy.kt$SecureWebUrlPolicy$4</ID>
+    <ID>MatchingDeclarationName:AppDestination.kt$Screen</ID>
+    <ID>MatchingDeclarationName:OkHttpJsoupWebPageScraperTest.kt$OkHttpKsoupWebPageScraperTest</ID>
+    <ID>MatchingDeclarationName:TransportDiagnosticsCard.kt$TransportUiState</ID>
+    <ID>MatchingDeclarationName:WebUrlPolicy.kt$SecureWebUrlPolicy</ID>
+    <ID>MaxLineLength:ClinicalDaos.kt$DocumentDao$"UPDATE clinical_documents SET isProcessed = :isProcessed, processingState = :processingState, processingError = :processingError, embeddingStatus = :embeddingStatus WHERE documentId = :documentId"</ID>
+    <ID>MaxLineLength:CounselorOutputGuard.kt$"Saya belum menemukan evidence dokumen yang cukup untuk menjawab dengan aman. Silakan pilih dokumen yang relevan atau ajukan pertanyaan umum tanpa mengatasnamakan dokumen."</ID>
+    <ID>MaxLineLength:CounselorOutputGuardTest.kt$CounselorOutputGuardTest.Companion$"Saya fokus pada dukungan emosional, stres, dan coping umum. Saya tidak dapat mendiagnosis, memberi resep, atau menentukan kebohongan."</ID>
+    <ID>MaxLineLength:CounselorPromptBuilder.kt$CounselorPromptBuilder$"language=${profile.language}; tone=${profile.tone}; responseLength=${profile.responseLength}; reflectiveQuestions=${profile.reflectiveQuestions}"</ID>
+    <ID>MaxLineLength:DocxTextExtractorTest.kt$DocxTextExtractorTest$"&lt;w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"&gt;&lt;w:body&gt;&lt;w:p&gt;&lt;w:t&gt;12345&lt;/w:t&gt;&lt;/w:p&gt;&lt;/w:body&gt;&lt;/w:document&gt;"</ID>
+    <ID>MaxLineLength:GemmaModelContractTest.kt$GemmaModelContractTest$"https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94/gemma-4-E2B-it.litertlm"</ID>
+    <ID>MaxLineLength:KnowledgeBaseDaos.kt$KnowledgeBaseDao$"INSERT INTO kb_chunks_fts(chunkId, documentId, generationId, textContent, sourcePage, sourceLocator) VALUES (?, ?, ?, ?, ?, ?)"</ID>
+    <ID>MaxLineLength:ModelManager.kt$ModelManager.Companion$"https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94/gemma-4-E2B-it.litertlm"</ID>
+    <ID>MaxLineLength:RealtimeInferenceEngineImpl.kt$RealtimeInferenceEngineImpl$"Monitoring started for session $sessionId with primary=${contract.primaryChannel.assetSuffix}, fallback=${contract.fallbackChannel.assetSuffix}"</ID>
+    <ID>MaxLineLength:RealtimePpgChartProjector.kt$RealtimePpgChartProjector$"${window.type.assetSuffix}:${window.size}:${window.elapsedTimestampsMillis.contentHashCode()}:${window.filteredValues.contentHashCode()}:${window.interpolatedMask.contentHashCode()}"</ID>
+    <ID>MaxLineLength:RealtimePpgChartProjector.kt$RealtimePpgChartProjector$"${window.type.assetSuffix}:${window.size}:${window.elapsedTimestampsMillis.contentHashCode()}:${window.rawValues.contentHashCode()}"</ID>
+    <ID>MaxLineLength:WebSearchComponents.kt$"Saat aktif, aplikasi mencari maksimal tiga sumber HTTPS secara otomatis, membaca halaman yang lolos validasi, lalu menyertakan citation yang benar-benar diambil."</ID>
+    <ID>MemberNameEqualsClassName:CounselorPersona.kt$CounselorPersonaRepository.Empty$private val empty = CounselorPersona(profile = emptyProfile, updatedAtMillis = 0L)</ID>
+    <ID>NestedBlockDepth:ChatExportUtil.kt$ChatExportUtil$fun exportChatToPdf(context: Context, messages: List&lt;ChatMessageEntity&gt;, sessionTitle: String): Result&lt;String&gt;</ID>
+    <ID>NestedBlockDepth:DocumentParser.kt$DocumentParser$private suspend fun copyUriBounded(uri: Uri, destination: File)</ID>
+    <ID>NestedBlockDepth:DocxTextExtractor.kt$DocxTextExtractor$private fun parseXml(input: InputStream, documentId: String): List&lt;DocumentBlock&gt;</ID>
+    <ID>NestedBlockDepth:E5Tokenizer.kt$XlmRobertaUnigramTokenizer$private fun unigram(normalized: NormalizedInput): List&lt;RagToken&gt;</ID>
+    <ID>NestedBlockDepth:EmbeddingArtifactManager.kt$EmbeddingArtifactManager$private fun sha256(file: File): String</ID>
+    <ID>NestedBlockDepth:EncryptedDocumentSourceStore.kt$AndroidEncryptedDocumentSourceStore$override suspend fun put(documentId: String, source: InputStream, fileName: String): EncryptedSourceRef</ID>
+    <ID>NestedBlockDepth:LocalEmbeddingModel.kt$LocalEmbeddingModel$@Synchronized private fun embed(text: String, kind: EmbeddingInputKind): EmbeddingResult</ID>
+    <ID>NestedBlockDepth:OnnxTest.kt$OnnxTest$@Test fun testModelOutputsVaryWithInputs()</ID>
+    <ID>NestedBlockDepth:OnnxTest.kt$OnnxTest$@Test fun testOnnxOutput()</ID>
+    <ID>NestedBlockDepth:PiperVoiceOutputEngine.kt$TtsArchiveExtractor$fun ensureExtracted(runtimeRoot: File, profile: SpeechTtsProfileManifest, destination: File, archiveFingerprint: String): File</ID>
+    <ID>NestedBlockDepth:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$private suspend fun copyResponse( connection: HttpURLConnection, partial: File, append: Boolean, startingBytes: Long, expectedBytes: Long, label: String, onProgress: suspend (Long) -&gt; Unit )</ID>
+    <ID>NestedBlockDepth:SpeechBundleArchiveAssembler.kt$SpeechBundleArchiveAssembler$fun assemble( descriptor: SpeechBundleDescriptor, downloadedFiles: Map&lt;String, File&gt;, destination: File, onProgress: (SpeechAssemblyProgress) -&gt; Unit = {} ): SpeechBundleManifest</ID>
+    <ID>NestedBlockDepth:SpeechBundleArchiveAssembler.kt$SpeechBundleArchiveAssembler$private fun extractTarBz2Entry( archive: File, suffix: String, destination: File, component: String, expectedBytes: Long?, onProgress: (SpeechAssemblyProgress) -&gt; Unit )</ID>
+    <ID>NestedBlockDepth:SpeechBundleArchiveAssembler.kt$SpeechBundleArchiveAssembler$private fun writeZip( destination: File, manifest: SpeechBundleManifest, files: Map&lt;String, File&gt;, onProgress: (SpeechAssemblyProgress) -&gt; Unit )</ID>
+    <ID>NestedBlockDepth:SpeechModelBundleManager.kt$SpeechModelBundleManager$fun materializeRuntimeFiles(manifestOverride: SpeechBundleManifest? = null): File</ID>
+    <ID>NestedBlockDepth:StructuredTextBlockParser.kt$StructuredTextBlockParser$fun parse( documentId: String, text: String, format: DocumentFormat, pageNumber: Int? = null, extractionStatus: ExtractionStatus = ExtractionStatus.COMPLETE ): List&lt;DocumentBlock&gt;</ID>
+    <ID>NestedBlockDepth:UnifiedSessionEngine.kt$UnifiedSessionEngine$private suspend fun stopSessionInternal()</ID>
+    <ID>NestedBlockDepth:VerbatimArtifactService.kt$VerbatimArtifactService$fun exportSessionBundle(userId: String, folderPath: String, destination: Uri, context: Context)</ID>
+    <ID>ReturnCount:AcousticAnalysis.kt$AcousticFrameAnalyzer$private fun advanceMarker(rawMarker: SessionMarkerType?, frame: AcousticAudioFrame): MarkerDecision</ID>
+    <ID>ReturnCount:CorePpgWindowSlicer.kt$CorePpgWindowSlicer$private fun elapsedTimes(source: WindowSnapshot): LongArray</ID>
+    <ID>ReturnCount:CounselorOutputGuard.kt$CounselorOutputGuard.Default$override fun validate( text: String, mode: RagMode, citations: List&lt;KnowledgeCitation&gt;, registry: CitationRegistry ): GuardedCounselorOutput</ID>
+    <ID>ReturnCount:CounselorPersona.kt$CounselorPersonaValidator$fun validate(candidate: CounselorPersonaProfile): PersonaValidationResult</ID>
+    <ID>ReturnCount:CounselorPromptBuilder.kt$ConservativeGemmaTokenCounter$override fun take(text: String, maxTokens: Int): String</ID>
+    <ID>ReturnCount:CounselorPromptBuilder.kt$CounselorPromptBuilder$private fun takeTail(text: String, maxTokens: Int): String</ID>
+    <ID>ReturnCount:CounselorViewModel.kt$CounselorViewModel$private suspend fun dispatchMessage(rawText: String, inputMode: String)</ID>
+    <ID>ReturnCount:CounselorViewModel.kt$CounselorViewModel$private suspend fun resolveWebGrounding( rawUserText: String, retrieval: RagRetrievalResult, webGroundingOverride: WebGroundingResult?, webStatusMessage: String? = null ): RetrievalDecision?</ID>
+    <ID>ReturnCount:CounselorViewModel.kt$CounselorViewModel$private suspend fun stopGenerationAndWait(): Boolean</ID>
+    <ID>ReturnCount:DocumentIngestionService.kt$DocumentIngestionService$private suspend fun indexPreparedFile( documentId: String, title: String, sourceFileName: String, importedFile: File, sourcePath: String, format: DocumentFormat, uploadedAtMillis: Long, processingStartedAtMillis: Long, processingRevision: Int, allowPartialExtraction: Boolean, onProgress: suspend (DocumentIngestionProgress) -&gt; Unit, skipDuplicateCheck: Boolean = false ): DocumentIngestionResult</ID>
+    <ID>ReturnCount:DocumentProcessingContract.kt$DocumentProcessingFailure.Companion$fun from(error: Throwable): DocumentProcessingFailure</ID>
+    <ID>ReturnCount:DurableArtifactCoordinator.kt$DurableArtifactCoordinator$private fun voiceCapabilityAssessment(speech: SpeechAssessment): ArtifactAssessment</ID>
+    <ID>ReturnCount:E5Tokenizer.kt$XlmRobertaUnigramTokenizer$override fun tokenize(text: String, addSpecialTokens: Boolean): RagTokenization</ID>
+    <ID>ReturnCount:GoogleHtmlSearchDiscovery.kt$GoogleHtmlSearchDiscovery$private fun normalizeResultHref(rawHref: String): HttpUrl?</ID>
+    <ID>ReturnCount:HistoryChartProjector.kt$GapAwareHistoryChartProjector$private fun projectSegment(segment: List&lt;HistoryChartPoint&gt;, budget: Int): List&lt;HistoryChartPoint&gt;</ID>
+    <ID>ReturnCount:HomePpgProcessingCoordinator.kt$internal fun chartGapThresholdMillis(timestampsMillis: LongArray): Long</ID>
+    <ID>ReturnCount:LiteRtGenerationCoordinator.kt$LiteRtGenerationCoordinator$private fun requestCancellationLocked(): Conversation?</ID>
+    <ID>ReturnCount:LiveTranscriptReducer.kt$LiveTranscriptReducer$fun accept(state: LiveTranscriptState, segment: SpeechSegment, expectedSessionId: String): LiveTranscriptState</ID>
+    <ID>ReturnCount:LocalEmbeddingModel.kt$LocalEmbeddingModel$@Synchronized private fun embed(text: String, kind: EmbeddingInputKind): EmbeddingResult</ID>
+    <ID>ReturnCount:LocalEmbeddingModel.kt$LocalEmbeddingModel.Companion$fun cosineSimilarity(first: FloatArray, second: FloatArray): Float</ID>
+    <ID>ReturnCount:LocalOnlyDocumentTreeContract.kt$LocalOnlyDocumentTreeContract$override fun parseResult(resultCode: Int, intent: Intent?): SafTreeSelection?</ID>
+    <ID>ReturnCount:LocalRagRetrieverImpl.kt$LocalRagRetrieverImpl$private fun DocumentChunkEntity.compatibleVector(): FloatArray?</ID>
+    <ID>ReturnCount:LocalRagRetrieverImpl.kt$LocalRagRetrieverImpl$private fun KnowledgeBaseChunkEntity.compatibleVector(): FloatArray?</ID>
+    <ID>ReturnCount:LocalRagRetrieverImpl.kt$LocalRagRetrieverImpl$private suspend fun retrieveFromEncryptedIndex(dao: KnowledgeBaseDao, query: String, maxResults: Int): RagRetrievalResult</ID>
+    <ID>ReturnCount:LocalTextRanker.kt$LocalTextRanker$fun score(query: String, candidate: String): Float</ID>
+    <ID>ReturnCount:MediaAudioPlaybackEngine.kt$MediaAudioPlaybackEngine$private suspend fun prepareInternal(audioPath: String): Result&lt;Unit&gt;</ID>
+    <ID>ReturnCount:ModelManager.kt$ModelManager$private fun WorkInfo.toModelDownloadState(): ModelDownloadState</ID>
+    <ID>ReturnCount:ModelManager.kt$ModelManager$private fun inspect(): ModelReadiness</ID>
+    <ID>ReturnCount:ModelManager.kt$ModelManager$private suspend fun queryDownloadState(): ModelDownloadState</ID>
+    <ID>ReturnCount:ModelStorageManager.kt$ModelStorageManager$private fun legacySlotDirectory(slot: ModelStorageSlot): Uri?</ID>
+    <ID>ReturnCount:ModelStorageManager.kt$ModelStorageManager$private fun legacyVoiceCapabilityDocument(): Uri?</ID>
+    <ID>ReturnCount:OnnxTest.kt$OnnxTest$private fun extractFromMap(map: Map&lt;Any?, Any?&gt;): Float?</ID>
+    <ID>ReturnCount:PpgBpmMarkerDetector.kt$PpgBpmEstimator$fun estimate(window: PreparedPpgWindow): BpmEstimate?</ID>
+    <ID>ReturnCount:PpgRepository.kt$PpgRepositoryImpl$private fun applyTerminalReceiptLocked(receipt: PpgTerminalReceipt): PpgTerminalReceiptResult</ID>
+    <ID>ReturnCount:PpgRepository.kt$PpgRepositoryImpl$private fun identityError(actualSourceNodeId: String?, payloadPeerNodeId: String, payloadIdentity: SessionIdentity): String?</ID>
+    <ID>ReturnCount:PreparedPpgWindowSlicer.kt$PreparedPpgWindowSlicer$private fun elapsedTimes(source: PreparedPpgWindow): LongArray</ID>
+    <ID>ReturnCount:PreparedPpgWindowSlicer.kt$PreparedPpgWindowSlicer$private fun hasCoverage(indices: List&lt;Int&gt;, elapsed: LongArray, start: Long, end: Long, expectedDurationMillis: Long): Boolean</ID>
+    <ID>ReturnCount:RealLiveBiosignalEngine.kt$RealLiveBiosignalEngine$override fun startMonitoring(sessionId: String): LiveMonitorStartResult</ID>
+    <ID>ReturnCount:RealtimeInferenceEngineImpl.kt$RealtimeInferenceEngineImpl$override fun processPpgWindows(windows: Map&lt;PpgType, WindowSnapshot&gt;)</ID>
+    <ID>ReturnCount:RealtimeInferenceEngineImpl.kt$RealtimeInferenceEngineImpl$override fun startMonitoringResult(sessionId: String): LiveMonitorStartResult</ID>
+    <ID>ReturnCount:RealtimeInferenceEngineImpl.kt$RealtimeInferenceEngineImpl$private fun appendChannelAgreementMarker( sessionId: String, contract: LiveMonitorRuntimeContract, acceptedPredictions: Map&lt;PpgType, AcceptedLivePrediction&gt;, appendMarker: (DivergenceEvent) -&gt; Unit )</ID>
+    <ID>ReturnCount:RealtimePpgChartProjector.kt$RealtimePpgChartProjector$fun cleaned( window: PreparedPpgWindow, message: String, mode: PpgChartMode = PpgChartMode.CLEANED_PARTIAL, restrictToCore: Boolean = false ): PpgChartData</ID>
+    <ID>ReturnCount:RealtimePpgChartProjector.kt$RealtimePpgChartProjector$fun preview( window: WindowSnapshot, message: String = PREVIEW_MESSAGE, mode: PpgChartMode = PpgChartMode.FULL_SESSION_PREVIEW ): PpgChartData</ID>
+    <ID>ReturnCount:RealtimePpgChartProjector.kt$RealtimePpgChartProjector$private fun robustScale(values: FloatArray, observedMin: Float, observedMax: Float): Pair&lt;Float, Float&gt;</ID>
+    <ID>ReturnCount:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$private fun isPrivateAddress(address: InetAddress): Boolean</ID>
+    <ID>ReturnCount:RetrievalPolicyBinding.kt$VersionedRetrievalPolicyResolver$fun resolve(artifact: RetrievalBenchmarkArtifact?): RetrievalPolicyBinding</ID>
+    <ID>ReturnCount:SafArtifactRootResolver.kt$SafArtifactRootResolver$fun resolve(evidence: SafArtifactRootEvidence): SafArtifactRootDecision</ID>
+    <ID>ReturnCount:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime$private fun finishEnglishUtterance(): List&lt;SpeechSegment&gt;</ID>
+    <ID>ReturnCount:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime$private fun finishIndonesianUtterance(): List&lt;SpeechSegment&gt;</ID>
+    <ID>ReturnCount:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime$private fun transcribeEnglishPartial(samples: FloatArray, startOffsetMs: Long, vadAlreadyAccepted: Boolean): List&lt;SpeechSegment&gt;</ID>
+    <ID>ReturnCount:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime$private fun transcribeIndonesian(samples: FloatArray, startOffsetMs: Long): List&lt;SpeechSegment&gt;</ID>
+    <ID>ReturnCount:SignalProcessor.kt$SignalProcessor$@JvmStatic fun zScoreNormalize(signal: FloatArray): FloatArray</ID>
+    <ID>ReturnCount:SignalQualityGate.kt$SignalQualityGate$private fun evaluate( type: com.stressdetector.shared.PpgType, timestampsMillis: LongArray, values: DoubleArray, requiredSamples: Int, expectedRateHz: Double, providedMissingRatio: Double = 0.0 ): SignalQualitySummary</ID>
+    <ID>ReturnCount:SpeechModelBundleManager.kt$SpeechModelBundleManager$private suspend fun syncDurableBundle(manifestOverride: SpeechBundleManifest? = null): Result&lt;Unit&gt;</ID>
+    <ID>ReturnCount:SpeechSegmentQuality.kt$SpeechSegmentQuality$fun score(samples: FloatArray, text: String): Float</ID>
+    <ID>ReturnCount:SpeechTranscriptionWorkQueue.kt$SpeechTranscriptionWorkQueue$@Synchronized fun offer(work: SpeechTranscriptionWork, allowAfterClose: Boolean = false): Boolean</ID>
+    <ID>ReturnCount:StressAggregator.kt$StressAggregator$fun aggregate(primarySensor: PpgType, attemptedWindowCount: Int = -1): WindowAggregationResult</ID>
+    <ID>ReturnCount:StressHistoryContext.kt$RoomStressHistoryContextProvider$override suspend fun snapshot(): StressHistoryContextSnapshot</ID>
+    <ID>ReturnCount:StressViewModel.kt$StressViewModel$private fun evaluateCoreChannel( channel: PpgType, fullSession: WindowSnapshot, transportMissingSequenceCount: Long ): CoreChannelEvaluation</ID>
+    <ID>ReturnCount:StressViewModel.kt$StressViewModel$private fun requestFinalization(sessionId: String?, force: Boolean = false, completionReason: String = "session_finalized")</ID>
+    <ID>ReturnCount:TextChunker.kt$TextChunker$private fun chooseBoundary(start: Int, desiredEnd: Int, hardEnd: Int, totalTokens: Int, sentenceEnds: Set&lt;Int&gt;): Int</ID>
+    <ID>ReturnCount:TimestampAwarePpgResampler.kt$TimestampAwarePpgResampler$fun resample(timestampsMillis: LongArray, values: DoubleArray, targetRateHz: Int, maxGapMillis: Long = 500L): TimestampResampledPpg?</ID>
+    <ID>ReturnCount:UnifiedSessionEngine.kt$UnifiedSessionEngine$fun updateSpeakerLabel(segmentId: String, label: String)</ID>
+    <ID>ReturnCount:UnifiedSessionEngine.kt$UnifiedSessionEngine$fun updateTranscriptText(segmentId: String, text: String)</ID>
+    <ID>ReturnCount:UnifiedSessionEngine.kt$UnifiedSessionEngine$private fun acceptsTranscriptEvent(segment: SpeechSegment, expectedSessionId: String, timeline: SessionTimeline): Boolean</ID>
+    <ID>ReturnCount:UnifiedSessionEngine.kt$UnifiedSessionEngine$private suspend fun stopSessionInternal()</ID>
+    <ID>ReturnCount:UnifiedSessionViewModel.kt$internal fun isLiveSessionGenerationAccepted(expectedGeneration: Long, snapshot: UnifiedSessionLiveSnapshot): Boolean</ID>
+    <ID>ReturnCount:WearBatchListenerService.kt$WearBatchListenerService$override fun onMessageReceived(messageEvent: MessageEvent)</ID>
+    <ID>ReturnCount:WearablePpgWindowPreprocessor.kt$WearablePpgWindowPreprocessor$private fun hasPlausibleCadence(timestamps: LongArray, expectedInterval: Double): Boolean</ID>
+    <ID>ReturnCount:WearablePpgWindowPreprocessor.kt$WearablePpgWindowPreprocessor$private fun prepareInternal(snapshot: WindowSnapshot, targetDurationSeconds: Int?): PpgPreprocessResult</ID>
+    <ID>ReturnCount:WebUrlPolicy.kt$SecureWebUrlPolicy$fun normalize(rawUrl: String): HttpUrl?</ID>
+    <ID>ReturnCount:WebUrlPolicy.kt$SecureWebUrlPolicy$fun normalizeForApproval(rawUrl: String): HttpUrl?</ID>
+    <ID>ReturnCount:WebUrlPolicy.kt$SecureWebUrlPolicy$private fun isPotentiallyPublicHost(host: String): Boolean</ID>
+    <ID>ReturnCount:WebUrlPolicy.kt$SecureWebUrlPolicy$private fun isPublicHost(host: String): Boolean</ID>
+    <ID>SwallowedException:AndroidAudioCaptureEngine.kt$AndroidAudioCaptureEngine$ex: Exception</ID>
+    <ID>SwallowedException:ConsentManager.kt$ConsentManager$e: ConsentValidationException</ID>
+    <ID>SwallowedException:EncryptedStorageService.kt$AndroidEncryptedStorageService$error: FileNotFoundException</ID>
+    <ID>SwallowedException:EngineApiTest.kt$EngineApiTest$e: Exception</ID>
+    <ID>SwallowedException:LiteRTLlmEngine.kt$LiteRTLlmEngine$timeout: TimeoutCancellationException</ID>
+    <ID>SwallowedException:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$error: IOException</ID>
+    <ID>ThrowsCount:ConsentValidator.kt$internal fun validateConsent( record: ConsentRecord?, token: ConsentToken, expectedUserId: String, expectedSessionId: String, expectedScope: ConsentScope ): ConsentRecord</ID>
+    <ID>ThrowsCount:DocumentFormat.kt$DocumentFormats$fun detect(mimeType: String?, displayName: String?): DocumentFormat</ID>
+    <ID>ThrowsCount:DocumentFormat.kt$DocumentFormats$private fun verifyDocx(file: File)</ID>
+    <ID>ThrowsCount:DocumentFormat.kt$StrictUtf8TextReader$fun read(input: java.io.InputStream, maxCharacters: Int): String</ID>
+    <ID>ThrowsCount:DocumentParser.kt$DocumentParser$suspend fun copyToStagingFile(uri: Uri, displayName: String): File</ID>
+    <ID>ThrowsCount:DocumentParser.kt$DocumentParser$suspend fun extractText(uri: Uri): String</ID>
+    <ID>ThrowsCount:DocxTextExtractor.kt$DocxTextExtractor$fun extractBlocks(file: File, documentId: String): List&lt;DocumentBlock&gt;</ID>
+    <ID>ThrowsCount:EncryptedStorageService.kt$AesGcmFileCipher$fun decrypt(key: SecretKey, input: InputStream, output: java.io.OutputStream)</ID>
+    <ID>ThrowsCount:ModelStorageManager.kt$ModelStorageManager$private fun preflightTree(treeUri: Uri)</ID>
+    <ID>ThrowsCount:ModelStorageManager.kt$SafTreeDocumentPolicy$fun validateSelectedTree( authority: String, requestedDocumentId: String, returnedDocumentId: String, mimeType: String, documentFlags: Int, availableBytes: Long?, requiredBytes: Long )</ID>
+    <ID>ThrowsCount:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader$private fun validateUrl(url: URL, policy: ArtifactDownloadPolicy, label: String)</ID>
+    <ID>ThrowsCount:VerbatimSessionFinalizer.kt$VerbatimSessionFinalizer$private suspend fun generateSummary(sessionId: String, transcriptSegments: List&lt;SpeechSegment&gt;): Pair&lt;String, String&gt;</ID>
+    <ID>TooGenericExceptionCaught:AndroidAudioCaptureEngine.kt$AndroidAudioCaptureEngine$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:AndroidAudioCaptureEngine.kt$AndroidAudioCaptureEngine$ex: Exception</ID>
+    <ID>TooGenericExceptionCaught:ArtifactIntegrityVerifier.kt$ArtifactIntegrityVerifier$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:AudioRecordVoiceInputEngine.kt$AudioRecordVoiceInputEngine$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ChatExportUtil.kt$ChatExportUtil$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:CounselorViewModel.kt$CounselorViewModel$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:CounselorViewModel.kt$CounselorViewModel$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:DataLifecycleService.kt$LocalDataLifecycleService$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:DocumentFormat.kt$DocumentFormats$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:DocumentFormat.kt$StrictUtf8TextReader$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:DocumentIngestionService.kt$DocumentIngestionService$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:DocumentParser.kt$DocumentParser$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:DocumentParser.kt$MlKitPdfPageOcrEngine$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:DocxTextExtractor.kt$DocxTextExtractor$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:EmbeddingArtifactManager.kt$EmbeddingArtifactManager$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:EmbeddingArtifactManager.kt$EmbeddingArtifactWorker$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:EncryptedStorageService.kt$AndroidEncryptedStorageService$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:GemmaCandidatePreflight.kt$LiteRtGemmaCandidatePreflight$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:GemmaModelStorage.kt$GemmaModelStorage$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:GemmaRangeResumeWorker.kt$GemmaRangeResumeWorker$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:GoogleHtmlSearchDiscovery.kt$GoogleHtmlSearchDiscovery$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:KeyManager.kt$AndroidKeystoreKeyManager$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:LiteRTLlmEngine.kt$LiteRTLlmEngine$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:LocalEmbeddingModel.kt$LocalEmbeddingModel$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:ModelIntegrityVerifier.kt$ModelIntegrityVerifier$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ModelManager.kt$ModelManager$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ModelStorageManager.kt$ModelStorageManager$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:OkHttpKsoupWebPageScraper.kt$OkHttpKsoupWebPageScraper$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:PiperVoiceOutputEngine.kt$AndroidTextToSpeechVoiceOutputEngine$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:PiperVoiceOutputEngine.kt$PiperVoiceOutputEngine$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:PiperVoiceOutputEngine.kt$TtsArchiveExtractor$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:PpgFeatureExtractor.kt$PpgFeatureExtractor$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:RealLiveBiosignalEngine.kt$RealLiveBiosignalEngine$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:RealtimeInferenceEngineImpl.kt$RealtimeInferenceEngineImpl$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:RoomCrisisTurnRepository.kt$RoomCrisisTurnRepository$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SpeechBundleDownloadManager.kt$SpeechBundleDownloadManager$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:SpeechBundleDownloadManager.kt$SpeechBundleDownloadWorker$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:SpeechFrameSpool.kt$SpeechFrameSpool$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:SpeechModelBundleManager.kt$SpeechModelBundleManager$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:SpeechRuntimeCoordinator.kt$SpeechRuntimeCoordinator$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:StressHistoryContext.kt$RoomStressHistoryContextProvider$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:StressViewModel.kt$StressViewModel$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:UnifiedSessionEngine.kt$UnifiedSessionEngine$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:UnifiedSessionService.kt$UnifiedSessionService$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:UnifiedSessionViewModel.kt$UnifiedSessionViewModel$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:VerbatimArtifactService.kt$VerbatimArtifactService$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:VerbatimSessionFinalizer.kt$VerbatimSessionFinalizer$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:VerbatimSessionFinalizer.kt$VerbatimSessionFinalizer$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:VoicePlaybackCoordinator.kt$VoicePlaybackCoordinator$error: Throwable</ID>
+    <ID>TooGenericExceptionCaught:WearSessionCoordinator.kt$WearSessionCoordinator$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:WebGroundingGatewayImpl.kt$WebGroundingGatewayImpl$error: Exception</ID>
+    <ID>TooManyFunctions:AppLocator.kt$AppLocator</ID>
+    <ID>TooManyFunctions:ClinicalDaos.kt$ChatDao</ID>
+    <ID>TooManyFunctions:ClinicalDaos.kt$DocumentDao</ID>
+    <ID>TooManyFunctions:ClinicalDaos.kt$LiveMonitorDao</ID>
+    <ID>TooManyFunctions:ClinicalDaos.kt$VerbatimDao</ID>
+    <ID>TooManyFunctions:CounselorViewModel.kt$CounselorViewModel : ViewModel</ID>
+    <ID>TooManyFunctions:DocumentIngestionService.kt$DocumentIngestionService</ID>
+    <ID>TooManyFunctions:DocumentParser.kt$DocumentParser</ID>
+    <ID>TooManyFunctions:DurableArtifactCoordinator.kt$DurableArtifactCoordinator</ID>
+    <ID>TooManyFunctions:EmbeddingArtifactManager.kt$EmbeddingArtifactManager</ID>
+    <ID>TooManyFunctions:GemmaModelStorage.kt$GemmaModelStorage : ModelStorage</ID>
+    <ID>TooManyFunctions:GemmaModelStorage.kt$ModelStorage</ID>
+    <ID>TooManyFunctions:HistoryDetailScreen.kt$com.stressdetector.mobile.ui.screens.HistoryDetailScreen.kt</ID>
+    <ID>TooManyFunctions:HomePpgProcessingCoordinator.kt$HomePpgProcessingCoordinator</ID>
+    <ID>TooManyFunctions:IPpgRepository.kt$IPpgRepository</ID>
+    <ID>TooManyFunctions:KnowledgeBaseDaos.kt$KnowledgeBaseDao</ID>
+    <ID>TooManyFunctions:LiteRTLlmEngine.kt$LiteRTLlmEngine : OnDeviceLlmEngine</ID>
+    <ID>TooManyFunctions:LocalEmbeddingModel.kt$LocalEmbeddingModel : Closeable</ID>
+    <ID>TooManyFunctions:MainActivity.kt$com.stressdetector.mobile.MainActivity.kt</ID>
+    <ID>TooManyFunctions:MediaAudioPlaybackEngine.kt$MediaAudioPlaybackEngine : AudioPlaybackEngine</ID>
+    <ID>TooManyFunctions:ModelManager.kt$ModelManager</ID>
+    <ID>TooManyFunctions:ModelStorageManager.kt$ModelStorageManager</ID>
+    <ID>TooManyFunctions:MonitoringScreen.kt$com.stressdetector.mobile.ui.MonitoringScreen.kt</ID>
+    <ID>TooManyFunctions:PpgRepository.kt$PpgRepositoryImpl : IPpgRepository</ID>
+    <ID>TooManyFunctions:ProfileScreen.kt$com.stressdetector.mobile.ui.screens.ProfileScreen.kt</ID>
+    <ID>TooManyFunctions:ProfileViewModel.kt$ProfileViewModel : ViewModel</ID>
+    <ID>TooManyFunctions:RealLiveBiosignalEngine.kt$RealLiveBiosignalEngine : LiveBiosignalEngine</ID>
+    <ID>TooManyFunctions:ResumableHttpFileDownloader.kt$ResumableHttpFileDownloader</ID>
+    <ID>TooManyFunctions:SafCounselorPersonaRepository.kt$SafCounselorPersonaRepository : CounselorPersonaRepository</ID>
+    <ID>TooManyFunctions:SherpaOnnxSpeechRuntime.kt$SherpaOnnxSpeechRuntime : LocalSpeechRuntime</ID>
+    <ID>TooManyFunctions:SpeechBundleDownloadManager.kt$SpeechBundleDownloadManager</ID>
+    <ID>TooManyFunctions:SpeechBundleDownloadManager.kt$SpeechBundleDownloadStateStore</ID>
+    <ID>TooManyFunctions:SpeechModelBundleManager.kt$SpeechModelBundleManager</ID>
+    <ID>TooManyFunctions:StressInferenceRuntime.kt$StressInferenceRuntime : CanonicalPpgRuntimeAutoCloseable</ID>
+    <ID>TooManyFunctions:StressViewModel.kt$StressViewModel : AndroidViewModel</ID>
+    <ID>TooManyFunctions:UnifiedSessionEngine.kt$UnifiedSessionEngine</ID>
+    <ID>TooManyFunctions:UnifiedSessionRepository.kt$UnifiedSessionRepository : VerbatimSessionRepository</ID>
+    <ID>TooManyFunctions:UnifiedSessionScreen.kt$com.stressdetector.mobile.ui.screens.UnifiedSessionScreen.kt</ID>
+    <ID>TooManyFunctions:UnifiedSessionViewModel.kt$UnifiedSessionViewModel : ViewModel</ID>
+    <ID>TooManyFunctions:WearablePpgWindowPreprocessor.kt$WearablePpgWindowPreprocessor</ID>
+    <ID>UnusedParameter:DurableArtifactCoordinator.kt$DurableArtifactCoordinator$storageState: ModelStorageState</ID>
+    <ID>UnusedParameter:HomeSessionStatusCard.kt$state: HomePredictionUiState</ID>
+    <ID>UnusedParameter:ModelManager.kt$ModelManager$downloadId: Long</ID>
+    <ID>UnusedParameter:NavGraph.kt$innerPadding: PaddingValues</ID>
+    <ID>UnusedParameter:RealtimePpgChartProjector.kt$RealtimePpgChartProjector$elapsedMillis: LongArray</ID>
+    <ID>UnusedParameter:RealtimePpgChartProjector.kt$RealtimePpgChartProjector$values: FloatArray</ID>
+    <ID>UnusedParameter:SignalQualityGate.kt$SignalQualityGate$type: com.stressdetector.shared.PpgType</ID>
+    <ID>UnusedPrivateMember:CounselorViewModel.kt$private fun Throwable.toSafeMessage(default: String): String</ID>
+    <ID>UnusedPrivateMember:LiteRTLlmEngine.kt$LiteRTLlmEngine$private fun detachActiveConversation(conversation: Conversation?)</ID>
+    <ID>UnusedPrivateMember:ModelManager.kt$ModelManager$private fun cleanupOrphanedDownload(tracked: PersistedModelDownload?)</ID>
+    <ID>UnusedPrivateMember:ModelManager.kt$ModelManager$private suspend fun preserveOrphanedCandidate()</ID>
+    <ID>UnusedPrivateMember:MonitoringScreen.kt$@Composable private fun InstructionCard()</ID>
+    <ID>UnusedPrivateProperty:EngineApiTest.kt$EngineApiTest$val engine = com.google.ai.edge.litertlm.Engine(engineConfig)</ID>
+    <ID>UnusedPrivateProperty:LocalEmbeddingModel.kt$LocalEmbeddingModel$_context: Context</ID>
+    <ID>UnusedPrivateProperty:MainActivity.kt$private val SurfaceCard = Color(0xFF1E293B)</ID>
+    <ID>UnusedPrivateProperty:ModelManager.kt$ModelManager.Companion$private const val SNAPSHOT_ATTEMPTS = 3</ID>
+    <ID>UnusedPrivateProperty:ModelManager.kt$ModelManager.Companion$private const val SNAPSHOT_RETRY_DELAY_MS = 250L</ID>
+    <ID>UnusedPrivateProperty:RealtimePpgChartProjector.kt$RealtimePpgChartProjector$private val maxEnvelopeBuckets: Int = DEFAULT_ENVELOPE_BUCKETS</ID>
+    <ID>UseCheckOrError:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$throw IllegalStateException("AudioRecord read failed with code $count")</ID>
+    <ID>UseCheckOrError:RealAudioIntelligenceEngine.kt$RealAudioIntelligenceEngine$throw IllegalStateException("AudioRecord returned no audio data.")</ID>
+    <ID>UseCheckOrError:SpeechBundleDownloadManager.kt$SpeechBundleDownloadManager$throw IllegalStateException("WorkManager did not publish the Sherpa download request.")</ID>
+    <ID>UseCheckOrError:SpeechBundleDownloadManager.kt$SpeechBundleDownloadManager$throw IllegalStateException("WorkManager replaced the Sherpa download request unexpectedly.")</ID>
+  </CurrentIssues>
+</SmellBaseline>
