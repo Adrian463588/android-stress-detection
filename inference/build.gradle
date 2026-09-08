@@ -47,26 +47,50 @@ android {
 
 def exportRoot = file("../../data/artifacts/export").canonicalFile
 def projectRoot = file("../..").canonicalFile
-def modelIndex = new File(exportRoot, "model_index.json")
+def runArtifactsRoot = file("../../data/artifacts/runs").canonicalFile
+def productionModelIndexValue = providers.gradleProperty("productionModelIndex").orNull
+def resolveExplicitIndex = { String value ->
+    def candidates = [
+        rootProject.file(value),
+        new File(rootProject.projectDir.parentFile, value),
+        project.file(value),
+    ]
+    def existing = candidates.find { it.isFile() }
+    (existing ?: candidates.first()).canonicalFile
+}
+def modelIndex = productionModelIndexValue != null && !productionModelIndexValue.trim().isEmpty()
+    ? resolveExplicitIndex(productionModelIndexValue)
+    : new File(buildDir, "missing-production-model-index.json")
 def candidateModelIndex = new File(exportRoot, "candidate_model_index.json")
 def generatedAssets = file("$buildDir/generated/inferenceAssets")
 def generatedCandidateAssets = file("$buildDir/generated/candidateInferenceAssets")
 def generatedResearchAssets = file("$buildDir/generated/researchInferenceAssets")
-def runsDir = file("../../data/artifacts/runs").canonicalFile
-def defaultResearchIndex = {
-    if (!runsDir.isDirectory()) return null
-    def candidates = runsDir.listFiles()?.findAll {
-        new File(it, "export/research/research_model_index.json").isFile()
-    }?.sort { it.name }
-    return candidates ? new File(candidates.last(), "export/research/research_model_index.json") : null
-}()
 def researchModelIndexValue = providers.gradleProperty("researchModelIndex").orNull
 def researchModelIndex = (researchModelIndexValue != null && !researchModelIndexValue.trim().isEmpty())
-    ? file(researchModelIndexValue).canonicalFile
-    : (defaultResearchIndex ?: new File(buildDir, "missing-research-model-index.json"))
+    ? resolveExplicitIndex(researchModelIndexValue)
+    : new File(buildDir, "missing-research-model-index.json")
 def modelIndexValidator = file("../../PipelinePython/03_stress_onnx/tools/validate_model_index.py").canonicalFile
 def isWindowsHost = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("windows")
 def venvPython = file(isWindowsHost ? "../../.venv/Scripts/python.exe" : "../../.venv/bin/python").canonicalFile
+
+def requireRunScopedIndex = { File indexFile, String label ->
+    if (!indexFile.isFile()) {
+        throw new GradleException("Missing -P${label}=<run-scoped model index>")
+    }
+    if (!indexFile.path.startsWith(runArtifactsRoot.path + File.separator)) {
+        throw new GradleException("${label} must be under data/artifacts/runs/<RUN_ID>")
+    }
+    def relative = runArtifactsRoot.toPath().relativize(indexFile.toPath()).toString().replace("\\", "/")
+    def parts = relative.split("/")
+    if (parts.length < 2 || !(parts[0] ==~ /\d{8}T\d{6}Z/)) {
+        throw new GradleException("${label} must include a valid UTC run directory")
+    }
+    def payload = new JsonSlurper().parse(indexFile)
+    if (payload.run_id != parts[0]) {
+        throw new GradleException("${label} run_id does not match its directory")
+    }
+    [payload: payload, runId: parts[0], runRoot: new File(runArtifactsRoot, parts[0]).canonicalFile]
+}
 
 /**
  * The Python exporter writes a policy and its content address into every
@@ -170,14 +194,13 @@ def sha256 = { File source ->
 }
 
 tasks.register("syncInferenceAssets") {
-    inputs.file(modelIndex)
+    inputs.property("productionModelIndexPath", modelIndex.absolutePath)
     inputs.dir(exportRoot)
     outputs.dir(generatedAssets)
     doLast {
-        if (!modelIndex.isFile()) {
-            throw new GradleException("Missing canonical model_index.json; inference packaging is blocked")
-        }
-        def index = new JsonSlurper().parse(modelIndex)
+        def scopedIndex = requireRunScopedIndex(modelIndex, "productionModelIndex")
+        def index = scopedIndex.payload
+        def runRoot = scopedIndex.runRoot
         if (index.schema_version != "1.0.0" || !(index.models instanceof List)) {
             throw new GradleException("Invalid canonical model index schema")
         }
@@ -247,10 +270,8 @@ tasks.register("syncInferenceAssets") {
             required.each { kind ->
                 def descriptor = candidate.files[kind]
                 def descriptorPath = descriptor.path as String
-                def source = descriptorPath.startsWith("data/artifacts/export/")
-                    ? new File(projectRoot, descriptorPath).canonicalFile
-                    : new File(exportRoot, descriptorPath).canonicalFile
-                if (!source.path.startsWith(exportRoot.path + File.separator) || !source.isFile()) {
+                def source = new File(projectRoot, descriptorPath).canonicalFile
+                if (!source.path.startsWith(runRoot.path + File.separator) || !source.isFile()) {
                     throw new GradleException("Missing or unsafe ${kind} artifact: ${descriptor.path}")
                 }
                 if (!(descriptor.sha256 ==~ /[0-9a-f]{64}/) || sha256(source) != descriptor.sha256) {
@@ -396,20 +417,23 @@ tasks.register("syncInferenceAssets") {
 }
 
 tasks.register("validateCanonicalModelIndex", Exec) {
-    inputs.file(modelIndex)
+    inputs.property("productionModelIndexPath", modelIndex.absolutePath)
     inputs.file(modelIndexValidator)
     inputs.dir(exportRoot)
     outputs.upToDateWhen { false }
     workingDir(projectRoot)
     doFirst {
+        if (!modelIndex.isFile()) {
+            throw new GradleException("Missing -PproductionModelIndex=<run-scoped model index>")
+        }
         if (!venvPython.isFile()) {
             throw new GradleException("Missing project Python environment: ${venvPython}")
         }
         if (!modelIndexValidator.isFile()) {
             throw new GradleException("Missing canonical model-index validator: ${modelIndexValidator}")
         }
+        commandLine(venvPython, modelIndexValidator, modelIndex.absolutePath)
     }
-    commandLine(venvPython, modelIndexValidator)
 }
 
 tasks.register("syncCandidateInferenceAssets") {
@@ -464,14 +488,9 @@ tasks.register("syncResearchInferenceAssets") {
     inputs.file(researchModelIndex)
     outputs.dir(generatedResearchAssets)
     doLast {
-        def runsRoot = new File(projectRoot, "data/artifacts/runs").canonicalFile
-        if (researchModelIndex == null || !researchModelIndex.isFile() ||
-            !researchModelIndex.path.startsWith(runsRoot.path + File.separator)) {
-            throw new GradleException(
-                "Research build requires -PresearchModelIndex=<run-scoped research_model_index.json> or an existing run in data/artifacts/runs"
-            )
-        }
-        def index = new JsonSlurper().parse(researchModelIndex)
+        def scopedIndex = requireRunScopedIndex(researchModelIndex, "researchModelIndex")
+        def index = scopedIndex.payload
+        def runRoot = scopedIndex.runRoot
         if (index.schema_version != "1.0.0" ||
             index.artifact_status != "research_candidate" ||
             index.evaluation_scope != "development_only" ||
@@ -516,7 +535,7 @@ tasks.register("syncResearchInferenceAssets") {
             required.each { kind ->
                 def descriptor = candidate.files[kind]
                 def source = new File(projectRoot, descriptor.path as String).canonicalFile
-                if (!source.path.startsWith(runsRoot.path + File.separator) || !source.isFile() ||
+                if (!source.path.startsWith(runRoot.path + File.separator) || !source.isFile() ||
                     !(descriptor.sha256 ==~ /[0-9a-f]{64}/) || sha256(source) != descriptor.sha256) {
                     throw new GradleException("Research ${kind} checksum/path failed for ${version}/${sensor}")
                 }

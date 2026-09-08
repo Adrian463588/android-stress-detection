@@ -1,11 +1,15 @@
 package com.stressdetector.mobile
 
 import android.app.Application
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import com.stressdetector.mobile.domain.reminder.AI_REMINDER_CHANNEL_ID
 
 class StressDetectorApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        val manager = getSystemService(android.app.NotificationManager::class.java)
+        val manager = getSystemService(NotificationManager::class.java)
 
         val ragChannel = android.app.NotificationChannel(
             "rag_channel",
@@ -39,5 +43,16 @@ class StressDetectorApplication : Application() {
             description = "Keeps the unified session running in the background"
         }
         manager.createNotificationChannel(sessionChannel)
+
+        val aiReminderChannel = NotificationChannel(
+            AI_REMINDER_CHANNEL_ID,
+            "AI+ Reminder",
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = "Pengingat reflektif berbasis sesi stress lokal yang valid"
+            setLockscreenVisibility(Notification.VISIBILITY_PRIVATE)
+            setShowBadge(true)
+        }
+        manager.createNotificationChannel(aiReminderChannel)
     }
 }

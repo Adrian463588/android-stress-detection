@@ -4,6 +4,9 @@ import android.content.Context
 import android.database.Cursor
 import android.util.Base64
 import com.stressdetector.mobile.data.db.StressDatabase
+import com.stressdetector.mobile.domain.reminder.AiReminderScheduler
+import com.stressdetector.mobile.domain.reminder.AiReminderSecretStore
+import com.stressdetector.mobile.domain.reminder.AiReminderSettings
 import com.stressdetector.mobile.security.EncryptedStorageService
 import com.stressdetector.mobile.security.KeyManager
 import com.stressdetector.mobile.security.PrivacyIdentity
@@ -37,6 +40,12 @@ interface DataLifecycleService {
     suspend fun deleteLiveMonitorData(userId: String)
 }
 
+data class AiReminderLifecycleDependencies(
+    val secretStore: AiReminderSecretStore? = null,
+    val scheduler: AiReminderScheduler? = null,
+    val settings: AiReminderSettings? = null
+)
+
 /**
  * Implements the lifecycle hooks for the app's single local profile.
  * The export is plaintext because it is created only after an explicit user action; callers must
@@ -46,7 +55,8 @@ class LocalDataLifecycleService(
     context: Context,
     private val database: StressDatabase,
     private val encryptedStorage: EncryptedStorageService,
-    private val keyManager: KeyManager
+    private val keyManager: KeyManager,
+    private val aiReminder: AiReminderLifecycleDependencies = AiReminderLifecycleDependencies()
 ) : DataLifecycleService {
     private val exportDirectory = File(context.applicationContext.cacheDir, "privacy_exports")
 
@@ -59,6 +69,11 @@ class LocalDataLifecycleService(
                 zip.putNextEntry(ZipEntry("records.json"))
                 zip.write(exportDatabase().toString(2).toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
+                aiReminder.secretStore?.let { secrets ->
+                    zip.putNextEntry(ZipEntry("ai-reminder-sensitive.json"))
+                    zip.write(secrets.exportJson().toByteArray(Charsets.UTF_8))
+                    zip.closeEntry()
+                }
                 encryptedStorage.listEncryptedFiles(userId).forEach { encrypted ->
                     zip.putNextEntry(ZipEntry("files/${encrypted.relativePath}"))
                     encryptedStorage.readEncryptedFile(userId, encrypted.relativePath).use { it.copyTo(zip) }
@@ -74,7 +89,10 @@ class LocalDataLifecycleService(
     override suspend fun deleteUserData(userId: String): Unit = withContext(Dispatchers.IO) {
         requireLocalProfile(userId)
         try {
+            aiReminder.settings?.setEnabled(false)
+            aiReminder.scheduler?.cancelAll()
             database.clearAllTables()
+            aiReminder.secretStore?.clear()
             encryptedStorage.deleteAllUserFiles(userId)
             keyManager.deleteKeys(userId)
             exportDirectory.listFiles()?.forEach(File::delete)
@@ -193,6 +211,7 @@ class LocalDataLifecycleService(
             "chat_sessions",
             "chat_messages",
             "user_consents",
+            "ai_reminders",
             "clinical_documents",
             "document_chunks",
             "counselor_persona"

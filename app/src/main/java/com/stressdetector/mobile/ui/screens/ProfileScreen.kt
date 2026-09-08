@@ -69,6 +69,7 @@ import com.stressdetector.mobile.ml.storage.DurableSyncReport
 import com.stressdetector.mobile.ml.storage.LocalOnlyDocumentTreeContract
 import com.stressdetector.mobile.ui.AppSpacing
 import com.stressdetector.mobile.ui.LocalAppMotion
+import com.stressdetector.mobile.ui.viewmodels.AiReminderViewModel
 import com.stressdetector.mobile.ui.viewmodels.DocumentLibraryViewModel
 import com.stressdetector.mobile.ui.viewmodels.ModelActivationState
 import com.stressdetector.mobile.ui.viewmodels.ProfileViewModel
@@ -83,15 +84,23 @@ private const val ARTIFACT_PROGRESS_MILLIS = 180
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Suppress("FunctionNaming", "LongMethod", "CyclomaticComplexMethod")
+@Suppress("FunctionNaming", "LongMethod", "CyclomaticComplexMethod", "LongParameterList")
 fun ProfileScreen(
     viewModel: ProfileViewModel,
     modifier: Modifier = Modifier,
     documentLibraryViewModel: DocumentLibraryViewModel? = null,
+    aiReminderViewModel: AiReminderViewModel? = null,
     onNavigateToLibrary: () -> Unit,
-    onNavigateToPersona: () -> Unit
+    onNavigateToPersona: () -> Unit,
+    onRequestNotificationPermission: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycleCompat()
+    val aiReminderState = if (aiReminderViewModel == null) {
+        null
+    } else {
+        val observed by aiReminderViewModel.uiState.collectAsStateWithLifecycleCompat()
+        observed
+    }
     var showTechnicalDetails by rememberSaveable { mutableStateOf(false) }
     var showVoiceSettings by rememberSaveable { mutableStateOf(false) }
     var showSherpaSources by rememberSaveable { mutableStateOf(false) }
@@ -381,6 +390,19 @@ fun ProfileScreen(
                     checked = state.aiCounselorConsentGranted,
                     onCheckedChange = { viewModel.toggleConsent("AI_COUNSELING", it) }
                 )
+                if (aiReminderViewModel != null && aiReminderState != null) {
+                    AiReminderSettingsSection(
+                        state = aiReminderState,
+                        actions = AiReminderSettingsActions(
+                            onDisplayNameSaved = aiReminderViewModel::saveDisplayName,
+                            onReminderConsentChanged = aiReminderViewModel::setReminderConsent,
+                            onEnabledChanged = aiReminderViewModel::setEnabled,
+                            onRequestNotificationPermission = onRequestNotificationPermission,
+                            onPause = aiReminderViewModel::pause,
+                            onRetry = aiReminderViewModel::retry
+                        )
+                    )
+                }
             }
         }
 

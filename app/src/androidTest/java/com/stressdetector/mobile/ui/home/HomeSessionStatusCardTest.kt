@@ -45,6 +45,7 @@ class HomeSessionStatusCardTest {
         }
 
         composeRule.waitForIdle()
+        composeRule.onNodeWithText(evidenceScopeLabel()).assertIsDisplayed()
         composeRule.onNodeWithText("Device Connected & Streaming").assertIsDisplayed()
         composeRule.onNodeWithText("Merekam").assertIsDisplayed()
     }

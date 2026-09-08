@@ -6,28 +6,28 @@ Android project untuk phone companion dan Galaxy Watch. Proyek ini mengintegrasi
 
 Aplikasi ini memiliki beberapa fitur utama yang dirancang dengan antarmuka berbasis Jetpack Compose:
 
-1. **Sesi Perekaman Stres (Verbatim+)**  
-   Perekaman real-time yang terhubung ke Galaxy Watch untuk mengambil data PPG.  
+1. **Sesi Perekaman Stres (Verbatim+)
+   Perekaman real-time yang terhubung ke Galaxy Watch untuk mengambil data PPG.
    ![Stress Record Session](docs/screenshots/1.StressRecordSession.png)
 
-2. **Pasca-Perekaman & Sinkronisasi**  
-   Memastikan data aman dan tersinkronisasi sebelum inferensi dijalankan.  
+2. **Pasca-Perekaman & Sinkronisasi**
+   Memastikan data aman dan tersinkronisasi sebelum inferensi dijalankan.
    ![Screen After Record](docs/screenshots/2.ScreenAfterRecordStressDetection.png)
 
-3. **Hasil Deteksi Stres**  
-   Menampilkan hasil inferensi model klasifikasi berbasis ONNX secara on-device.  
+3. **Hasil Deteksi Stres**
+   Menampilkan hasil inferensi model klasifikasi berbasis ONNX secara on-device.
    ![Screen Result](docs/screenshots/3.ScreenResultStressDetection.png)
 
-4. **Riwayat Deteksi (History)**  
-   Mencatat hasil deteksi historis untuk evaluasi lebih lanjut.  
+4. **Riwayat Deteksi (History)**
+   Mencatat hasil deteksi historis untuk evaluasi lebih lanjut.
    ![History Record](docs/screenshots/4.HistoryRecordStressDetection.png)
 
-5. **Manajemen Dokumen (AI+ RAG)**  
-   Pengguna dapat mengelola dokumen lokal sebagai basis pengetahuan tersanitasi untuk AI.  
+5. **Manajemen Dokumen (AI+ RAG)**
+   Pengguna dapat mengelola dokumen lokal sebagai basis pengetahuan tersanitasi untuk AI.
    ![Dokumen RAG](docs/screenshots/5.ScreenDokumenRAG.png)
 
-6. **AI+ Chatbot Counselor**  
-   Asisten konseling lokal (on-device LiteRT-LM) yang memanfaatkan dokumen untuk menghasilkan jawaban aman (evidence-gated).  
+6. **AI+ Chatbot Counselor**
+   Asisten konseling lokal (on-device LiteRT-LM) yang memanfaatkan dokumen untuk menghasilkan jawaban aman (evidence-gated).
    ![Chatbot Counselor](docs/screenshots/6.ScreenAI+ChatbotCounselor.png)
 
 Source utama produk tetap [`../PRD.md`](../PRD.md); kontrak UI/runtime Verbatim+ ada di [`../DESIGN.md`](../DESIGN.md) dan [`../EXPERIENCE.md`](../EXPERIENCE.md).
@@ -93,6 +93,51 @@ bubble jawaban. Pertanyaan dukungan non-evidence boleh memakai `GENERAL_SAFE`
 dengan disclaimer. Kontrak ini mengikuti [LiteRT-LM Kotlin Conversation API](https://github.com/google-ai-edge/LiteRT-LM/blob/main/docs/api/kotlin/getting_started.md),
 [Android app architecture](https://developer.android.com/topic/architecture),
 dan pembatasan SSRF dari [OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html).
+
+## AI+ Reminder
+
+AI+ Reminder adalah fitur opt-in yang membuat paling banyak satu pengingat untuk
+satu sesi stress yang valid. Planner dan generator memakai LiteRT-LM lokal; teks
+dibuat saat worker berjalan agar tetap memakai sesi valid terbaru. Nama display
+dan payload reminder disimpan melalui encrypted storage, sedangkan Room hanya
+menyimpan metadata dan provenance. Raw PPG, transcript penuh, dan dokumen RAG
+tidak masuk ke notifikasi.
+
+Reminder hanya aktif setelah consent AI+ Reminder dan consent counseling diberikan,
+nama (opsional) disimpan, model lokal siap, serta izin notifikasi tersedia. Model
+tidak boleh menghasilkan recurrence, waktu lampau, waktu lebih dari 48 jam, klaim
+diagnosis, atau klaim tugas grounding yang tidak tercatat. Output invalid atau
+model/permission/sesi tidak siap menghasilkan status `UNAVAILABLE`/`FAILED`, bukan
+pesan pengganti.
+
+WorkManager menjadwalkan pekerjaan secara persisten dan bersifat perkiraan; Android
+dapat menunda eksekusi. Notifikasi memakai channel stabil, `VISIBILITY_PRIVATE`,
+`publicVersion` yang tidak membocorkan isi sesi, dan PendingIntent immutable yang
+hanya membawa `reminderId` menuju AI+. Permission notifikasi diminta ketika user
+mengaktifkan reminder dan tidak menghalangi monitoring PPG.
+
+### Live preview PNG
+
+Screenshot PNG reminder dari perangkat nyata belum dapat diterbitkan pada checkout
+ini. Pada satu percobaan manual, `adb install -r -d` berhasil memasang APK
+research ke `QSWSEMRKNFZ9LJRC` (`2412DPC0AG`) dan `MainActivity` berhasil dibuka.
+Percobaan reinstall berikutnya melalui Gradle ditolak Android dengan
+`INSTALL_FAILED_USER_RESTRICTED`; pada verifikasi terakhir `adb devices -l` juga
+tidak menampilkan serial tersebut. Bundle Sherpa belum tersedia, instrumented
+model-parity belum menghasilkan receipt, permission notifikasi masih disabled,
+dan belum ada sesi PPG nyata yang memvalidasi delivery reminder. Status live
+preview tetap **BLOCKED**. Tidak ada gambar sintetis, dummy, placeholder, atau
+screenshot buatan yang ditambahkan sebagai bukti.
+
+Kontrak dan state machine lengkap berada di
+[`docs/specs/spec-ai-reminder/SPEC.md`](docs/specs/spec-ai-reminder/SPEC.md).
+
+Current device gate (2026-09-08): APK research berhasil dibuild. Satu percobaan
+install/launch manual berhasil, tetapi reinstall Gradle berikutnya diblokir oleh
+kebijakan perangkat (`INSTALL_FAILED_USER_RESTRICTED`) dan ADB kemudian tidak
+menampilkan device. Instrumented suite belum menjadi acceptance gate final;
+Sherpa/model parity, permission notifikasi, sesi PPG nyata, reboot/timezone, dan
+deep-link acceptance masih harus diverifikasi pada perangkat yang siap.
 
 ## Build dan verifikasi lokal
 

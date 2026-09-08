@@ -5,6 +5,14 @@ import com.stressdetector.shared.PpgFilterContract
 import com.stressdetector.shared.PredictionConfidence
 import com.stressdetector.shared.StressInferenceTrace
 
+private const val DEVELOPMENT_PARTICIPANT_FIRST = 1
+private const val DEVELOPMENT_PARTICIPANT_LAST = 28
+private const val MIN_RESEARCH_VALIDATION_COHORT = 26
+private val DEVELOPMENT_CALIBRATION_FIT_SOURCES =
+    setOf("participant_grouped_development_oof", "nested_outer_development_oof")
+private val DEVELOPMENT_CALIBRATION_STATUSES =
+    setOf("validated_development_oof", "validated_nested_outer_oof")
+
 data class RawPpgWindow(
     val sensorChannel: String,
     val samplingRateHz: Double,
@@ -289,8 +297,14 @@ data class ModelManifest(
             }
             require(cohort_access_count == 1) { "cohort_not_one_time" }
         } else {
-            val development = (1..28).map { "ID-%02d".format(it) }.toSet()
-            require(validation_cohort_ids.size >= 26 && validation_cohort_ids.toSet().size == validation_cohort_ids.size) {
+            val development =
+                (DEVELOPMENT_PARTICIPANT_FIRST..DEVELOPMENT_PARTICIPANT_LAST)
+                    .map { "ID-%02d".format(it) }
+                    .toSet()
+            require(
+                validation_cohort_ids.size >= MIN_RESEARCH_VALIDATION_COHORT &&
+                    validation_cohort_ids.toSet().size == validation_cohort_ids.size
+            ) {
                 "research_development_cohort_too_small_or_duplicated"
             }
             require(validation_cohort_ids.all(development::contains)) { "bad_research_validation_cohort" }
@@ -395,10 +409,10 @@ data class ProbabilityCalibration(
         require(fitted_cohort == (1..28).map { "ID-%02d".format(it) }) {
             "calibration_must_use_development_cohort"
         }
-        require(fitted_on == "participant_grouped_development_oof") {
+        require(fitted_on in DEVELOPMENT_CALIBRATION_FIT_SOURCES) {
             "invalid_calibration_provenance"
         }
-        require(calibration_status == "validated_development_oof") {
+        require(calibration_status in DEVELOPMENT_CALIBRATION_STATUSES) {
             "calibration_not_validated"
         }
         require(brier_score.isFinite() && brier_score in 0.0..1.0) { "invalid_calibration_brier" }

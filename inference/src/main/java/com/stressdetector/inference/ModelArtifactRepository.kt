@@ -24,6 +24,7 @@ internal data class CanonicalModelIndex(
     val models: List<CanonicalModelEntry> = emptyList()
 )
 
+@Suppress("ConstructorParameterNaming")
 internal data class CanonicalModelEntry(
     val model_version: String,
     val sensor_channel: String,
@@ -112,15 +113,13 @@ class AndroidAssetModelArtifactRepository(private val assets: AssetManager) : Mo
         } else {
             candidate.release_status == "accepted" && candidate.android_ready
         }
-        if (
-            !candidateGatePassed ||
-            candidate.sensor_channel !in ACCEPTED_SENSORS ||
-            !candidate.source_rate_hz.isFinite() ||
-            candidate.source_rate_hz <= 0.0 ||
-            !candidate.model_rate_hz.isFinite() ||
-            candidate.model_rate_hz <= 0.0
-        ) {
+        if (!candidateGatePassed || candidate.sensor_channel !in ACCEPTED_SENSORS) {
             return ModelArtifactResult.Invalid("deployment_gate_failed")
+        }
+        if (!isPositiveFiniteRate(candidate.source_rate_hz) ||
+            !isPositiveFiniteRate(candidate.model_rate_hz)
+        ) {
+            return ModelArtifactResult.Invalid("invalid_sampling_rate_contract")
         }
         if (!SAFE_ID.matches(candidate.model_version) || !SAFE_ID.matches(candidate.sensor_channel)) {
             return ModelArtifactResult.Invalid("unsafe_model_identity")
@@ -282,6 +281,8 @@ class AndroidAssetModelArtifactRepository(private val assets: AssetManager) : Mo
             "device_parity_tolerance_failed"
         }
     }
+
+    private fun isPositiveFiniteRate(rateHz: Double): Boolean = rateHz.isFinite() && rateHz > 0.0
 
     private data class ParityWire(
         val checked_samples: Int = 0,

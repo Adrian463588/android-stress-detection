@@ -85,6 +85,7 @@ import com.stressdetector.mobile.ui.AppSpacing
 import com.stressdetector.mobile.ui.components.CounselorMessageText
 import com.stressdetector.mobile.ui.components.WebSearchModeDialog
 import com.stressdetector.mobile.ui.screens.collectAsStateWithLifecycleCompat
+import com.stressdetector.mobile.ui.viewmodels.AiReminderViewModel
 import com.stressdetector.mobile.ui.viewmodels.CounselorPhase
 import com.stressdetector.mobile.ui.viewmodels.CounselorViewModel
 import com.stressdetector.mobile.ui.viewmodels.CrisisPersistenceState
@@ -96,13 +97,23 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 
 @Composable
+@Suppress("FunctionNaming", "LongMethod", "LongParameterList", "CyclomaticComplexMethod")
 fun AiCounselorScreen(
     viewModel: CounselorViewModel,
     windowSizeClass: WindowWidthSizeClass = WindowWidthSizeClass.Compact,
-    onNavigateToLibrary: () -> Unit
+    onNavigateToLibrary: () -> Unit,
+    aiReminderViewModel: AiReminderViewModel? = null,
+    onNavigateToProfile: () -> Unit = {},
+    onRequestNotificationPermission: () -> Unit = {}
 ) {
     // using regular collectAsStateWithLifecycle to avoid custom Compat issues, assuming it works as typical Compose
     val state by viewModel.uiState.collectAsStateWithLifecycleCompat()
+    val aiReminderState = if (aiReminderViewModel == null) {
+        null
+    } else {
+        val observed by aiReminderViewModel.uiState.collectAsStateWithLifecycleCompat()
+        observed
+    }
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     var showTechnicalDetails by remember { mutableStateOf(false) }
@@ -344,6 +355,20 @@ fun AiCounselorScreen(
 
             if (!state.isModelReady && state.phase != CounselorPhase.CRISIS_ESCALATION) {
                 ModelMissingCard(state.modelDownloadState)
+            }
+
+            aiReminderState?.let { reminderState ->
+                ReminderStatusCard(
+                    state = reminderState,
+                    onRetry = {
+                        if (reminderState.status is com.stressdetector.mobile.domain.reminder.AiReminderStatus.NeedsConsent) {
+                            onNavigateToProfile()
+                        } else {
+                            checkNotNull(aiReminderViewModel).retry()
+                        }
+                    },
+                    onRequestNotificationPermission = onRequestNotificationPermission
+                )
             }
 
             (state.crisisPersistenceState as? CrisisPersistenceState.RetryableFailure)?.let { failure ->

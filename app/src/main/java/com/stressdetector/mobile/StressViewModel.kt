@@ -37,6 +37,7 @@ import com.stressdetector.mobile.domain.engine.WatchSessionCoordinator
 import com.stressdetector.mobile.domain.history.HistoryChartArtifactStore
 import com.stressdetector.mobile.domain.history.saveCharts
 import com.stressdetector.mobile.domain.predictionOrNull
+import com.stressdetector.mobile.domain.reminder.AiReminderCoordinator
 import com.stressdetector.mobile.signal.BpmSummaryAccumulator
 import com.stressdetector.mobile.signal.PpgBpmEstimator
 import com.stressdetector.mobile.signal.PpgPreprocessResult
@@ -112,13 +113,15 @@ data class MobileUiState(
     val sessionNotice: String? = null
 )
 
+@Suppress("LongParameterList")
 class StressViewModel(
     application: Application,
     private val inference: IStressInferenceUseCase,
     private val ppgRepository: IPpgRepository,
     private val wearConnectionRepository: IWearConnectionRepository,
     private val watchSessionCoordinator: WatchSessionCoordinator,
-    private val dao: com.stressdetector.mobile.data.db.StressSessionDao
+    private val dao: com.stressdetector.mobile.data.db.StressSessionDao,
+    private val aiReminderCoordinator: AiReminderCoordinator? = null
 ) : AndroidViewModel(application) {
     private val mutableUiState = MutableStateFlow(MobileUiState())
     val uiState: StateFlow<MobileUiState> = mutableUiState.asStateFlow()
@@ -804,6 +807,7 @@ class StressViewModel(
                 }
                 when (result) {
                     is HomeFinalizationResult.Stored -> {
+                        aiReminderCoordinator?.onSessionFinalized(result.entity.sessionId)
                         val chartResult = historyChartArtifactStore.saveCharts(
                             sessionId = sessionId,
                             charts = mapOf(
@@ -878,7 +882,8 @@ class StressViewModel(
                     ppgRepository = AppLocator.ppgRepository,
                     wearConnectionRepository = AppLocator.wearConnectionRepository,
                     watchSessionCoordinator = AppLocator.watchSessionCoordinator(application),
-                    dao = StressDatabase.get(application).stressSessionDao()
+                    dao = StressDatabase.get(application).stressSessionDao(),
+                    aiReminderCoordinator = AppLocator.aiReminderCoordinator(application)
                 ) as T
             }
         }

@@ -4,10 +4,10 @@ package com.stressdetector.mobile.signal
 
 import android.content.Context
 import com.google.gson.Gson
-import com.stressdetector.mobile.BuildConfig
 import com.stressdetector.inference.ModelSessionContract
 import com.stressdetector.inference.PackagedPerformancePolicy
 import com.stressdetector.inference.PackagedPerformancePolicyLoader
+import com.stressdetector.mobile.BuildConfig
 import com.stressdetector.shared.PpgType
 
 private fun String.toLivePpgType(): PpgType = when (this) {

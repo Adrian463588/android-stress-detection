@@ -1,6 +1,7 @@
 package com.stressdetector.inference
 
 import com.google.gson.Gson
+import java.nio.FloatBuffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -11,6 +12,7 @@ class InferenceContractTest {
     @Test
     fun canonicalOnnxOutputsMapScalarAndStressClassWithoutInversion() {
         assertEquals(0.2f, OnnxOutputParser.extractStressProbability(floatArrayOf(0.2f)))
+        assertEquals(0.8f, OnnxOutputParser.extractStressProbability(floatArrayOf(0.2f, 0.8f)))
         assertEquals(
             0.8f,
             OnnxOutputParser.extractStressProbability(arrayOf(floatArrayOf(0.2f, 0.8f)))
@@ -19,6 +21,7 @@ class InferenceContractTest {
             0.35f,
             OnnxOutputParser.extractStressProbability(arrayOf(floatArrayOf(0.35f)))
         )
+        assertEquals(0.35f, OnnxOutputParser.extractStressProbability(FloatBuffer.wrap(floatArrayOf(0.35f))))
     }
 
     @Test
@@ -291,6 +294,39 @@ class InferenceContractTest {
                 device_parity_receipt_sha256 = null,
                 holdout_evaluated = false,
                 clinical_validation_status = "external_validation_required"
+            )
+
+        manifest.requireResearchValid()
+    }
+
+    @Test
+    fun nestedOuterOofCalibrationIsAcceptedAsDevelopmentOnlyEvidence() {
+        val manifest =
+            validResources().manifest.copy(
+                schema_version = "onnx-research-v1",
+                artifact_status = "research_candidate",
+                evaluation_scope = "development_only",
+                release_status = "blocked_existing_holdout_contract_mismatch",
+                gate_passed = true,
+                research_gate_passed = true,
+                balanced_accuracy_development = 0.80,
+                f1_development = 0.80,
+                roc_auc_development = 0.84,
+                performance_tier = "preferred",
+                deployment_scope = "research",
+                research_disclaimer = "Model penelitian — development only. Bukan diagnosis klinis.",
+                disclaimer_required = true,
+                validation_cohort_ids = (1..28).map { "ID-%02d".format(it) },
+                cohort_access_count = 0,
+                android_ready = false,
+                device_parity_receipt_sha256 = null,
+                holdout_evaluated = false,
+                clinical_validation_status = "external_validation_required",
+                probability_calibration =
+                validResources().manifest.probability_calibration.copy(
+                    fitted_on = "nested_outer_development_oof",
+                    calibration_status = "validated_nested_outer_oof"
+                )
             )
 
         manifest.requireResearchValid()

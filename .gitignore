@@ -54,6 +54,6 @@ google-services.json
 scratch.kt
 TestFilter.kt
 *.log
-data/
+/data/
 wear/libs/*.aar
 test_vectors*.json

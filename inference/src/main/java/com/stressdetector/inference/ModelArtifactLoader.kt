@@ -33,19 +33,16 @@ object ModelArtifactLoader {
         validateManifest = ModelManifest::requireCandidateValid
     )
 
-    internal fun loadResearch(
-        manifestJson: String,
-        modelBytes: ByteArray,
-        preflightVectors: List<ModelPreflightVector>
-    ): ModelResources = loadValidated(
-        manifestJson = manifestJson,
-        modelBytes = modelBytes,
-        preflightVector =
-        preflightVectors.firstOrNull()
-            ?: ModelPreflightVector(FloatArray(0), Float.NaN),
-        preflightVectors = preflightVectors,
-        validateManifest = ModelManifest::requireResearchValid
-    )
+    internal fun loadResearch(manifestJson: String, modelBytes: ByteArray, preflightVectors: List<ModelPreflightVector>): ModelResources =
+        loadValidated(
+            manifestJson = manifestJson,
+            modelBytes = modelBytes,
+            preflightVector =
+            preflightVectors.firstOrNull()
+                ?: ModelPreflightVector(FloatArray(0), Float.NaN),
+            preflightVectors = preflightVectors,
+            validateManifest = ModelManifest::requireResearchValid
+        )
 
     private fun loadValidated(
         manifestJson: String,

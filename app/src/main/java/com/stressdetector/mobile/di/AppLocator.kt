@@ -21,6 +21,9 @@ import com.stressdetector.mobile.data.WearConnectionRepositoryImpl
 import com.stressdetector.mobile.data.WearSessionCoordinator
 import com.stressdetector.mobile.data.db.KnowledgeBaseDatabase
 import com.stressdetector.mobile.data.db.StressDatabase
+import com.stressdetector.mobile.data.reminder.EncryptedAiReminderSecretStore
+import com.stressdetector.mobile.data.reminder.RoomAiReminderRepository
+import com.stressdetector.mobile.data.reminder.SharedPreferencesAiReminderSettings
 import com.stressdetector.mobile.data.repository.RoomCounselorPersonaRepository
 import com.stressdetector.mobile.data.repository.RoomLiveMonitorRecordStore
 import com.stressdetector.mobile.data.repository.SafCounselorPersonaRepository
@@ -44,15 +47,31 @@ import com.stressdetector.mobile.domain.engine.VerbatimArtifactService
 import com.stressdetector.mobile.domain.engine.VerbatimPpgArchive
 import com.stressdetector.mobile.domain.engine.VerbatimSessionFinalizer
 import com.stressdetector.mobile.domain.engine.WatchSessionCoordinator
+import com.stressdetector.mobile.domain.reminder.AiReminderCoordinator
+import com.stressdetector.mobile.domain.reminder.AiReminderCoordinatorDependencies
+import com.stressdetector.mobile.domain.reminder.AiReminderEligibility
+import com.stressdetector.mobile.domain.reminder.AiReminderRepository
+import com.stressdetector.mobile.domain.reminder.AiReminderScheduler
+import com.stressdetector.mobile.domain.reminder.AiReminderSecretStore
+import com.stressdetector.mobile.domain.reminder.AiReminderSettings
+import com.stressdetector.mobile.domain.reminder.DefaultAiReminderCoordinator
+import com.stressdetector.mobile.domain.reminder.LiteRtReminderContentGenerator
+import com.stressdetector.mobile.domain.reminder.LiteRtReminderSchedulePlanner
+import com.stressdetector.mobile.domain.reminder.ReminderContentGenerator
+import com.stressdetector.mobile.domain.reminder.ReminderNotificationPublisher
+import com.stressdetector.mobile.domain.reminder.ReminderSchedulePlanner
+import com.stressdetector.mobile.domain.reminder.WorkManagerAiReminderScheduler
 import com.stressdetector.mobile.domain.search.WebConsentStore
 import com.stressdetector.mobile.domain.search.WebGroundingGateway
 import com.stressdetector.mobile.domain.search.WebPageScraper
 import com.stressdetector.mobile.domain.search.WebSearchDiscovery
 import com.stressdetector.mobile.domain.stress.RoomStressHistoryContextProvider
 import com.stressdetector.mobile.domain.stress.StressHistoryContextProvider
+import com.stressdetector.mobile.domain.stress.StressHistoryContextSettings
 import com.stressdetector.mobile.domain.voice.VoiceInputEngine
 import com.stressdetector.mobile.domain.voice.VoiceOutputEngine
 import com.stressdetector.mobile.domain.voice.VoiceSettingsRepository
+import com.stressdetector.mobile.lifecycle.AiReminderLifecycleDependencies
 import com.stressdetector.mobile.lifecycle.DataLifecycleService
 import com.stressdetector.mobile.lifecycle.LocalDataLifecycleService
 import com.stressdetector.mobile.ml.StressInferenceRuntime
@@ -80,6 +99,7 @@ import com.stressdetector.mobile.ml.speech.SpeechBundleDownloadManager
 import com.stressdetector.mobile.ml.speech.SpeechModelBundleManager
 import com.stressdetector.mobile.ml.storage.DurableArtifactCoordinator
 import com.stressdetector.mobile.ml.storage.ModelStorageManager
+import com.stressdetector.mobile.notification.AndroidAiReminderNotificationPublisher
 import com.stressdetector.mobile.security.AndroidEncryptedStorageService
 import com.stressdetector.mobile.security.AndroidKeystoreKeyManager
 import com.stressdetector.mobile.security.EncryptedStorageService
@@ -128,7 +148,12 @@ object AppLocator {
             context.applicationContext,
             database(context),
             encryptedStorage(context),
-            keyManager
+            keyManager,
+            AiReminderLifecycleDependencies(
+                secretStore = aiReminderSecretStore(context),
+                scheduler = aiReminderScheduler(context),
+                settings = aiReminderSettings(context)
+            )
         ).also { dataLifecycleInstance = it }
     }
 
@@ -178,11 +203,20 @@ object AppLocator {
     }
 
     @Volatile private var stressHistoryContextProviderInstance: StressHistoryContextProvider? = null
+
+    @Volatile private var stressHistoryContextSettingsInstance: StressHistoryContextSettings? = null
+    fun stressHistoryContextSettings(context: Context): StressHistoryContextSettings =
+        stressHistoryContextSettingsInstance ?: synchronized(this) {
+            stressHistoryContextSettingsInstance ?: SharedPreferencesStressHistoryContextSettings(
+                context.applicationContext
+            ).also { stressHistoryContextSettingsInstance = it }
+        }
+
     fun stressHistoryContextProvider(context: Context): StressHistoryContextProvider =
         stressHistoryContextProviderInstance ?: synchronized(this) {
             stressHistoryContextProviderInstance ?: RoomStressHistoryContextProvider(
                 dao = database(context).stressSessionDao(),
-                settings = SharedPreferencesStressHistoryContextSettings(context.applicationContext),
+                settings = stressHistoryContextSettings(context),
                 aiConsent = database(context).consentDao()
                     .observeConsent("AI_COUNSELING")
                     .map { it?.isGranted == true }
@@ -328,6 +362,78 @@ object AppLocator {
     @Volatile private var llmInstance: OnDeviceLlmEngine? = null
     fun llmEngine(context: Context): OnDeviceLlmEngine = llmInstance ?: synchronized(this) {
         llmInstance ?: LiteRTLlmEngine(context.applicationContext, modelManager(context)).also { llmInstance = it }
+    }
+
+    @Volatile private var aiReminderSecretStoreInstance: AiReminderSecretStore? = null
+    fun aiReminderSecretStore(context: Context): AiReminderSecretStore = aiReminderSecretStoreInstance ?: synchronized(this) {
+        aiReminderSecretStoreInstance ?: EncryptedAiReminderSecretStore(context.applicationContext)
+            .also { aiReminderSecretStoreInstance = it }
+    }
+
+    @Volatile private var aiReminderSettingsInstance: AiReminderSettings? = null
+    fun aiReminderSettings(context: Context): AiReminderSettings = aiReminderSettingsInstance ?: synchronized(this) {
+        aiReminderSettingsInstance ?: SharedPreferencesAiReminderSettings(context.applicationContext)
+            .also { aiReminderSettingsInstance = it }
+    }
+
+    @Volatile private var aiReminderRepositoryInstance: AiReminderRepository? = null
+    fun aiReminderRepository(context: Context): AiReminderRepository = aiReminderRepositoryInstance ?: synchronized(this) {
+        aiReminderRepositoryInstance ?: RoomAiReminderRepository(
+            database(context).aiReminderDao(),
+            aiReminderSecretStore(context)
+        ).also { aiReminderRepositoryInstance = it }
+    }
+
+    @Volatile private var aiReminderEligibilityInstance: AiReminderEligibility? = null
+    fun aiReminderEligibility(context: Context): AiReminderEligibility = aiReminderEligibilityInstance ?: synchronized(this) {
+        aiReminderEligibilityInstance ?: AiReminderEligibility(
+            consentDao = database(context).consentDao(),
+            historyProvider = stressHistoryContextProvider(context),
+            historySettings = stressHistoryContextSettings(context),
+            reminderSettings = aiReminderSettings(context)
+        ).also { aiReminderEligibilityInstance = it }
+    }
+
+    @Volatile private var aiReminderSchedulePlannerInstance: ReminderSchedulePlanner? = null
+    fun aiReminderSchedulePlanner(context: Context): ReminderSchedulePlanner = aiReminderSchedulePlannerInstance ?: synchronized(this) {
+        aiReminderSchedulePlannerInstance ?: LiteRtReminderSchedulePlanner(llmEngine(context))
+            .also { aiReminderSchedulePlannerInstance = it }
+    }
+
+    @Volatile private var aiReminderContentGeneratorInstance: ReminderContentGenerator? = null
+    fun aiReminderContentGenerator(context: Context): ReminderContentGenerator = aiReminderContentGeneratorInstance ?: synchronized(this) {
+        aiReminderContentGeneratorInstance ?: LiteRtReminderContentGenerator(llmEngine(context))
+            .also { aiReminderContentGeneratorInstance = it }
+    }
+
+    @Volatile private var aiReminderNotificationPublisherInstance: ReminderNotificationPublisher? = null
+    fun aiReminderNotificationPublisher(context: Context): ReminderNotificationPublisher =
+        aiReminderNotificationPublisherInstance ?: synchronized(this) {
+            aiReminderNotificationPublisherInstance ?: AndroidAiReminderNotificationPublisher(context.applicationContext)
+                .also { aiReminderNotificationPublisherInstance = it }
+        }
+
+    @Volatile private var aiReminderSchedulerInstance: AiReminderScheduler? = null
+    fun aiReminderScheduler(context: Context): AiReminderScheduler = aiReminderSchedulerInstance ?: synchronized(this) {
+        aiReminderSchedulerInstance ?: WorkManagerAiReminderScheduler(context.applicationContext)
+            .also { aiReminderSchedulerInstance = it }
+    }
+
+    @Volatile private var aiReminderCoordinatorInstance: AiReminderCoordinator? = null
+    fun aiReminderCoordinator(context: Context): AiReminderCoordinator = aiReminderCoordinatorInstance ?: synchronized(this) {
+        aiReminderCoordinatorInstance ?: DefaultAiReminderCoordinator(
+            AiReminderCoordinatorDependencies(
+                repository = aiReminderRepository(context),
+                scheduler = aiReminderScheduler(context),
+                settings = aiReminderSettings(context),
+                secretStore = aiReminderSecretStore(context),
+                consentDao = database(context).consentDao(),
+                stressHistorySettings = stressHistoryContextSettings(context),
+                notificationPermissionGranted = {
+                    aiReminderNotificationPublisher(context).isPermissionGranted()
+                }
+            )
+        ).also { aiReminderCoordinatorInstance = it }
     }
 
     @Volatile private var modelManagerInstance: com.stressdetector.mobile.ml.llm.ModelManager? = null

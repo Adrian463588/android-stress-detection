@@ -183,10 +183,7 @@ fun UnifiedSessionScreen(
         val audioGranted = !needsMicrophone ||
             (permissions[Manifest.permission.RECORD_AUDIO] ?: false) ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        val notificationGranted = android.os.Build.VERSION.SDK_INT < 33 ||
-            (permissions[Manifest.permission.POST_NOTIFICATIONS] ?: false) ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        if (audioGranted && notificationGranted && consentConfirmedForPendingStart) {
+        if (audioGranted && consentConfirmedForPendingStart) {
             consentConfirmedForPendingStart = false
             viewModel.startSession(sessionName)
         } else {
@@ -194,9 +191,9 @@ fun UnifiedSessionScreen(
             Toast.makeText(
                 context,
                 if (needsMicrophone) {
-                    "Izin mikrofon dan notifikasi diperlukan untuk merekam sesi."
+                    "Izin mikrofon diperlukan untuk merekam sesi."
                 } else {
-                    "Izin notifikasi diperlukan agar pemrosesan import tetap terlihat."
+                    "Sesi import tidak memerlukan izin notifikasi."
                 },
                 Toast.LENGTH_LONG
             ).show()
@@ -206,20 +203,12 @@ fun UnifiedSessionScreen(
     fun requestStart() {
         val needsMicrophone = pendingAudioUri == null
         val audioPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
-        val notificationPermission = if (android.os.Build.VERSION.SDK_INT >= 33) {
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            PackageManager.PERMISSION_GRANTED
-        }
-        if ((!needsMicrophone || audioPermission == PackageManager.PERMISSION_GRANTED) &&
-            notificationPermission == PackageManager.PERMISSION_GRANTED
-        ) {
+        if (!needsMicrophone || audioPermission == PackageManager.PERMISSION_GRANTED) {
             consentConfirmedForPendingStart = false
             viewModel.startSession(sessionName)
         } else {
             val permissions = buildList {
                 if (needsMicrophone) add(Manifest.permission.RECORD_AUDIO)
-                if (android.os.Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
             }
             permissionLauncher.launch(permissions.toTypedArray())
         }

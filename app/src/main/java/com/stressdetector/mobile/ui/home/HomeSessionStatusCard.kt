@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package com.stressdetector.mobile.ui.home
 
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +28,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.stressdetector.mobile.BuildConfig
 import com.stressdetector.mobile.domain.CoreCoverageDiagnostics
 import com.stressdetector.mobile.domain.PredictionAvailability
 import com.stressdetector.mobile.ui.AppPalette
@@ -96,6 +99,11 @@ fun HomeSessionStatusCard(state: HomeUiState, onEvent: (HomeEvent) -> Unit, modi
 
     PremiumCard(modifier = modifier, borderColor = statusColor.copy(alpha = 0.35f)) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = evidenceScopeLabel(),
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -265,6 +273,12 @@ fun HomeSessionStatusCard(state: HomeUiState, onEvent: (HomeEvent) -> Unit, modi
             }
         }
     }
+}
+
+internal fun evidenceScopeLabel(): String = if (BuildConfig.RESEARCH_MODEL_MODE) {
+    "Model riset — development only · external validation required"
+} else {
+    "Model produksi — hanya bundle accepted"
 }
 
 @Composable

@@ -62,19 +62,25 @@ class OnnxStressClassifier(
                 contract.name to
                     OnnxTensor.createTensor(
                         environment,
-                        FloatBuffer.wrap(input),
-                        contract.shape.map(Int::toLong).toLongArray()
+                        arrayOf(input)
                     )
             }
         return try {
             session.run(tensors).use { output ->
+                require(output.size() == 1) { "unexpected_output_count" }
+                val outputValue = output[0]
                 val rawValue =
-                    output
-                        .get(resources.manifest.output.name)
-                        .orElseThrow { IllegalStateException("output_name_not_found") }
-                        .value
+                    if (outputValue is OnnxTensor) {
+                        outputValue.value
+                    } else {
+                        outputValue.value
+                    }
                 val probability = OnnxOutputParser.extractStressProbability(rawValue)
-                if (probability.isFinite() && probability in 0f..1f) probability else Float.NaN
+                if (probability.isFinite() && probability in 0f..1f) {
+                    probability
+                } else {
+                    Float.NaN
+                }
             }
         } finally {
             tensors.values.forEach { it.close() }
@@ -93,16 +99,43 @@ internal object OnnxOutputParser {
      * Handles common sklearn/PyTorch ONNX output shapes:
      * scalar sigmoid [N], softmax [1, 2] with [relax, stress], and wrapped sigmoid [1, 1].
      */
-    fun extractStressProbability(raw: Any?): Float = when {
-        raw is FloatArray && raw.size == 1 -> raw[0]
-        raw is Array<*> && raw.size == 1 && raw[0] is FloatArray -> {
-            val row = raw[0] as FloatArray
-            when (row.size) {
-                2 -> row[1]
-                1 -> row[0]
-                else -> Float.NaN
+    fun extractStressProbability(raw: Any?): Float = when (raw) {
+        is FloatArray -> fromFloatArray(raw)
+        is DoubleArray -> fromDoubleArray(raw)
+        is FloatBuffer -> fromFloatBuffer(raw)
+        is Array<*> -> fromCollection(raw.asList())
+        is List<*> -> fromCollection(raw)
+        is Number -> raw.toFloat()
+        else -> Float.NaN
+    }
+
+    private fun fromFloatArray(values: FloatArray): Float = when (values.size) {
+        1 -> values[0]
+        2 -> values[1]
+        else -> Float.NaN
+    }
+
+    private fun fromDoubleArray(values: DoubleArray): Float = when (values.size) {
+        1 -> values[0].toFloat()
+        2 -> values[1].toFloat()
+        else -> Float.NaN
+    }
+
+    private fun fromFloatBuffer(buffer: FloatBuffer): Float {
+        val copy = buffer.asReadOnlyBuffer()
+        return when (copy.remaining()) {
+            1 -> copy.get()
+            2 -> {
+                copy.get()
+                copy.get()
             }
+            else -> Float.NaN
         }
+    }
+
+    private fun fromCollection(values: List<*>): Float = when (values.size) {
+        1 -> extractStressProbability(values[0])
+        2 -> extractStressProbability(values[1])
         else -> Float.NaN
     }
 }

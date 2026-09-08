@@ -73,6 +73,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -104,6 +105,7 @@ import com.stressdetector.mobile.ui.screens.CounselorPersonaScreen
 import com.stressdetector.mobile.ui.screens.DocumentLibraryScreen
 import com.stressdetector.mobile.ui.screens.HistoryDetailScreen
 import com.stressdetector.mobile.ui.screens.ProfileScreen
+import com.stressdetector.mobile.ui.viewmodels.AiReminderViewModel
 import com.stressdetector.mobile.ui.viewmodels.CounselorPersonaViewModel
 import com.stressdetector.mobile.ui.viewmodels.CounselorViewModel
 import com.stressdetector.mobile.ui.viewmodels.DocumentLibraryViewModel
@@ -115,6 +117,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 // ─── Semantic compatibility aliases ─────────────────────────────────────────
 // The palette lives in AppTheme.kt; these aliases keep legacy screen helpers readable.
@@ -130,10 +133,13 @@ private const val STRESS_MODEL_WINDOW_SECONDS = 180
 // ─── Activity ─────────────────────────────────────────────────────────────────
 
 class MainActivity : ComponentActivity() {
+    private val reminderIntentId = MutableStateFlow<String?>(null)
 
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
+    @Suppress("LongMethod")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleReminderIntent(intent)
 
         setContent {
             val windowSize = calculateWindowSizeClass(this)
@@ -148,11 +154,17 @@ class MainActivity : ComponentActivity() {
                         viewModel(factory = com.stressdetector.mobile.ui.viewmodels.UnifiedSessionViewModel.Factory(this))
                     val counselorViewModel: CounselorViewModel = viewModel(factory = CounselorViewModel.Factory(this))
                     val profileViewModel: ProfileViewModel = viewModel(factory = ProfileViewModel.Factory(this))
+                    var notificationPermissionGranted by remember { mutableStateOf(currentNotificationPermissionGranted()) }
+                    val aiReminderViewModel: AiReminderViewModel = viewModel(
+                        factory = AiReminderViewModel.factory(this, notificationPermissionGranted)
+                    )
                     val documentLibraryViewModel: DocumentLibraryViewModel = viewModel(factory = DocumentLibraryViewModel.Factory(this))
                     val counselorPersonaViewModel: CounselorPersonaViewModel = viewModel(factory = CounselorPersonaViewModel.Factory(this))
                     val historyDetailViewModel: HistoryDetailViewModel = viewModel(factory = HistoryDetailViewModel.Factory)
 
                     var permissionStatus by remember { mutableStateOf(currentPermissionStatus()) }
+                    var pendingReminderEnable by remember { mutableStateOf(false) }
+                    val incomingReminderId by reminderIntentId.collectAsState()
 
                     val permissionLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestMultiplePermissions()
@@ -160,7 +172,28 @@ class MainActivity : ComponentActivity() {
 
                     val settingsLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.StartActivityForResult()
-                    ) { permissionStatus = currentPermissionStatus() }
+                    ) {
+                        permissionStatus = currentPermissionStatus()
+                        notificationPermissionGranted = currentNotificationPermissionGranted()
+                        aiReminderViewModel.setNotificationPermissionGranted(notificationPermissionGranted)
+                        if (pendingReminderEnable) {
+                            if (notificationPermissionGranted) aiReminderViewModel.setEnabled(true)
+                            pendingReminderEnable = false
+                        }
+                    }
+
+                    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission()
+                    ) { _ ->
+                        notificationPermissionGranted = currentNotificationPermissionGranted()
+                        aiReminderViewModel.setNotificationPermissionGranted(notificationPermissionGranted)
+                        if (pendingReminderEnable && notificationPermissionGranted) {
+                            pendingReminderEnable = false
+                            aiReminderViewModel.setEnabled(true)
+                        } else {
+                            pendingReminderEnable = false
+                        }
+                    }
 
                     LaunchedEffect(permissionStatus.allGranted) {
                         viewModel.setPermissionsGranted(permissionStatus.allGranted)
@@ -171,6 +204,7 @@ class MainActivity : ComponentActivity() {
                         unifiedSessionViewModel = unifiedSessionViewModel,
                         counselorViewModel = counselorViewModel,
                         profileViewModel = profileViewModel,
+                        aiReminderViewModel = aiReminderViewModel,
                         documentLibraryViewModel = documentLibraryViewModel,
                         counselorPersonaViewModel = counselorPersonaViewModel,
                         historyDetailViewModel = historyDetailViewModel,
@@ -191,10 +225,36 @@ class MainActivity : ComponentActivity() {
                                     Uri.fromParts("package", packageName, null)
                                 )
                             )
-                        }
+                        },
+                        onRequestNotificationPermission = {
+                            pendingReminderEnable = true
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                settingsLauncher.launch(
+                                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                        putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                                    }
+                                )
+                            }
+                        },
+                        reminderIntentId = incomingReminderId,
+                        onReminderIntentConsumed = { reminderIntentId.value = null }
                     )
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleReminderIntent(intent)
+    }
+
+    private fun handleReminderIntent(intent: Intent?) {
+        if (intent?.action == ACTION_OPEN_AI_PLUS) {
+            reminderIntentId.value = intent.getStringExtra(EXTRA_REMINDER_ID)?.takeIf(String::isNotBlank)
         }
     }
 
@@ -210,15 +270,23 @@ class MainActivity : ComponentActivity() {
     private fun missingMobilePermissions(): List<String> = requiredMobilePermissions().filter {
         ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
     }
+
+    private fun currentNotificationPermissionGranted(): Boolean = (
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) &&
+        NotificationManagerCompat.from(this).areNotificationsEnabled()
+
+    companion object {
+        const val ACTION_OPEN_AI_PLUS = "com.stressdetector.mobile.action.OPEN_AI_PLUS"
+        const val EXTRA_REMINDER_ID = "com.stressdetector.mobile.extra.REMINDER_ID"
+    }
 }
 
 private fun requiredMobilePermissions(): Array<String> {
     val permissions = mutableListOf<String>()
     permissions.add(Manifest.permission.RECORD_AUDIO)
-
-    if (Build.VERSION.SDK_INT >= 33) {
-        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-    }
 
     if (Build.VERSION.SDK_INT >= 31) {
         permissions.add(Manifest.permission.BLUETOOTH_SCAN)
@@ -234,18 +302,23 @@ private fun requiredMobilePermissions(): Array<String> {
 // ─── Root App Scaffold ────────────────────────────────────────────────────────
 
 @Composable
+@Suppress("FunctionNaming", "LongMethod", "LongParameterList", "CyclomaticComplexMethod")
 private fun StressDetectorApp(
     viewModel: StressViewModel,
     unifiedSessionViewModel: com.stressdetector.mobile.ui.viewmodels.UnifiedSessionViewModel,
     counselorViewModel: CounselorViewModel,
     profileViewModel: ProfileViewModel,
+    aiReminderViewModel: AiReminderViewModel,
     documentLibraryViewModel: DocumentLibraryViewModel,
     counselorPersonaViewModel: CounselorPersonaViewModel,
     historyDetailViewModel: HistoryDetailViewModel,
     permissionStatus: PermissionStatus,
     windowSizeClass: WindowWidthSizeClass,
     onGrantPermissions: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onRequestNotificationPermission: () -> Unit,
+    reminderIntentId: String?,
+    onReminderIntentConsumed: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val verbatimState by unifiedSessionViewModel.uiState.collectAsState()
@@ -268,6 +341,14 @@ private fun StressDetectorApp(
     }
 
     fun navigateHome() = navigateToRoot(Screen.Home)
+
+    LaunchedEffect(reminderIntentId) {
+        reminderIntentId?.takeIf(String::isNotBlank)?.let { id ->
+            aiReminderViewModel.markOpened(id)
+            navigateToRoot(Screen.Chat)
+            onReminderIntentConsumed()
+        }
+    }
 
     val verbatimRouteBackEnabled = currentRoute == Screen.Verbatim.route && verbatimBusy
     val backEnabled = state.isRecording || currentRoute != Screen.Home.route || verbatimRouteBackEnabled
@@ -318,177 +399,180 @@ private fun StressDetectorApp(
         ) { isRecording ->
             if (isRecording) {
                 MonitoringScreen(
-                progress = state.progress,
-                elapsedMillis = state.elapsedMillis,
-                greenSamples = state.greenSamples,
-                irSamples = state.irSamples,
-                redDiagnosticSamples = state.redDiagnosticSamples,
-                greenChart = state.greenChart,
-                irChart = state.irChart,
-                redChart = state.redChart,
-                connectionStatus = state.connectionState.status,
-                connectionPhase = state.connectionState.reachabilityPhase.name,
-                phoneMessage = state.connectionState.message,
-                terminalReceiptReceived = state.terminalReceiptReceived,
-                transportComplete = state.transportComplete,
-                transportIncomplete = state.transportIncomplete,
-                transportFailureReason = state.transportFailureReason,
-                observedDataElapsedMillis = state.observedDataElapsedMillis,
-                appliedBatchCount = state.appliedBatchCount,
-                duplicateBatchCount = state.duplicateBatchCount,
-                outOfOrderBatchCount = state.outOfOrderBatchCount,
-                missingSequenceCount = state.missingSequenceCount,
-                highestGreenSequence = state.highestGreenSequence,
-                highestIrSequence = state.highestIrSequence,
-                highestRedDiagnosticSequence = state.highestRedDiagnosticSequence,
-                modelStatus = modelStatusFor(state),
-                twoColumnLayout = windowSizeClass != WindowWidthSizeClass.Compact,
-                onStop = viewModel::stopWatchTracking
+                    progress = state.progress,
+                    elapsedMillis = state.elapsedMillis,
+                    greenSamples = state.greenSamples,
+                    irSamples = state.irSamples,
+                    redDiagnosticSamples = state.redDiagnosticSamples,
+                    greenChart = state.greenChart,
+                    irChart = state.irChart,
+                    redChart = state.redChart,
+                    connectionStatus = state.connectionState.status,
+                    connectionPhase = state.connectionState.reachabilityPhase.name,
+                    phoneMessage = state.connectionState.message,
+                    terminalReceiptReceived = state.terminalReceiptReceived,
+                    transportComplete = state.transportComplete,
+                    transportIncomplete = state.transportIncomplete,
+                    transportFailureReason = state.transportFailureReason,
+                    observedDataElapsedMillis = state.observedDataElapsedMillis,
+                    appliedBatchCount = state.appliedBatchCount,
+                    duplicateBatchCount = state.duplicateBatchCount,
+                    outOfOrderBatchCount = state.outOfOrderBatchCount,
+                    missingSequenceCount = state.missingSequenceCount,
+                    highestGreenSequence = state.highestGreenSequence,
+                    highestIrSequence = state.highestIrSequence,
+                    highestRedDiagnosticSequence = state.highestRedDiagnosticSequence,
+                    modelStatus = modelStatusFor(state),
+                    twoColumnLayout = windowSizeClass != WindowWidthSizeClass.Compact,
+                    onStop = viewModel::stopWatchTracking
                 )
             } else {
                 Scaffold(
-                bottomBar = {
-                    if (windowSizeClass == WindowWidthSizeClass.Compact) {
-                        AppBottomNav(
-                            selectedDestination = selectedDestination,
-                            onSelect = ::navigateToRoot
-                        )
-                    }
-                },
-                containerColor = MaterialTheme.colorScheme.background
-            ) { innerPadding ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                ) {
-                    if (windowSizeClass != WindowWidthSizeClass.Compact) {
-                        AppNavigationRail(
-                            selectedDestination = selectedDestination,
-                            onSelect = ::navigateToRoot
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                        contentAlignment = Alignment.TopCenter
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .widthIn(max = AppSpacing.ReadableContent)
-                        ) {
-                            AppNavGraph(
-                                navController = navController,
-                                innerPadding = PaddingValues(),
-                                homeScreen = {
-                                    sessionTab(
-                                        viewModel = viewModel,
-                                        config = SessionUi(
-                                            state = state,
-                                            permissionStatus = permissionStatus,
-                                            windowSizeClass = windowSizeClass
-                                        ),
-                                        permissionActions = PermissionActions(
-                                            onGrant = onGrantPermissions,
-                                            onOpenSettings = onOpenSettings
-                                        )
-                                    )
-                                },
-                                historyScreen = {
-                                    reportTab(
-                                        viewModel = viewModel,
-                                        windowSizeClass = windowSizeClass,
-                                        onSessionSelected = { sessionId ->
-                                            navController.navigate(Screen.HistoryDetail.createRoute(sessionId)) {
-                                                launchSingleTop = true
-                                            }
-                                        }
-                                    )
-                                },
-                                historyDetailScreen = { sessionId ->
-                                    HistoryDetailScreen(
-                                        sessionId = sessionId,
-                                        viewModel = historyDetailViewModel,
-                                        onBack = { navController.popBackStack() }
-                                    )
-                                },
-                                verbatimScreen = {
-                                    com.stressdetector.mobile.ui.screens.UnifiedSessionScreen(
-                                        viewModel = unifiedSessionViewModel,
-                                        windowWidthSizeClass = windowSizeClass,
-                                        onNavigateToProfile = { navigateToRoot(Screen.Profile) }
-                                    )
-                                },
-                                counselorScreen = {
-                                    AiCounselorScreen(
-                                        viewModel = counselorViewModel,
-                                        windowSizeClass = windowSizeClass,
-                                        onNavigateToLibrary = {
-                                            navController.navigate(Screen.DocumentLibrary.route) {
-                                                launchSingleTop = true
-                                            }
-                                        }
-                                    )
-                                },
-                                counselorPersonaScreen = {
-                                    CounselorPersonaScreen(
-                                        viewModel = counselorPersonaViewModel,
-                                        onBack = { navController.popBackStack() },
-                                        onConnectStorage = {
-                                            navController.navigate(Screen.Profile.route) {
-                                                launchSingleTop = true
-                                            }
-                                        }
-                                    )
-                                },
-                                profileScreen = {
-                                    ProfileScreen(
-                                        viewModel = profileViewModel,
-                                        documentLibraryViewModel = documentLibraryViewModel,
-                                        onNavigateToLibrary = {
-                                            navController.navigate(Screen.DocumentLibrary.route) {
-                                                launchSingleTop = true
-                                            }
-                                        },
-                                        onNavigateToPersona = {
-                                            navController.navigate(Screen.CounselorPersona.route) {
-                                                launchSingleTop = true
-                                            }
-                                        }
-                                    )
-                                },
-                                documentLibraryScreen = {
-                                    DocumentLibraryScreen(
-                                        viewModel = documentLibraryViewModel,
-                                        windowSizeClass = windowSizeClass,
-                                        onBack = { navController.popBackStack() },
-                                        onDocumentSelected = { documentId ->
-                                            navController.navigate(Screen.DocumentDetail.createRoute(documentId)) {
-                                                launchSingleTop = true
-                                            }
-                                        }
-                                    )
-                                },
-                                documentDetailScreen = { documentId ->
-                                    com.stressdetector.mobile.ui.screens.DocumentDetailScreen(
-                                        documentId = documentId,
-                                        viewModel = documentLibraryViewModel,
-                                        onBack = { navController.popBackStack() }
-                                    )
-                                }
+                    bottomBar = {
+                        if (windowSizeClass == WindowWidthSizeClass.Compact) {
+                            AppBottomNav(
+                                selectedDestination = selectedDestination,
+                                onSelect = ::navigateToRoot
                             )
                         }
+                    },
+                    containerColor = MaterialTheme.colorScheme.background
+                ) { innerPadding ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        if (windowSizeClass != WindowWidthSizeClass.Compact) {
+                            AppNavigationRail(
+                                selectedDestination = selectedDestination,
+                                onSelect = ::navigateToRoot
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            contentAlignment = Alignment.TopCenter
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .widthIn(max = AppSpacing.ReadableContent)
+                            ) {
+                                AppNavGraph(
+                                    navController = navController,
+                                    innerPadding = PaddingValues(),
+                                    homeScreen = {
+                                        sessionTab(
+                                            viewModel = viewModel,
+                                            config = SessionUi(
+                                                state = state,
+                                                permissionStatus = permissionStatus,
+                                                windowSizeClass = windowSizeClass
+                                            ),
+                                            permissionActions = PermissionActions(
+                                                onGrant = onGrantPermissions,
+                                                onOpenSettings = onOpenSettings
+                                            )
+                                        )
+                                    },
+                                    historyScreen = {
+                                        reportTab(
+                                            viewModel = viewModel,
+                                            windowSizeClass = windowSizeClass,
+                                            onSessionSelected = { sessionId ->
+                                                navController.navigate(Screen.HistoryDetail.createRoute(sessionId)) {
+                                                    launchSingleTop = true
+                                                }
+                                            }
+                                        )
+                                    },
+                                    historyDetailScreen = { sessionId ->
+                                        HistoryDetailScreen(
+                                            sessionId = sessionId,
+                                            viewModel = historyDetailViewModel,
+                                            onBack = { navController.popBackStack() }
+                                        )
+                                    },
+                                    verbatimScreen = {
+                                        com.stressdetector.mobile.ui.screens.UnifiedSessionScreen(
+                                            viewModel = unifiedSessionViewModel,
+                                            windowWidthSizeClass = windowSizeClass,
+                                            onNavigateToProfile = { navigateToRoot(Screen.Profile) }
+                                        )
+                                    },
+                                    counselorScreen = {
+                                        AiCounselorScreen(
+                                            viewModel = counselorViewModel,
+                                            windowSizeClass = windowSizeClass,
+                                            aiReminderViewModel = aiReminderViewModel,
+                                            onNavigateToProfile = { navigateToRoot(Screen.Profile) },
+                                            onRequestNotificationPermission = onRequestNotificationPermission,
+                                            onNavigateToLibrary = {
+                                                navController.navigate(Screen.DocumentLibrary.route) {
+                                                    launchSingleTop = true
+                                                }
+                                            }
+                                        )
+                                    },
+                                    counselorPersonaScreen = {
+                                        CounselorPersonaScreen(
+                                            viewModel = counselorPersonaViewModel,
+                                            onBack = { navController.popBackStack() },
+                                            onConnectStorage = {
+                                                navController.navigate(Screen.Profile.route) {
+                                                    launchSingleTop = true
+                                                }
+                                            }
+                                        )
+                                    },
+                                    profileScreen = {
+                                        ProfileScreen(
+                                            viewModel = profileViewModel,
+                                            documentLibraryViewModel = documentLibraryViewModel,
+                                            aiReminderViewModel = aiReminderViewModel,
+                                            onNavigateToLibrary = {
+                                                navController.navigate(Screen.DocumentLibrary.route) {
+                                                    launchSingleTop = true
+                                                }
+                                            },
+                                            onNavigateToPersona = {
+                                                navController.navigate(Screen.CounselorPersona.route) {
+                                                    launchSingleTop = true
+                                                }
+                                            },
+                                            onRequestNotificationPermission = onRequestNotificationPermission
+                                        )
+                                    },
+                                    documentLibraryScreen = {
+                                        DocumentLibraryScreen(
+                                            viewModel = documentLibraryViewModel,
+                                            windowSizeClass = windowSizeClass,
+                                            onBack = { navController.popBackStack() },
+                                            onDocumentSelected = { documentId ->
+                                                navController.navigate(Screen.DocumentDetail.createRoute(documentId)) {
+                                                    launchSingleTop = true
+                                                }
+                                            }
+                                        )
+                                    },
+                                    documentDetailScreen = { documentId ->
+                                        com.stressdetector.mobile.ui.screens.DocumentDetailScreen(
+                                            documentId = documentId,
+                                            viewModel = documentLibraryViewModel,
+                                            onBack = { navController.popBackStack() }
+                                        )
+                                    }
+                                )
+                            }
+                        }
                     }
-                }
                 }
             }
         }
     }
 }
-
-
 
 // ─── 5-Destination Bottom Navigation ───────────────────────────────────────────
 
