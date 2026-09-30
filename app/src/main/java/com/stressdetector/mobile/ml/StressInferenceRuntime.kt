@@ -6,9 +6,12 @@ import com.stressdetector.inference.InferenceResult
 import com.stressdetector.inference.InferenceStatus
 import com.stressdetector.inference.InferenceTraceContext
 import com.stressdetector.inference.ModelArtifactRepository
+import com.stressdetector.inference.ModelContractStatus
 import com.stressdetector.inference.ModelSessionContract
+import com.stressdetector.inference.PpgDetectorContract
 import com.stressdetector.inference.StressModelReadiness
 import com.stressdetector.mobile.data.WindowSnapshot
+import com.stressdetector.mobile.signal.ExtractedFeatures
 import com.stressdetector.mobile.signal.PpgFeatureExtractor
 import com.stressdetector.mobile.signal.PpgPreprocessResult
 import com.stressdetector.mobile.signal.PpgPreprocessingContract
@@ -32,6 +35,10 @@ interface CanonicalPpgRuntime {
 
     /** Immutable per-channel window/feature contract from the accepted manifest. */
     fun modelContract(type: PpgType): ModelSessionContract? = null
+
+    /** Typed contract gate for callers that need to explain model unavailability. */
+    fun modelContractStatus(type: PpgType): ModelContractStatus = modelContract(type)?.let(ModelContractStatus::Ready)
+        ?: ModelContractStatus.Unavailable("model_contract_unavailable")
 }
 
 class StressInferenceRuntime(
@@ -59,6 +66,8 @@ class StressInferenceRuntime(
 
     override fun modelContract(type: PpgType): ModelSessionContract? = adapterFor(type).sessionContract
 
+    override fun modelContractStatus(type: PpgType): ModelContractStatus = adapterFor(type).sessionContractStatus
+
     fun artifactReadiness(type: PpgType): StressModelReadiness = adapterFor(type).artifactReadiness
 
     fun readiness(type: PpgType): StressModelReadiness = adapterFor(type).readiness
@@ -77,50 +86,87 @@ class StressInferenceRuntime(
         }
     }
 
-    override fun infer(preparedWindow: PreparedPpgWindow, qualityTier: String): InferenceResult {
+    override fun infer(preparedWindow: PreparedPpgWindow, qualityTier: String): InferenceResult =
         if (!preparedWindow.type.isProductionChannel) {
-            return InferenceResult(
-                label = null,
-                stressProbability = null,
-                qualityTier = qualityTier,
-                latencyMs = 0.0,
-                modelVersion = "unsupported_channel",
-                status = InferenceStatus.MODEL_ARTIFACT_INVALID,
-                rejectionReason = "channel_not_allowed_for_home_inference"
-            )
+            invalidInference(qualityTier, "unsupported_channel", "channel_not_allowed_for_home_inference")
+        } else {
+            val adapter = adapterFor(preparedWindow.type)
+            val contract = adapter.sessionContract
+            val detectorContract = contract?.detectorContract
+            when {
+                contract == null -> invalidInference(qualityTier, "unavailable", "PARITY_CONTRACT_MISMATCH")
+                detectorContract == null -> {
+                    invalidInference(qualityTier, contract.modelVersion, "PARITY_CONTRACT_MISMATCH")
+                }
+                else -> inferWithContract(preparedWindow, qualityTier, adapter, detectorContract)
+            }
         }
-        val adapter = adapterFor(preparedWindow.type)
-        val extracted = extractor.extract(preparedWindow)
+
+    private fun inferWithContract(
+        preparedWindow: PreparedPpgWindow,
+        qualityTier: String,
+        adapter: V3InferenceAdapter,
+        detectorContract: PpgDetectorContract
+    ): InferenceResult {
+        val extracted = extractor.extract(preparedWindow, detectorContract)
         return adapter.infer(
             extracted = extracted,
             qualityTier = qualityTier,
             sampleCount = preparedWindow.rawSampleCount,
-            traceContext = InferenceTraceContext(
-                sessionId = preparedWindow.sessionId,
-                windowId = preparedWindow.windowId,
-                trackerContract = "PDSATU_LITERAL_${preparedWindow.type.name}",
-                acceptedSampleCount = preparedWindow.transportDiagnostics?.acceptedSampleCount?.toInt()
-                    ?: preparedWindow.rawSampleCount,
-                rejectedSampleCount = preparedWindow.transportDiagnostics?.rejectedSampleCount?.toInt()
-                    ?: 0,
-                duplicateSampleCount = preparedWindow.duplicateSampleCount,
-                sequenceLossCount = preparedWindow.transportDiagnostics?.sequenceLossCount ?: 0L,
-                observedStartMillis = preparedWindow.sessionElapsedStartMillis,
-                observedEndMillis = preparedWindow.sessionElapsedEndMillis,
-                coverageMillis = (preparedWindow.sessionElapsedEndMillis - preparedWindow.sessionElapsedStartMillis).coerceAtLeast(0L),
-                observedCadenceHz = preparedWindow.observedCadenceHz,
-                maxGapMillis = preparedWindow.maxObservedGapMillis,
-                preprocessingVersion = preparedWindow.preprocessingVersion,
-                featureVersion = preparedWindow.featureVersion,
-                filterAlgorithm = preparedWindow.filterAlgorithm,
-                filterOrder = preparedWindow.filterOrder,
-                filterLowCutHz = preparedWindow.filterLowCutHz,
-                filterHighCutHz = preparedWindow.filterHighCutHz,
-                filterContractFingerprint = preparedWindow.filterContractFingerprint,
-                rejectionReason = preparedWindow.rejectionReason
-            )
+            traceContext = traceContext(preparedWindow, extracted)
         )
     }
+
+    private fun traceContext(preparedWindow: PreparedPpgWindow, extracted: ExtractedFeatures): InferenceTraceContext =
+        InferenceTraceContext(
+            sessionId = preparedWindow.sessionId,
+            windowId = preparedWindow.windowId,
+            trackerContract = "PDSATU_LITERAL_${preparedWindow.type.name}",
+            acceptedSampleCount = preparedWindow.transportDiagnostics?.acceptedSampleCount?.toInt()
+                ?: preparedWindow.rawSampleCount,
+            rejectedSampleCount = preparedWindow.transportDiagnostics?.rejectedSampleCount?.toInt() ?: 0,
+            duplicateSampleCount = preparedWindow.duplicateSampleCount,
+            sequenceLossCount = preparedWindow.transportDiagnostics?.sequenceLossCount ?: 0L,
+            observedSampleCount = preparedWindow.observedSampleCount,
+            repairedShortGapSampleCount = preparedWindow.repairedShortGapSampleCount,
+            trueGapCount = preparedWindow.trueGapCount,
+            unresolvedSampleCount = preparedWindow.unresolvedSampleCount,
+            gridResampledSampleCount = preparedWindow.gridResampledSampleCount,
+            observedStartMillis = preparedWindow.sessionElapsedStartMillis,
+            observedEndMillis = preparedWindow.sessionElapsedEndMillis,
+            coverageMillis = (preparedWindow.sessionElapsedEndMillis - preparedWindow.sessionElapsedStartMillis)
+                .coerceAtLeast(0L),
+            observedCadenceHz = preparedWindow.observedCadenceHz,
+            maxGapMillis = preparedWindow.maxObservedGapMillis,
+            preprocessingVersion = preparedWindow.preprocessingVersion,
+            featureVersion = preparedWindow.featureVersion,
+            filterAlgorithm = preparedWindow.filterAlgorithm,
+            filterOrder = preparedWindow.filterOrder,
+            filterLowCutHz = preparedWindow.filterLowCutHz,
+            filterHighCutHz = preparedWindow.filterHighCutHz,
+            filterContractFingerprint = preparedWindow.filterContractFingerprint,
+            detectorMethod = extracted.detectorMethod,
+            detectorFingerprint = extracted.detectorFingerprint,
+            peakChecksum = extracted.peakChecksum,
+            troughChecksum = extracted.troughChecksum,
+            peakCount = extracted.peakCount,
+            validIbiCount = extracted.validIbiCount,
+            adjacentIbiCount = extracted.adjacentIbiCount,
+            physiologicalIbiRatio = extracted.physiologicalIbiRatio,
+            morphologySupport = extracted.morphologySupport,
+            qualityStatus = extracted.qualityStatus,
+            rejectionReason = preparedWindow.rejectionReason
+        )
+
+    private fun invalidInference(qualityTier: String, modelVersion: String, reason: String): InferenceResult = InferenceResult(
+        label = null,
+        stressProbability = null,
+        qualityTier = qualityTier,
+        latencyMs = 0.0,
+        modelVersion = modelVersion,
+        status = InferenceStatus.MODEL_ARTIFACT_INVALID,
+        rejectionReason = reason
+    )
 
     fun unavailableReason(type: PpgType): String? = when (val state = readiness(type)) {
         is StressModelReadiness.Ready -> null

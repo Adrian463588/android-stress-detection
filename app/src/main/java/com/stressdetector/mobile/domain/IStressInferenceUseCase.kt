@@ -1,5 +1,6 @@
 package com.stressdetector.mobile.domain
 
+import com.stressdetector.inference.ModelContractStatus
 import com.stressdetector.inference.ModelSessionContract
 import com.stressdetector.mobile.data.WindowSnapshot
 import com.stressdetector.mobile.signal.PpgPreprocessResult
@@ -18,4 +19,7 @@ interface IStressInferenceUseCase : AutoCloseable {
     fun infer(window: WindowSnapshot): PredictionAvailability
     fun requireConfigured(types: Set<PpgType>)
     fun modelContract(type: PpgType): ModelSessionContract? = null
+
+    fun modelContractStatus(type: PpgType): ModelContractStatus = modelContract(type)?.let(ModelContractStatus::Ready)
+        ?: ModelContractStatus.Unavailable("model_contract_unavailable")
 }

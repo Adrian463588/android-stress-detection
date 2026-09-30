@@ -16,6 +16,7 @@ class RollingPpgBuffer(private val type: PpgType, private val windowSeconds: Int
     private val timestamps = ArrayDeque<Long>()
     private val elapsedTimestamps = ArrayDeque<Long>()
     private val values = ArrayDeque<Int>()
+    private val batchIds = ArrayDeque<String>()
     private var sessionId: String? = null
     private var sessionElapsedStartMillis = 0L
     private var sessionElapsedEndMillis = 0L
@@ -68,6 +69,7 @@ class RollingPpgBuffer(private val type: PpgType, private val windowSeconds: Int
                     }.coerceAtLeast(0L)
                 )
                 values.addLast(batch.rawValues[index])
+                batchIds.addLast(batch.effectiveBatchId)
                 accepted += 1
             }
             if (accepted > 0) {
@@ -88,6 +90,7 @@ class RollingPpgBuffer(private val type: PpgType, private val windowSeconds: Int
             timestamps.clear()
             elapsedTimestamps.clear()
             values.clear()
+            batchIds.clear()
             sessionElapsedStartMillis = 0L
             sessionElapsedEndMillis = 0L
             sessionId = null
@@ -142,6 +145,7 @@ class RollingPpgBuffer(private val type: PpgType, private val windowSeconds: Int
             sessionElapsedStartMillis = sessionElapsedStartMillis,
             sessionElapsedEndMillis = sessionElapsedEndMillis,
             elapsedTimestampsMillis = elapsedTimestamps.toLongArray(),
+            timestampBatchIds = batchIds.toStringArray(),
             sessionId = sessionId
         )
     }
@@ -152,6 +156,7 @@ class RollingPpgBuffer(private val type: PpgType, private val windowSeconds: Int
         val cutoff = latestTimestamp - retentionMillis
         while (timestamps.firstOrNull()?.let { it < cutoff } == true) {
             values.removeFirst()
+            batchIds.removeFirst()
             elapsedTimestamps.removeFirst()
             timestamps.removeFirst()
         }
@@ -171,6 +176,8 @@ class RollingPpgBuffer(private val type: PpgType, private val windowSeconds: Int
         forEachIndexed { index, value -> out[index] = value }
         return out
     }
+
+    private fun ArrayDeque<String>.toStringArray(): Array<String> = Array(size) { index -> elementAt(index) }
 
     private val requiredDurationMillis: Long =
         ((requiredSamples - 1) * 1_000.0 / type.samplingRateHz).toLong()
@@ -229,6 +236,8 @@ data class WindowSnapshot(
     val sessionElapsedStartMillis: Long = 0L,
     val sessionElapsedEndMillis: Long = 0L,
     val elapsedTimestampsMillis: LongArray = LongArray(0),
+    /** Batch identity for each timestamp when the repository has it. */
+    val timestampBatchIds: Array<String> = emptyArray(),
     val sessionId: String? = null,
     val windowId: String? = null,
     /** Transport evidence is observational and never changes model samples. */

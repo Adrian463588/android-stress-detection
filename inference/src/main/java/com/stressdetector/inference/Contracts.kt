@@ -73,6 +73,11 @@ data class InferenceTraceContext(
     val rejectedSampleCount: Int = 0,
     val duplicateSampleCount: Int = 0,
     val sequenceLossCount: Long = 0L,
+    val observedSampleCount: Int = acceptedSampleCount,
+    val repairedShortGapSampleCount: Int = 0,
+    val trueGapCount: Int = 0,
+    val unresolvedSampleCount: Int = 0,
+    val gridResampledSampleCount: Int = 0,
     val observedStartMillis: Long? = null,
     val observedEndMillis: Long? = null,
     val coverageMillis: Long = 0L,
@@ -89,6 +94,16 @@ data class InferenceTraceContext(
     val filterLowCutHz: Double? = null,
     val filterHighCutHz: Double? = null,
     val filterContractFingerprint: String? = null,
+    val detectorMethod: String? = null,
+    val detectorFingerprint: String? = null,
+    val peakChecksum: String? = null,
+    val troughChecksum: String? = null,
+    val peakCount: Int = 0,
+    val validIbiCount: Int = 0,
+    val adjacentIbiCount: Int = 0,
+    val physiologicalIbiRatio: Double? = null,
+    val morphologySupport: Int = 0,
+    val qualityStatus: String? = null,
     val rejectionReason: String? = null
 )
 
@@ -170,7 +185,21 @@ data class ModelManifest(
     val android_ready: Boolean = false,
     val device_parity_receipt_sha256: String? = null,
     val holdout_evaluated: Boolean = false,
-    val clinical_validation_status: String = ""
+    val clinical_validation_status: String = "",
+    /** Scoped status fields for the internal-32 Android contract. */
+    val validation_scope: String = "",
+    val claims_policy: String = "",
+    val hrv_prv_status: String = "",
+    val training_admission_status: String = "",
+    val development_model_status: String = "",
+    val internal_test_status: String = "",
+    val onnx_export_status: String = "",
+    val android_device_parity_status: String = "",
+    val internal_android_status: String = "",
+    val balanced_accuracy_internal_test: Double? = null,
+    val f1_internal_test: Double? = null,
+    val roc_auc_internal_test: Double? = null,
+    val internal_test_participants: List<String> = emptyList()
 ) {
     fun decisionPolicy(): ModelDecisionPolicy = ModelDecisionPolicy(
         modelVersion = model_version,
@@ -218,8 +247,71 @@ data class ModelManifest(
         }
     }
 
-    fun sessionContract(): ModelSessionContract {
-        requireCommonContract(requireHoldoutEvidence = schema_version != "onnx-research-v1")
+    /** Internal 32-participant bundle; device parity is verified separately. */
+    internal fun requireInternalValid() {
+        requireCommonContract(
+            requireHoldoutEvidence = false,
+            allowInternalTestAccess = true
+        )
+        require(schema_version == "internal-android-v2") {
+            "unsupported_internal_manifest_schema"
+        }
+        require(artifact_status == "internal_candidate") { "internal_artifact_status_invalid" }
+        require(evaluation_scope == "internal_32_participants") { "internal_scope_invalid" }
+        require(validation_scope == "internal_32_participants") { "internal_validation_scope_invalid" }
+        require(claims_policy == "decision_support_only") { "internal_claims_policy_invalid" }
+        require(release_status == "internal_candidate" && gate_passed) {
+            "internal_deployment_gate_failed"
+        }
+        require(
+            listOf(
+                hrv_prv_status,
+                training_admission_status,
+                development_model_status,
+                internal_test_status,
+                onnx_export_status
+            ).all { it == "GO" }
+        ) { "internal_gate_status_invalid" }
+        require(android_device_parity_status in setOf("PENDING", "GO")) {
+            "internal_device_parity_status_invalid"
+        }
+        require(internal_android_status in setOf("PENDING_DEVICE_PARITY", "GO")) {
+            "internal_android_status_invalid"
+        }
+        require(
+            internal_test_participants == listOf("ID-29", "ID-30", "ID-31", "ID-32")
+        ) { "internal_test_cohort_invalid" }
+        require(
+            validation_cohort_ids ==
+                (DEVELOPMENT_PARTICIPANT_FIRST..DEVELOPMENT_PARTICIPANT_LAST)
+                    .map { "ID-%02d".format(it) }
+        ) { "internal_development_cohort_invalid" }
+        require(cohort_access_count == 1) { "internal_test_not_evaluated_once" }
+        require(
+            listOf(
+                balanced_accuracy_internal_test,
+                f1_internal_test,
+                roc_auc_internal_test
+            ).all { value -> value?.isFinite() == true }
+        ) { "internal_test_metrics_non_finite" }
+        require(android_ready != true && clinical_validation_status.isNullOrBlank()) {
+            "internal_manifest_contains_legacy_status"
+        }
+    }
+
+    /**
+     * Returns the runtime contract only after validating the access policy for
+     * the manifest kind. Internal Android bundles are already validated by
+     * [requireInternalValid] at the artifact boundary and may use their
+     * internal cohort receipt. Research and release manifests keep their
+     * stricter holdout rules.
+     */
+    fun sessionContract(detectorContract: PpgDetectorContract? = null): ModelSessionContract {
+        when (schema_version) {
+            "internal-android-v2" -> requireInternalValid()
+            "onnx-research-v1" -> requireResearchValid()
+            else -> requireCommonContract(requireHoldoutEvidence = true)
+        }
         return ModelSessionContract(
             modelVersion = model_version,
             sensorChannel = sensor_channel,
@@ -236,12 +328,22 @@ data class ModelManifest(
             manifestFingerprint = candidate_bundle_sha256,
             performanceTier = performance_tier,
             deploymentScope = deployment_scope,
-            researchDisclaimer = research_disclaimer.takeIf { disclaimer_required }
+            researchDisclaimer = research_disclaimer.takeIf { disclaimer_required },
+            detectorContract = detectorContract
+        )
+    }
+
+    /** UI/runtime-safe projection of the executable model contract. */
+    fun sessionContractStatus(detectorContract: PpgDetectorContract? = null): ModelContractStatus = runCatching {
+        ModelContractStatus.Ready(sessionContract(detectorContract))
+    }.getOrElse { error ->
+        ModelContractStatus.Unavailable(
+            reason = error.message?.takeIf(String::isNotBlank) ?: "model_contract_invalid"
         )
     }
 
     @Suppress("LongMethod", "CyclomaticComplexMethod")
-    private fun requireCommonContract(requireHoldoutEvidence: Boolean) {
+    private fun requireCommonContract(requireHoldoutEvidence: Boolean, allowInternalTestAccess: Boolean = false) {
         require(model_version.isNotBlank()) { "missing_model_version" }
         require(preprocessing_version.isNotBlank()) { "bad_preprocessing_version" }
         require(sensor_channel in setOf("ppg_green", "ppg_ir", "ppg_red")) { "unsupported_model_sensor" }
@@ -285,7 +387,7 @@ data class ModelManifest(
         require(performance_tier in setOf("below_minimum", "research_usable", "preferred")) {
             "invalid_performance_tier"
         }
-        require(deployment_scope in setOf("none", "research", "standard")) {
+        require(deployment_scope in setOf("none", "research", "standard", "internal")) {
             "invalid_deployment_scope"
         }
         if (disclaimer_required) {
@@ -308,7 +410,9 @@ data class ModelManifest(
                 "research_development_cohort_too_small_or_duplicated"
             }
             require(validation_cohort_ids.all(development::contains)) { "bad_research_validation_cohort" }
-            require(cohort_access_count == 0) { "research_holdout_access_forbidden" }
+            if (!allowInternalTestAccess) {
+                require(cohort_access_count == 0) { "research_holdout_access_forbidden" }
+            }
         }
         require(threshold_source == "participant_grouped_development_validation") { "unsafe_threshold_source" }
         require(probability_threshold in 0f..1f) { "bad_threshold" }
@@ -347,6 +451,12 @@ data class ModelManifest(
     }
 }
 
+sealed interface ModelContractStatus {
+    data class Ready(val contract: ModelSessionContract) : ModelContractStatus
+
+    data class Unavailable(val reason: String) : ModelContractStatus
+}
+
 data class ModelSessionContract(
     val modelVersion: String,
     val sensorChannel: String,
@@ -363,7 +473,8 @@ data class ModelSessionContract(
     val manifestFingerprint: String = "",
     val performanceTier: String = "",
     val deploymentScope: String = "",
-    val researchDisclaimer: String? = null
+    val researchDisclaimer: String? = null,
+    val detectorContract: PpgDetectorContract? = null
 ) {
     fun requireValid() {
         require(modelVersion.isNotBlank()) { "missing_model_version" }
@@ -447,5 +558,6 @@ data class ModelResources(
     val modelBytes: ByteArray,
     val preflightVector: ModelPreflightVector,
     val preflightVectors: List<ModelPreflightVector> =
-        if (preflightVector.input.isNotEmpty()) listOf(preflightVector) else emptyList()
+        if (preflightVector.input.isNotEmpty()) listOf(preflightVector) else emptyList(),
+    val detectorContract: PpgDetectorContract? = null
 )

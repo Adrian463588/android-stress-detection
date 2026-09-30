@@ -14,7 +14,7 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@drawable/ic_launcher_wear"
-        android:label="Stress Watch"
+        android:label="${wearAppLabel}"
         android:theme="@style/AppTheme">
 
         <!-- Declare this app as a standalone Wear OS app (no paired phone required) -->

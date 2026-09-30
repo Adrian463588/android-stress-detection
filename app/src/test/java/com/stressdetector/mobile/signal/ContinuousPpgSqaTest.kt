@@ -22,28 +22,27 @@ class ContinuousPpgSqaTest {
             ) as PpgPreprocessResult.Ready
             ).window
 
-        assertEquals(18_100, prepared.rawSampleCount)
-        assertEquals(18_000, prepared.size)
+        // The trailing 180-second evidence window preserves captured samples,
+        // including both observed boundaries. It is not re-gridded to 18,000.
+        assertEquals(18_001, prepared.rawSampleCount)
+        assertEquals(18_001, prepared.size)
         assertEquals(0, prepared.interpolatedSampleCount)
         assertEquals(0, prepared.sourceGapInterpolatedSampleCount)
+        assertEquals(0, prepared.gridResampledSampleCount)
+        assertEquals(prepared.size, prepared.observedSampleCount)
         val quality = SignalQualityGate(testLiveMonitorConfig()).evaluate(prepared)
         assertTrue(quality.isUsable)
         assertEquals(0.0, quality.missingRatio, 1.0e-9)
     }
 
     @Test
-    fun sourceDropoutIsCountedSeparatelyFromRateConversion() {
+    fun sourceDropoutIsRejectedWithoutRepair() {
         val batch = FakePpgBatchFactory.sessionBatch(PpgType.IR, "ir-gap", seconds = 181)
         val timestamps = batch.timestampsMillis.copyOf()
         for (index in 2_000 until timestamps.size) timestamps[index] += 80L
 
-        val prepared = (
-            preprocessor.prepare(
-                WindowSnapshot(batch.type, timestamps, batch.rawValues)
-            ) as PpgPreprocessResult.Ready
-            ).window
+        val result = preprocessor.prepare(WindowSnapshot(batch.type, timestamps, batch.rawValues))
 
-        assertTrue(prepared.sourceGapInterpolatedSampleCount > 0)
-        assertTrue(SignalQualityGate(testLiveMonitorConfig()).evaluate(prepared).missingRatio > 0.0)
+        assertEquals("ppg_true_gap_detected", (result as PpgPreprocessResult.Rejected).reason)
     }
 }

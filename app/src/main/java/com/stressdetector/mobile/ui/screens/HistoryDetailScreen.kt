@@ -258,8 +258,14 @@ private fun ReportSummaryCard(report: StressSessionReportEntity) {
             Text("Status: ${report.reportStatus}")
             if (report.evidenceMode == "research") {
                 Text(
-                    "Model riset — development only · external validation required",
+                    "Model riset — development only · Decision-support",
                     color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.Bold
+                )
+            } else if (report.evidenceMode == "internal") {
+                Text(
+                    "Validasi internal 32 peserta · Decision-support",
+                    color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold
                 )
             } else {

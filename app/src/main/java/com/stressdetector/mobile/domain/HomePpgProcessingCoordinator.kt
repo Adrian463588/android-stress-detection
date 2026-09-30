@@ -294,6 +294,9 @@ class HomePpgProcessingCoordinator(
         append(':').append(window.timestampsMillis.lastOrNull() ?: 0L)
         append(':').append(window.filteredValues.contentHashCode())
         append(':').append(window.interpolatedMask.contentHashCode())
+        append(':').append(window.observedMask.contentHashCode())
+        append(':').append(window.repairedShortGapMask.contentHashCode())
+        append(':').append(window.gridResampledMask.contentHashCode())
     }
 
     private fun reasonOf(availability: PredictionAvailability): String = when (availability) {
@@ -332,6 +335,11 @@ class HomePpgProcessingCoordinator(
             rejectedSampleCount = diagnostics?.rejectedSampleCount ?: 0,
             duplicateSampleCount = diagnostics?.duplicateSampleCount ?: 0,
             sequenceLossCount = diagnostics?.sequenceLossCount ?: 0L,
+            observedSampleCount = diagnostics?.observedSampleCount ?: window.size,
+            repairedShortGapSampleCount = 0,
+            trueGapCount = diagnostics?.trueGapCount ?: 0,
+            unresolvedSampleCount = diagnostics?.unresolvedSampleCount ?: 0,
+            gridResampledSampleCount = diagnostics?.gridResampledSampleCount ?: 0,
             observedStartMillis = diagnostics?.observedStartMillis,
             observedEndMillis = diagnostics?.observedEndMillis,
             coverageMillis = diagnostics?.coverageMillis ?: 0L,

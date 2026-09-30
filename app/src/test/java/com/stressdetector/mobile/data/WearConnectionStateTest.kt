@@ -80,8 +80,9 @@ class WearConnectionStateTest {
     fun uncorrelatedPongDoesNotCreateReachabilityEvidence() {
         val repository = WearConnectionRepositoryImpl()
 
-        repository.markPong("watch")
+        val disposition = repository.markPong("watch", ByteArray(Long.SIZE_BYTES))
 
+        assertEquals(PongDisposition.UNKNOWN_NONCE, disposition)
         assertEquals(WatchConnectionStatus.DISCONNECTED, repository.state.value.status)
         assertEquals(0L, repository.state.value.lastPongMillis)
     }
@@ -96,7 +97,10 @@ class WearConnectionStateTest {
 
         assertNotNull(first)
         assertNull(second)
-        assertTrue(registry.consumeIfMatches("watch", first!!))
+        assertEquals(
+            PongDisposition.ACCEPTED,
+            registry.consumeIfMatches("watch", first!!, nowMillis = 10_500L)
+        )
     }
 
     @Test
@@ -108,8 +112,14 @@ class WearConnectionStateTest {
         val second = registry.prepare("watch", nowMillis = 11_001L)!!
 
         assertNotEquals(first, second)
-        assertFalse(registry.consumeIfMatches("watch", first))
-        assertTrue(registry.consumeIfMatches("watch", second))
+        assertEquals(
+            PongDisposition.UNKNOWN_NONCE,
+            registry.consumeIfMatches("watch", first, nowMillis = 11_001L)
+        )
+        assertEquals(
+            PongDisposition.ACCEPTED,
+            registry.consumeIfMatches("watch", second, nowMillis = 11_001L)
+        )
     }
 
     @Test
@@ -120,9 +130,12 @@ class WearConnectionStateTest {
         val first = registry.prepare("watch", nowMillis = 10_000L)!!
         val second = registry.prepare("watch", nowMillis = 11_001L)!!
 
-        registry.discardIfMatches("watch", first)
+        registry.expireIfMatches("watch", first)
 
-        assertTrue(registry.consumeIfMatches("watch", second))
+        assertEquals(
+            PongDisposition.ACCEPTED,
+            registry.consumeIfMatches("watch", second, nowMillis = 11_001L)
+        )
     }
 
     @Test

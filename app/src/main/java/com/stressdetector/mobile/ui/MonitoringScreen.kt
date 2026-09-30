@@ -98,7 +98,10 @@ fun MonitoringScreen(
     highestIrSequence: Long = 0L,
     highestRedDiagnosticSequence: Long = 0L,
     modelStatus: String = "Warm-up / menunggu core",
+    debugLivePpgCaptureAvailable: Boolean = false,
+    debugLivePpgCaptureEnabled: Boolean = false,
     twoColumnLayout: Boolean = false,
+    onDebugLivePpgCaptureEnabledChange: (Boolean) -> Unit = {},
     onStop: () -> Unit
 ) {
     val honestConnectionPhase = honestConnectionPhase(connectionStatus, connectionPhase)
@@ -115,6 +118,7 @@ fun MonitoringScreen(
             elapsedMillis = elapsedMillis,
             connectionPhase = honestConnectionPhase
         )
+        StopButton(onStop = onStop)
         SignalStatusCard(
             connectionPhase = honestConnectionPhase,
             modelStatus = modelStatus,
@@ -145,8 +149,11 @@ fun MonitoringScreen(
                 highestGreenSequence = highestGreenSequence,
                 highestIrSequence = highestIrSequence,
                 highestRedDiagnosticSequence = highestRedDiagnosticSequence,
-                modelStatus = modelStatus
-            )
+                modelStatus = modelStatus,
+                debugCaptureAvailable = debugLivePpgCaptureAvailable,
+                debugCaptureEnabled = debugLivePpgCaptureEnabled
+            ),
+            onDebugCaptureEnabledChange = onDebugLivePpgCaptureEnabledChange
         )
 
         DualPpgChartSection(
@@ -158,8 +165,6 @@ fun MonitoringScreen(
             redSamples = redDiagnosticSamples,
             twoColumnLayout = twoColumnLayout
         )
-
-        StopButton(onStop = onStop)
     }
 }
 
@@ -648,6 +653,6 @@ private fun StopButton(onStop: () -> Unit) {
     ) {
         Icon(Icons.Default.Stop, contentDescription = null)
         Spacer(Modifier.width(8.dp))
-        Text("Stop session", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Text("Hentikan sesi", fontWeight = FontWeight.Bold, fontSize = 15.sp)
     }
 }

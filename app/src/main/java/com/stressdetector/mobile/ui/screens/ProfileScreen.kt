@@ -9,14 +9,18 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -25,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
@@ -47,8 +52,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -123,363 +130,416 @@ fun ProfileScreen(
         ?.size
         ?: 0
 
+    var detailSheet by remember { mutableStateOf<ProfileDetail?>(null) }
+    val openDetail: (ProfileDetail) -> Unit = { detail ->
+        detailSheet = detail
+        showTechnicalDetails = false
+    }
+    val openTechnicalDetails = {
+        detailSheet = ProfileDetail.MODELS
+        showTechnicalDetails = true
+    }
+    val requestDestructiveAction: (ProfileDestructiveAction) -> Unit = { action ->
+        detailSheet = null
+        destructiveAction = action
+    }
+    val aiReady = state.gemmaActivationState == ModelActivationState.Ready
+    val gemmaRecovery = state.durableSyncReport?.recoveryOf(DurableArtifact.GEMMA)
+    val gemmaAction = gemmaContextualAction(
+        context = GemmaActionContext(
+            activation = state.gemmaActivationState,
+            candidateReadyForVerification = state.hasCompleteModelCandidate,
+            downloadState = state.modelDownloadState,
+            recovery = gemmaRecovery,
+            storageConnected = state.modelStorage.connected
+        ),
+        callbacks = object : GemmaActionCallbacks {
+            override fun connect() = modelFolderLauncher.launch(null)
+            override fun sync() = viewModel.syncModelFolder()
+            override fun download() = viewModel.downloadModel()
+            override fun retryDownload() = viewModel.retryModelDownload()
+            override fun retryVerification() = viewModel.retryVerification()
+            override fun cancel() = viewModel.cancelModelDownload()
+            override fun retryRuntime() = viewModel.retryRuntimeInitialization()
+            override fun showDetails() = openTechnicalDetails()
+        }
+    )
+    val speechRecovery = state.durableSyncReport?.recoveryOf(DurableArtifact.SPEECH_BUNDLE)
+    val speechAction = speechContextualAction(
+        recovery = speechRecovery,
+        readiness = state.speechBundleReadiness,
+        downloadState = state.speechDownloadState,
+        storageConnected = state.modelStorage.connected,
+        onConnect = { modelFolderLauncher.launch(null) },
+        onSync = viewModel::syncModelFolder,
+        onCancel = viewModel::cancelSpeechBundleDownload,
+        onRetry = viewModel::retrySpeechBundleDownload,
+        onPrepare = { showSherpaSources = true },
+        onShowDetails = openTechnicalDetails
+    )
+    val embeddingRecovery = state.durableSyncReport?.recoveryOf(DurableArtifact.MULTILINGUAL_EMBEDDING)
+    val embeddingAction = embeddingContextualAction(
+        state = state.embeddingArtifactState,
+        recovery = embeddingRecovery,
+        storageConnected = state.modelStorage.connected,
+        onConnect = { modelFolderLauncher.launch(null) },
+        onSync = viewModel::syncModelFolder,
+        onDownload = viewModel::downloadEmbedding,
+        onShowDetails = openTechnicalDetails
+    )
+    val voiceRecovery = state.durableSyncReport?.recoveryOf(DurableArtifact.VOICE_CAPABILITY)
+    val voiceReady = state.speechCapabilities.voiceAiReady
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(horizontal = AppSpacing.Screen, vertical = AppSpacing.Medium),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.Section)
     ) {
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Micro)) {
                 Text(
                     text = "Profil",
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
                 )
                 Text(
-                    text = "Kelola privasi, model offline, dan data lokal dari satu tempat.",
+                    text = "Kesiapan aplikasi, model offline, dan data lokal.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                ProfileStatusRow(
-                    label = "Privasi",
-                    status = if (state.sensitiveFileEncryptionReady) "Siap" else "Perlu setup",
-                    emphasized = state.sensitiveFileEncryptionReady
-                )
-                ProfileStatusRow(
-                    label = "Penyimpanan offline",
-                    status = when {
-                        restoring -> "Memulihkan"
-                        state.modelStorage.connected -> "Tersambung"
-                        else -> "Belum terhubung"
-                    },
-                    emphasized = state.modelStorage.connected
-                )
-                val aiReady = state.gemmaActivationState == ModelActivationState.Ready
-                ProfileStatusRow(
-                    label = "AI Counselor",
-                    status = if (aiReady) "Siap offline" else "Belum siap",
-                    emphasized = aiReady
-                )
             }
         }
-
         item {
-            SettingsSection(
-                title = "Penyimpanan offline",
-                subtitle = when {
-                    restoring -> "Memulihkan file dari folder pilihan tanpa unduhan baru."
-                    state.modelStorage.connected ->
-                        state.durableSyncReport?.userMessage() ?: "Folder model tersambung."
-                    else -> "Pilih ulang folder StressDetection setelah reinstall untuk memulihkan file yang ada."
-                }
-            ) {
-                val storageActionLabel = when {
-                    restoring -> null
-                    state.modelStorage.connected -> "Sinkronkan"
-                    else -> "Hubungkan folder"
-                }
-                storageActionLabel?.let { label ->
-                    Button(
-                        onClick = {
-                            if (state.modelStorage.connected) {
-                                viewModel.syncModelFolder()
-                            } else {
-                                modelFolderLauncher.launch(null)
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = MIN_TOUCH_TARGET_DP.dp)
-                            .semantics { contentDescription = label }
-                    ) {
-                        Text(label)
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(
-                        onClick = { showTechnicalDetails = !showTechnicalDetails },
-                        modifier = Modifier
-                            .heightIn(min = MIN_TOUCH_TARGET_DP.dp)
-                            .semantics {
-                                stateDescription = if (showTechnicalDetails) "Terbuka" else "Tertutup"
-                            },
-                        contentPadding = PaddingValues(horizontal = 0.dp)
-                    ) {
-                        Text(if (showTechnicalDetails) "Sembunyikan detail teknis" else "Detail teknis")
-                    }
-                }
-                AnimatedVisibility(
-                    visible = showTechnicalDetails,
-                    enter = fadeIn(tween(motion.duration(TECHNICAL_DETAILS_ENTER_MILLIS))) + expandVertically(),
-                    exit = fadeOut(tween(motion.duration(TECHNICAL_DETAILS_EXIT_MILLIS))) + shrinkVertically()
-                ) {
-                    TechnicalStorageDetails(
-                        report = state.durableSyncReport,
-                        provider = state.modelStorage.providerAuthority,
-                        treeUri = state.modelStorage.treeUri?.toString(),
-                        providerRoot = state.modelStorage.providerRootId,
-                        resolvedDocument = state.modelStorage.resolvedRootDocumentId,
-                        modelPath = state.modelStorage.modelPath,
-                        readPermission = state.modelStorage.persistedReadPermission,
-                        writePermission = state.modelStorage.persistedWritePermission,
-                        availableBytes = state.modelStorage.availableBytes,
-                        lastAuditAtMillis = state.modelStorage.lastAuditAtMillis,
-                        legacyLocations = state.modelStorage.legacyLocations,
-                        storageError = state.modelStorage.error,
-                        modelMetadata = state.modelMetadata,
-                        embeddingCatalogDisclosure = state.embeddingCatalogDisclosure,
-                        runtimeTechnicalMessage = state.runtimeTechnicalMessage
-                    )
-                }
-            }
-        }
-
-        item {
-            SettingsSection(
-                title = "Model offline",
-                subtitle = "File diverifikasi sebelum dipakai. Runtime yang tidak kompatibel tidak dianggap hilang."
-            ) {
-                val gemmaRecovery = state.durableSyncReport?.recoveryOf(DurableArtifact.GEMMA)
-                val gemmaAction = gemmaContextualAction(
-                    context = GemmaActionContext(
-                        activation = state.gemmaActivationState,
-                        candidateReadyForVerification = state.hasCompleteModelCandidate,
-                        downloadState = state.modelDownloadState,
-                        recovery = gemmaRecovery,
-                        storageConnected = state.modelStorage.connected
-                    ),
-                    callbacks = object : GemmaActionCallbacks {
-                        override fun connect() = modelFolderLauncher.launch(null)
-                        override fun sync() = viewModel.syncModelFolder()
-                        override fun download() = viewModel.downloadModel()
-                        override fun retryDownload() = viewModel.retryModelDownload()
-                        override fun retryVerification() = viewModel.retryVerification()
-                        override fun cancel() = viewModel.cancelModelDownload()
-                        override fun retryRuntime() = viewModel.retryRuntimeInitialization()
-                        override fun showDetails() {
-                            showTechnicalDetails = true
-                        }
-                    }
-                )
-                ArtifactSettingsRow(
-                    title = "Gemma AI Counselor",
-                    status = gemmaStatusLabel(
+            ProfileReadinessCard(
+                privacyReady = state.sensitiveFileEncryptionReady,
+                storageStatus = when {
+                    restoring -> "Memulihkan"
+                    state.modelStorage.connected -> "Tersambung"
+                    else -> "Belum terhubung"
+                },
+                storageReady = state.modelStorage.connected,
+                aiStatus = if (aiReady) {
+                    "Siap offline"
+                } else {
+                    gemmaStatusLabel(
                         activation = state.gemmaActivationState,
                         recovery = gemmaRecovery,
                         candidateReadyForVerification = state.hasCompleteModelCandidate
-                    ),
-                    supporting = state.gemmaStatusMessage,
-                    action = gemmaAction,
-                    progress = state.downloadProgress.takeIf {
-                        state.isDownloadingModel && state.modelDownloadState.hasTransferProgress()
-                    },
-                    progressLabel = state.modelDownloadState.modelProgressLabel(
-                        state.downloadBytes,
-                        state.downloadTotalBytes
                     )
-                )
-                val speechRecovery = state.durableSyncReport?.recoveryOf(DurableArtifact.SPEECH_BUNDLE)
-                val speechAction = speechContextualAction(
-                    recovery = speechRecovery,
-                    readiness = state.speechBundleReadiness,
-                    downloadState = state.speechDownloadState,
-                    storageConnected = state.modelStorage.connected,
-                    onConnect = { modelFolderLauncher.launch(null) },
-                    onSync = viewModel::syncModelFolder,
-                    onCancel = viewModel::cancelSpeechBundleDownload,
-                    onRetry = viewModel::retrySpeechBundleDownload,
-                    onPrepare = { showSherpaSources = true },
-                    onShowDetails = { showTechnicalDetails = true }
-                )
-                ArtifactSettingsRow(
-                    title = "Sherpa speech bundle",
-                    status = speechStatusLabel(
-                        readiness = state.speechBundleReadiness,
-                        capabilitiesReady = state.speechCapabilities.indonesianSttReady,
-                        recovery = speechRecovery
-                    ),
-                    supporting = state.speechStatusMessage,
-                    action = speechAction,
-                    progress = state.speechDownloadState.progressOrNull(),
-                    progressLabel = state.speechDownloadState.progressLabel()
-                )
-                val embeddingRecovery = state.durableSyncReport
-                    ?.recoveryOf(DurableArtifact.MULTILINGUAL_EMBEDDING)
-                val embeddingAction = embeddingContextualAction(
-                    state = state.embeddingArtifactState,
-                    recovery = embeddingRecovery,
-                    storageConnected = state.modelStorage.connected,
-                    onConnect = { modelFolderLauncher.launch(null) },
-                    onSync = viewModel::syncModelFolder,
-                    onDownload = viewModel::downloadEmbedding,
-                    onShowDetails = { showTechnicalDetails = true }
-                )
-                ArtifactSettingsRow(
-                    title = "Embedding multilingual",
-                    status = embeddingStatusLabel(state.embeddingArtifactState, embeddingRecovery),
-                    action = embeddingAction,
-                    progress = (state.embeddingArtifactState as? ArtifactState.Downloading)?.let {
-                        if (it.totalBytes > 0L) it.bytes.toFloat() / it.totalBytes else 0f
+                },
+                aiReady = aiReady
+            )
+        }
+        item {
+            ProfileOverviewSection(title = "Pengaturan") {
+                ProfileNavigationRow(
+                    title = "Penyimpanan offline",
+                    supporting = when {
+                        restoring -> "Pemulihan sedang berjalan"
+                        state.modelStorage.connected -> "Folder model tersambung"
+                        else -> "Hubungkan folder model untuk memakai file lokal"
                     },
-                    progressLabel = (state.embeddingArtifactState as? ArtifactState.Downloading)?.let {
-                        "${formatBytes(it.bytes)} / ${formatBytes(it.totalBytes)}"
-                    }
+                    onClick = { openDetail(ProfileDetail.STORAGE) }
                 )
-                val voiceRecovery = state.durableSyncReport?.recoveryOf(DurableArtifact.VOICE_CAPABILITY)
-                val voiceReady = state.speechCapabilities.voiceAiReady
-                ArtifactSettingsRow(
-                    title = "Voice AI+",
-                    status = voiceStatusLabel(voiceReady, speechDownloadBusy, voiceRecovery),
-                    supporting = "Input dan balasan suara memakai Sherpa bundle yang sama.",
-                    action = if (voiceReady) {
-                        ArtifactAction(
-                            label = "Atur",
-                            description = "Atur Voice AI+",
-                            onClick = { showVoiceSettings = true }
-                        )
-                    } else {
-                        speechAction?.copy(description = "Siapkan Voice AI+")
-                    }
+                ProfileNavigationRow(
+                    title = "Model offline",
+                    supporting = "Gemma, Sherpa, embedding, dan Voice AI+",
+                    onClick = { openDetail(ProfileDetail.MODELS) },
+                    showDivider = true
+                )
+                ProfileNavigationRow(
+                    title = "AI+ dan pengetahuan",
+                    supporting = "$documentCount dokumen · " +
+                        if (state.aiCounselorConsentGranted) {
+                            "persetujuan aktif"
+                        } else {
+                            "persetujuan belum diberikan"
+                        },
+                    onClick = { openDetail(ProfileDetail.AI) },
+                    showDivider = true
                 )
             }
         }
-
         item {
-            SettingsSection(title = "AI+ dan pengetahuan") {
-                ListItem(
-                    headlineContent = { Text("Persona AI Counselor") },
-                    supportingContent = { Text("Atur gaya interaksi lokal AI Counselor.") },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    trailingContent = {
-                        TextButton(
-                            onClick = onNavigateToPersona,
-                            modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET_DP.dp)
-                        ) { Text("Atur") }
-                    }
+            ProfileOverviewSection(title = "Data dan keamanan") {
+                ProfileNavigationRow(
+                    title = "Data lokal",
+                    supporting = "Ekspor, koneksi folder, dan hapus data dengan konfirmasi",
+                    onClick = { openDetail(ProfileDetail.DATA) }
                 )
-                ListItem(
-                    headlineContent = { Text("Knowledge Base") },
-                    supportingContent = { Text("$documentCount dokumen tersimpan") },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    trailingContent = {
-                        TextButton(
-                            onClick = onNavigateToLibrary,
-                            modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET_DP.dp)
-                        ) { Text("Kelola") }
-                    }
-                )
-                SettingToggleRow(
-                    title = "Gunakan riwayat stres di AI+",
-                    subtitle = "Hanya ringkasan lokal; raw PPG dan transcript tidak masuk prompt.",
-                    checked = state.useStressHistoryInAi,
-                    onCheckedChange = viewModel::setUseStressHistoryInAi
-                )
-                state.stressHistoryContextStatus?.let { status ->
-                    Text(
-                        text = status,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                }
-                SettingToggleRow(
-                    title = "Persetujuan AI Counselor",
-                    subtitle = "Izinkan AI membaca ringkasan riwayat stres lokal.",
-                    checked = state.aiCounselorConsentGranted,
-                    onCheckedChange = { viewModel.toggleConsent("AI_COUNSELING", it) }
-                )
-                if (aiReminderViewModel != null && aiReminderState != null) {
-                    AiReminderSettingsSection(
-                        state = aiReminderState,
-                        actions = AiReminderSettingsActions(
-                            onDisplayNameSaved = aiReminderViewModel::saveDisplayName,
-                            onReminderConsentChanged = aiReminderViewModel::setReminderConsent,
-                            onEnabledChanged = aiReminderViewModel::setEnabled,
-                            onRequestNotificationPermission = onRequestNotificationPermission,
-                            onPause = aiReminderViewModel::pause,
-                            onRetry = aiReminderViewModel::retry
-                        )
-                    )
-                }
             }
         }
+    }
 
-        item {
-            SettingsSection(
-                title = "Data lokal",
-                subtitle = "Ekspor tidak menghapus database atau artifact offline."
-            ) {
+    when (detailSheet) {
+        ProfileDetail.STORAGE -> ProfileDetailSheet(
+            title = "Penyimpanan offline",
+            subtitle = when {
+                restoring -> "Memulihkan file dari folder pilihan."
+                state.modelStorage.connected -> state.durableSyncReport?.userMessage()
+                    ?: "Folder model tersambung."
+                else -> "Pilih folder StressDetection untuk memulihkan file yang sudah ada."
+            },
+            onDismiss = { detailSheet = null }
+        ) {
+            val storageActionLabel = when {
+                restoring -> null
+                state.modelStorage.connected -> "Sinkronkan"
+                else -> "Hubungkan folder"
+            }
+            storageActionLabel?.let { label ->
                 Button(
-                    onClick = viewModel::exportAllData,
-                    enabled = !state.isLifecycleOperationRunning,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET_DP.dp)
-                ) { Text("Ekspor data lokal") }
-                state.statusMessage?.let { message ->
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
-                    )
-                }
+                    onClick = {
+                        if (state.modelStorage.connected) {
+                            viewModel.syncModelFolder()
+                        } else {
+                            modelFolderLauncher.launch(null)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = MIN_TOUCH_TARGET_DP.dp)
+                        .semantics { contentDescription = label }
+                ) { Text(label) }
             }
-        }
-
-        item {
-            SettingsSection(
-                title = "Tindakan berisiko",
-                subtitle = "Setiap tindakan meminta konfirmasi dan tidak menghapus file SAF tanpa perintah eksplisit."
+            TextButton(
+                onClick = { showTechnicalDetails = !showTechnicalDetails },
+                modifier = Modifier
+                    .heightIn(min = MIN_TOUCH_TARGET_DP.dp)
+                    .semantics {
+                        role = Role.Button
+                        stateDescription = if (showTechnicalDetails) "Terbuka" else "Tertutup"
+                    }
             ) {
-                if (state.modelStorage.connected) {
-                    DestructiveActionButton(
-                        label = "Lepas koneksi folder",
-                        onClick = { destructiveAction = ProfileDestructiveAction.DISCONNECT_STORAGE }
-                    )
-                }
-                if (state.isModelReady) {
-                    DestructiveActionButton(
-                        label = "Hapus salinan Gemma dari aplikasi",
-                        onClick = { destructiveAction = ProfileDestructiveAction.DELETE_GEMMA }
-                    )
-                }
-                if (state.speechBundleReadiness is SpeechBundleReadiness.Ready) {
-                    DestructiveActionButton(
-                        label = "Hapus salinan Sherpa dari aplikasi",
-                        onClick = { destructiveAction = ProfileDestructiveAction.DELETE_SPEECH }
-                    )
-                }
-                if (state.modelDownloadState is ModelDownloadState.Cancelled ||
-                    state.modelDownloadState is ModelDownloadState.Failed
-                ) {
-                    DestructiveActionButton(
-                        label = "Hapus partial Gemma",
-                        onClick = { destructiveAction = ProfileDestructiveAction.DISCARD_GEMMA_PARTIAL }
-                    )
-                }
-                if (state.speechDownloadState is SpeechBundleDownloadState.Cancelled ||
-                    state.speechDownloadState is SpeechBundleDownloadState.Failed
-                ) {
-                    DestructiveActionButton(
-                        label = "Hapus partial Sherpa",
-                        onClick = { destructiveAction = ProfileDestructiveAction.DISCARD_SPEECH_PARTIAL }
-                    )
-                }
-                if (state.embeddingArtifactState is ArtifactState.RetryableFailure ||
-                    state.embeddingArtifactState is ArtifactState.Corrupt
-                ) {
-                    DestructiveActionButton(
-                        label = "Hapus partial embedding",
-                        onClick = { destructiveAction = ProfileDestructiveAction.DISCARD_EMBEDDING_PARTIAL }
-                    )
-                }
-                DestructiveActionButton(
-                    label = "Hapus semua data lokal aplikasi",
-                    onClick = { destructiveAction = ProfileDestructiveAction.PURGE_DATA }
+                Text(if (showTechnicalDetails) "Sembunyikan detail teknis" else "Lihat detail teknis")
+            }
+            AnimatedVisibility(
+                visible = showTechnicalDetails,
+                enter = fadeIn(tween(motion.duration(TECHNICAL_DETAILS_ENTER_MILLIS))) + expandVertically(),
+                exit = fadeOut(tween(motion.duration(TECHNICAL_DETAILS_EXIT_MILLIS))) + shrinkVertically()
+            ) {
+                TechnicalStorageDetails(
+                    report = state.durableSyncReport,
+                    provider = state.modelStorage.providerAuthority,
+                    treeUri = state.modelStorage.treeUri?.toString(),
+                    providerRoot = state.modelStorage.providerRootId,
+                    resolvedDocument = state.modelStorage.resolvedRootDocumentId,
+                    modelPath = state.modelStorage.modelPath,
+                    readPermission = state.modelStorage.persistedReadPermission,
+                    writePermission = state.modelStorage.persistedWritePermission,
+                    availableBytes = state.modelStorage.availableBytes,
+                    lastAuditAtMillis = state.modelStorage.lastAuditAtMillis,
+                    legacyLocations = state.modelStorage.legacyLocations,
+                    storageError = state.modelStorage.error,
+                    modelMetadata = state.modelMetadata,
+                    embeddingCatalogDisclosure = state.embeddingCatalogDisclosure,
+                    runtimeTechnicalMessage = state.runtimeTechnicalMessage
                 )
             }
         }
+        ProfileDetail.MODELS -> ProfileDetailSheet(
+            title = "Model offline",
+            subtitle = "File diverifikasi sebelum dipakai. Runtime tidak kompatibel tidak dianggap hilang.",
+            onDismiss = { detailSheet = null }
+        ) {
+            ArtifactSettingsRow(
+                title = "Gemma AI Counselor",
+                status = gemmaStatusLabel(
+                    activation = state.gemmaActivationState,
+                    recovery = gemmaRecovery,
+                    candidateReadyForVerification = state.hasCompleteModelCandidate
+                ),
+                supporting = state.gemmaStatusMessage,
+                action = gemmaAction,
+                progress = state.downloadProgress.takeIf {
+                    state.isDownloadingModel && state.modelDownloadState.hasTransferProgress()
+                },
+                progressLabel = state.modelDownloadState.modelProgressLabel(
+                    state.downloadBytes,
+                    state.downloadTotalBytes
+                )
+            )
+            val speechActionForSheet = speechAction
+            ArtifactSettingsRow(
+                title = "Sherpa speech bundle",
+                status = speechStatusLabel(
+                    readiness = state.speechBundleReadiness,
+                    capabilitiesReady = state.speechCapabilities.indonesianSttReady,
+                    recovery = speechRecovery
+                ),
+                supporting = state.speechStatusMessage,
+                action = speechActionForSheet,
+                progress = state.speechDownloadState.progressOrNull(),
+                progressLabel = state.speechDownloadState.progressLabel()
+            )
+            ArtifactSettingsRow(
+                title = "Embedding multilingual",
+                status = embeddingStatusLabel(state.embeddingArtifactState, embeddingRecovery),
+                action = embeddingAction,
+                progress = (state.embeddingArtifactState as? ArtifactState.Downloading)?.let {
+                    if (it.totalBytes > 0L) it.bytes.toFloat() / it.totalBytes else 0f
+                },
+                progressLabel = (state.embeddingArtifactState as? ArtifactState.Downloading)?.let {
+                    "${formatBytes(it.bytes)} / ${formatBytes(it.totalBytes)}"
+                }
+            )
+            ArtifactSettingsRow(
+                title = "Voice AI+",
+                status = voiceStatusLabel(voiceReady, speechDownloadBusy, voiceRecovery),
+                supporting = "Input dan balasan suara memakai bundle Sherpa yang sama.",
+                action = if (voiceReady) {
+                    ArtifactAction(
+                        label = "Atur",
+                        description = "Atur Voice AI+",
+                        onClick = {
+                            detailSheet = null
+                            showVoiceSettings = true
+                        }
+                    )
+                } else {
+                    speechAction?.copy(description = "Siapkan Voice AI+")
+                }
+            )
+        }
+        ProfileDetail.AI -> ProfileDetailSheet(
+            title = "AI+ dan pengetahuan",
+            subtitle = "Atur sumber pengetahuan dan privasi AI lokal.",
+            onDismiss = { detailSheet = null }
+        ) {
+            ListItem(
+                headlineContent = { Text("Persona AI Counselor") },
+                supportingContent = { Text("Atur gaya interaksi lokal AI Counselor.") },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                trailingContent = {
+                    TextButton(
+                        onClick = {
+                            detailSheet = null
+                            onNavigateToPersona()
+                        },
+                        modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET_DP.dp)
+                    ) { Text("Atur") }
+                }
+            )
+            ListItem(
+                headlineContent = { Text("Knowledge Base") },
+                supportingContent = { Text("$documentCount dokumen tersimpan") },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                trailingContent = {
+                    TextButton(
+                        onClick = {
+                            detailSheet = null
+                            onNavigateToLibrary()
+                        },
+                        modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET_DP.dp)
+                    ) { Text("Kelola") }
+                }
+            )
+            SettingToggleRow(
+                title = "Gunakan riwayat stres di AI+",
+                subtitle = "Hanya ringkasan lokal; raw PPG dan transcript tidak masuk prompt.",
+                checked = state.useStressHistoryInAi,
+                onCheckedChange = viewModel::setUseStressHistoryInAi
+            )
+            state.stressHistoryContextStatus?.let { status ->
+                Text(
+                    text = status,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.Small)
+                )
+            }
+            SettingToggleRow(
+                title = "Persetujuan AI Counselor",
+                subtitle = "Izinkan AI membaca ringkasan riwayat stres lokal.",
+                checked = state.aiCounselorConsentGranted,
+                onCheckedChange = { viewModel.toggleConsent("AI_COUNSELING", it) }
+            )
+            if (aiReminderViewModel != null && aiReminderState != null) {
+                AiReminderSettingsSection(
+                    state = aiReminderState,
+                    actions = AiReminderSettingsActions(
+                        onDisplayNameSaved = aiReminderViewModel::saveDisplayName,
+                        onReminderConsentChanged = aiReminderViewModel::setReminderConsent,
+                        onEnabledChanged = aiReminderViewModel::setEnabled,
+                        onRequestNotificationPermission = onRequestNotificationPermission,
+                        onPause = aiReminderViewModel::pause,
+                        onRetry = aiReminderViewModel::retry
+                    )
+                )
+            }
+        }
+        ProfileDetail.DATA -> ProfileDetailSheet(
+            title = "Data dan keamanan",
+            subtitle = "Ekspor tidak menghapus database atau artifact offline.",
+            onDismiss = { detailSheet = null }
+        ) {
+            Button(
+                onClick = viewModel::exportAllData,
+                enabled = !state.isLifecycleOperationRunning,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = MIN_TOUCH_TARGET_DP.dp)
+            ) { Text("Ekspor data lokal") }
+            state.statusMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                )
+            }
+            Text(
+                text = "Tindakan berisiko",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.padding(top = AppSpacing.Medium)
+            )
+            if (state.modelStorage.connected) {
+                DestructiveActionButton(
+                    label = "Lepas koneksi folder",
+                    onClick = { requestDestructiveAction(ProfileDestructiveAction.DISCONNECT_STORAGE) }
+                )
+            }
+            if (state.isModelReady) {
+                DestructiveActionButton(
+                    label = "Hapus salinan Gemma dari aplikasi",
+                    onClick = { requestDestructiveAction(ProfileDestructiveAction.DELETE_GEMMA) }
+                )
+            }
+            if (state.speechBundleReadiness is SpeechBundleReadiness.Ready) {
+                DestructiveActionButton(
+                    label = "Hapus salinan Sherpa dari aplikasi",
+                    onClick = { requestDestructiveAction(ProfileDestructiveAction.DELETE_SPEECH) }
+                )
+            }
+            if (state.modelDownloadState is ModelDownloadState.Cancelled ||
+                state.modelDownloadState is ModelDownloadState.Failed
+            ) {
+                DestructiveActionButton(
+                    label = "Hapus partial Gemma",
+                    onClick = { requestDestructiveAction(ProfileDestructiveAction.DISCARD_GEMMA_PARTIAL) }
+                )
+            }
+            if (state.speechDownloadState is SpeechBundleDownloadState.Cancelled ||
+                state.speechDownloadState is SpeechBundleDownloadState.Failed
+            ) {
+                DestructiveActionButton(
+                    label = "Hapus partial Sherpa",
+                    onClick = { requestDestructiveAction(ProfileDestructiveAction.DISCARD_SPEECH_PARTIAL) }
+                )
+            }
+            if (state.embeddingArtifactState is ArtifactState.RetryableFailure ||
+                state.embeddingArtifactState is ArtifactState.Corrupt
+            ) {
+                DestructiveActionButton(
+                    label = "Hapus partial embedding",
+                    onClick = { requestDestructiveAction(ProfileDestructiveAction.DISCARD_EMBEDDING_PARTIAL) }
+                )
+            }
+            DestructiveActionButton(
+                label = "Hapus semua data lokal aplikasi",
+                onClick = { requestDestructiveAction(ProfileDestructiveAction.PURGE_DATA) }
+            )
+        }
+        null -> Unit
     }
 
     if (showVoiceSettings) {
@@ -515,7 +575,8 @@ fun ProfileScreen(
                     onClick = {
                         showSherpaSources = false
                         viewModel.downloadSpeechBundle()
-                    }
+                    },
+                    modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET_DP.dp)
                 ) { Text("Unduh via Wi-Fi") }
             },
             dismissButton = {
@@ -523,7 +584,8 @@ fun ProfileScreen(
                     onClick = {
                         showSherpaSources = false
                         speechBundleLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
-                    }
+                    },
+                    modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET_DP.dp)
                 ) { Text("Impor ZIP lokal") }
             }
         )
@@ -550,18 +612,51 @@ fun ProfileScreen(
                         }
                         destructiveAction = null
                     },
+                    modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET_DP.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) { Text("Konfirmasi") }
             },
             dismissButton = {
-                TextButton(onClick = { destructiveAction = null }) { Text("Batal") }
+                TextButton(
+                    onClick = { destructiveAction = null },
+                    modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET_DP.dp)
+                ) { Text("Batal") }
             }
         )
     }
 }
 
+private enum class ProfileDetail {
+    STORAGE,
+    MODELS,
+    AI,
+    DATA
+}
+
 @Composable
-private fun SettingsSection(title: String, subtitle: String? = null, content: @Composable () -> Unit) {
+private fun ProfileReadinessCard(privacyReady: Boolean, storageStatus: String, storageReady: Boolean, aiStatus: String, aiReady: Boolean) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(
+            modifier = Modifier.padding(AppSpacing.Medium),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)
+        ) {
+            Text(
+                text = "Status aplikasi",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+            )
+            ProfileStatusRow("Privasi", if (privacyReady) "Siap" else "Perlu setup", privacyReady)
+            ProfileStatusRow("Penyimpanan offline", storageStatus, storageReady)
+            ProfileStatusRow("AI Counselor", aiStatus, aiReady)
+        }
+    }
+}
+
+@Composable
+private fun ProfileOverviewSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)
@@ -570,14 +665,74 @@ private fun SettingsSection(title: String, subtitle: String? = null, content: @C
             text = title,
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
         )
-        subtitle?.let {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+            shape = MaterialTheme.shapes.large
+        ) {
+            Column(content = content)
+        }
+    }
+}
+
+@Composable
+private fun ProfileNavigationRow(title: String, supporting: String, onClick: () -> Unit, showDivider: Boolean = false) {
+    Column {
+        if (showDivider) {
+            Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+        }
+        ListItem(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 64.dp)
+                .clickable(role = Role.Button, onClick = onClick)
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = "$title. $supporting"
+                },
+            headlineContent = { Text(title, fontWeight = FontWeight.SemiBold) },
+            supportingContent = {
+                Text(supporting, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            },
+            trailingContent = {
+                Text(
+                    text = "Kelola",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProfileDetailSheet(title: String, subtitle: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = AppSpacing.Screen, vertical = AppSpacing.Small),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)
+        ) {
             Text(
-                text = it,
+                text = title,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
+            )
+            Text(
+                text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            content()
         }
-        content()
     }
 }
 
@@ -586,7 +741,10 @@ private fun ProfileStatusRow(label: String, status: String, emphasized: Boolean)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .semantics { contentDescription = "$label: $status" },
+            .semantics(mergeDescendants = true) {
+                contentDescription = "$label: $status"
+                stateDescription = status
+            },
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -641,14 +799,20 @@ private fun ArtifactSettingsRow(
         progress?.let {
             LinearProgressIndicator(
                 progress = animatedProgress,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = AppSpacing.Medium)
+                    .semantics {
+                        liveRegion = LiveRegionMode.Polite
+                        contentDescription = progressLabel ?: "Kemajuan $title"
+                    }
             )
             progressLabel?.let { label ->
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    modifier = Modifier.padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.Micro)
                 )
             }
         }
@@ -1179,7 +1343,7 @@ internal fun DurableArtifactRecovery.profileLabel(): String {
         DurableArtifactRecoveryState.ERROR -> "perlu diperiksa"
         DurableArtifactRecoveryState.CORRUPT -> "rusak"
         DurableArtifactRecoveryState.MISSING -> "tidak tersedia"
-        DurableArtifactRecoveryState.PERMISSION_LOST -> "hubungkan folder"
+        DurableArtifactRecoveryState.PERMISSION_LOST -> "Hubungkan folder"
     }
     val sourceLabel = when (source) {
         DurableArtifactSource.CANONICAL_SAF -> "mirror SAF"

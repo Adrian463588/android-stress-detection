@@ -134,6 +134,49 @@ data class PackagedPerformancePolicy(
         }
     }
 
+    internal fun requireInternalEntryCompatibility(entry: CanonicalModelEntry, manifest: ModelManifest) {
+        require(entry.performance_policy_version == performance_policy_version) {
+            "index_policy_version_mismatch"
+        }
+        require(entry.performance_policy_sha256 == performance_policy_sha256) {
+            "index_policy_checksum_mismatch"
+        }
+        require(manifest.performance_policy_version == performance_policy_version) {
+            "manifest_policy_version_mismatch"
+        }
+        require(manifest.performance_policy_sha256 == performance_policy_sha256) {
+            "manifest_policy_checksum_mismatch"
+        }
+        val developmentPasses = minimum_research.accepts(
+            entry.balanced_accuracy_development,
+            entry.f1_development,
+            entry.roc_auc_development
+        )
+        val internalTestPasses = minimum_research.accepts(
+            entry.balanced_accuracy_internal_test,
+            entry.f1_internal_test,
+            entry.roc_auc_internal_test
+        )
+        require(developmentPasses && internalTestPasses) {
+            "internal_model_metrics_below_minimum_policy"
+        }
+        require(entry.performance_tier == manifest.performance_tier) {
+            "index_manifest_tier_mismatch"
+        }
+        require(entry.deployment_scope == "internal" && manifest.deployment_scope == "internal") {
+            "internal_deployment_scope_mismatch"
+        }
+        require(
+            listOf(
+                entry.hrv_prv_status,
+                entry.training_admission_status,
+                entry.development_model_status,
+                entry.internal_test_status,
+                entry.onnx_export_status
+            ).all { it == "GO" }
+        ) { "internal_status_gate_failed" }
+    }
+
     private companion object {
         val SHA256 = Regex("[0-9a-f]{64}")
     }

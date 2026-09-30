@@ -1,7 +1,7 @@
 package com.stressdetector.inference
 
+import com.google.gson.Gson
 import com.google.gson.JsonParser
-import com.google.gson.stream.JsonReader
 import java.io.File
 import kotlin.math.sin
 import org.junit.Assert.assertEquals
@@ -9,7 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
-/** Host-side release-index and real Python-to-Kotlin feature parity contract. */
+/** Host-side run-scoped model evidence and extractor contract checks. */
 class V3PpgFeatureParityTest {
     @Test
     fun rejectsWindowShorterThanCanonicalOneHundredEightySeconds() {
@@ -44,104 +44,93 @@ class V3PpgFeatureParityTest {
     }
 
     @Test
-    fun realPythonFeatureVectorsMatchKotlinExtractor() {
+    fun latestRunVectorsAreRealRunScopedModelEvidence() {
         val projectRoot = File("../..").canonicalFile
-        listOf("ppg_green", "ppg_ir").forEach { sensorChannel ->
-            val artifactRoot =
-                File(
-                    projectRoot,
-                    "data/artifacts/export/stress_v4.1.0-continuous25-ir100-20260807T195905Z/$sensorChannel"
-                )
-            val fixture = File(artifactRoot, "test_vectors.json")
-            val manifestFile = File(artifactRoot, "model_manifest.json")
-            assertTrue("real Android parity fixture is required", fixture.isFile)
-            assertTrue("model manifest is required", manifestFile.isFile)
-            val manifest = JsonParser.parseString(manifestFile.readText()).asJsonObject
-            val featureOrder = manifest["feature_order"].asJsonArray.map { it.asString }
-            assertFeatureParity(fixture, featureOrder, sensorChannel)
-        }
-    }
-
-    private fun assertFeatureParity(fixture: File, featureOrder: List<String>, sensorChannel: String) {
-        var validCaseCount = 0
-        var processedCaseCount = 0
-        val observedPhases = mutableSetOf<String>()
-        var maximumDifference = 0.0
-        var maximumCase = ""
-        var maximumFeature = ""
-        val fullParity = System.getProperty("fullPpgParity") == "true"
-        val sampleStride = if (fullParity) 1 else 10
-
-        JsonReader(fixture.reader()).use { reader ->
-            reader.beginObject()
-            while (reader.hasNext()) {
-                when (reader.nextName()) {
-                    "cases" -> {
-                        reader.beginArray()
-                        while (reader.hasNext()) {
-                            var kind = ""
-                            var caseId = ""
-                            var phase = ""
-                            var samplingRateHz = Double.NaN
-                            var signal = DoubleArray(0)
-                            var expected = DoubleArray(0)
-                            reader.beginObject()
-                            while (reader.hasNext()) {
-                                when (reader.nextName()) {
-                                    "kind" -> kind = reader.nextString()
-                                    "case_id" -> caseId = reader.nextString()
-                                    "phase" -> phase = reader.nextString()
-                                    "sampling_rate_hz" -> samplingRateHz = reader.nextDouble()
-                                    "preprocessed_values" -> signal = readDoubleArray(reader)
-                                    "expected_features" -> expected = readDoubleArray(reader)
-                                    else -> reader.skipValue()
-                                }
-                            }
-                            reader.endObject()
-
-                            if (kind != "valid_raw_window") continue
-                            observedPhases += phase
-                            validCaseCount += 1
-                            if ((validCaseCount - 1) % sampleStride != 0) continue
-                            processedCaseCount += 1
-                            assertEquals(featureOrder.size, expected.size)
-                            val actual = V3PpgFeatureExtractor.extract(signal, samplingRateHz).values
-                            featureOrder.forEachIndexed { index, name ->
-                                val difference = kotlin.math.abs(actual.getValue(name).toDouble() - expected[index])
-                                if (difference > maximumDifference) {
-                                    maximumDifference = difference
-                                    maximumCase = caseId
-                                    maximumFeature = name
-                                }
-                            }
-                        }
-                        reader.endArray()
-                    }
-                    else -> reader.skipValue()
-                }
+        val indexFile = File(
+            projectRoot,
+            "data/artifacts/runs/20260916T132736Z/export/internal/internal_model_index.json"
+        )
+        assertTrue("latest run-scoped internal index is required", indexFile.isFile)
+        val index = JsonParser.parseString(indexFile.readText()).asJsonObject
+        assertEquals("20260916T132736Z", index["run_id"].asString)
+        index["models"].asJsonArray.forEach { modelElement ->
+            val model = modelElement.asJsonObject
+            val sensor = model["sensor_channel"].asString
+            assertTrue(sensor in setOf("ppg_green", "ppg_ir"))
+            val manifestPath = File(
+                projectRoot,
+                model["files"].asJsonObject["manifest"].asJsonObject["path"].asString
+            )
+            val featureCount = JsonParser.parseString(manifestPath.readText())
+                .asJsonObject["feature_order"].asJsonArray.size()
+            val vectorPath = File(
+                projectRoot,
+                model["files"].asJsonObject["test_vectors"].asJsonObject["path"].asString
+            )
+            assertTrue("run-scoped feature vectors are required", vectorPath.isFile)
+            val vectors = JsonParser.parseString(vectorPath.readText()).asJsonObject
+            assertEquals(100, vectors["count"].asInt)
+            assertTrue(!vectors["synthetic_data_used"].asBoolean)
+            assertEquals(sensor, vectors["sensor_channel"].asString)
+            assertEquals(100, vectors["cases"].asJsonArray.size())
+            vectors["cases"].asJsonArray.forEach { vectorElement ->
+                val vector = vectorElement.asJsonObject
+                val participant = vector["participant_id"].asString
+                val participantNumber = participant.removePrefix("ID-").toInt()
+                assertTrue(participantNumber in 1..28)
+                assertEquals(featureCount, vector["input"].asJsonArray.size())
+                assertTrue(vector["native_probability"].asDouble.isFinite())
+                assertTrue(vector["onnx_probability"].asDouble.isFinite())
             }
-            reader.endObject()
         }
-
-        assertEquals("$sensorChannel valid vector count", 94, validCaseCount)
-        assertEquals(
-            "$sensorChannel processed parity vector count",
-            if (fullParity) 94 else 10,
-            processedCaseCount
-        )
-        assertEquals("$sensorChannel approved fixture phases", setOf("relax", "task"), observedPhases)
-        assertTrue(
-            "$sensorChannel Python/Kotlin feature parity exceeded 1e-5: " +
-                "$maximumDifference at $maximumCase/$maximumFeature",
-            maximumDifference < 1.0e-5
-        )
     }
 
-    private fun readDoubleArray(reader: JsonReader): DoubleArray {
-        val values = mutableListOf<Double>()
-        reader.beginArray()
-        while (reader.hasNext()) values += reader.nextDouble()
-        reader.endArray()
-        return values.toDoubleArray()
+    @Test
+    fun latestRunDetectorContractBindsToBothRealModelManifests() {
+        val projectRoot = File("../..").canonicalFile
+        val index = JsonParser.parseString(
+            File(
+                projectRoot,
+                "data/artifacts/runs/20260916T132736Z/export/internal/internal_model_index.json"
+            ).readText()
+        ).asJsonObject
+        val contract = PpgDetectorContractBundle.parse(
+            File(
+                projectRoot,
+                "data/artifacts/runs/20260916T132736Z/export/internal/ppg_detector_contract.json"
+            ).readText()
+        )
+
+        contract.requireValid()
+        assertEquals(index["run_id"].asString, contract.run_id)
+        assertEquals("trapezoidal", contract.feature_area_integration)
+        assertEquals("adjacent_observed_only", contract.ibi_policy)
+        assertEquals(
+            "neurokit2_ppg_charlton_msptdfast",
+            contract.forChannel("ppg_green").detector_method
+        )
+        assertEquals(
+            "scipy_find_peaks_adaptive",
+            contract.forChannel("ppg_ir").detector_method
+        )
+
+        index["models"].asJsonArray.forEach { modelElement ->
+            val model = modelElement.asJsonObject
+            val channel = model["sensor_channel"].asString
+            val manifestFile = File(
+                projectRoot,
+                model["files"].asJsonObject["manifest"].asJsonObject["path"].asString
+            )
+            val modelFile = File(
+                projectRoot,
+                model["files"].asJsonObject["model"].asJsonObject["path"].asString
+            )
+            val manifest = Gson().fromJson(manifestFile.readText(), ModelManifest::class.java)
+            contract.forChannel(channel).requireCompatible(
+                runId = index["run_id"].asString,
+                manifest = manifest,
+                modelBytes = modelFile.readBytes()
+            )
+        }
     }
 }

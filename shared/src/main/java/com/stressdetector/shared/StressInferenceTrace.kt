@@ -10,6 +10,8 @@ data class StressInferenceTrace(
     val sensorChannel: String,
     val featureOrder: List<String>,
     val featureCount: Int,
+    /** Ordered canonical model inputs. This is feature-domain evidence, never raw PPG. */
+    val featureValues: List<Float> = emptyList(),
     val sampleCount: Int,
     val sourceRateHz: Double,
     val modelRateHz: Double,
@@ -27,6 +29,12 @@ data class StressInferenceTrace(
     val rejectedSampleCount: Int = 0,
     val duplicateSampleCount: Int = 0,
     val sequenceLossCount: Long = 0L,
+    /** Additive provenance; no raw waveform values are stored in this trace. */
+    val observedSampleCount: Int = acceptedSampleCount,
+    val repairedShortGapSampleCount: Int = 0,
+    val trueGapCount: Int = 0,
+    val unresolvedSampleCount: Int = 0,
+    val gridResampledSampleCount: Int = 0,
     val observedStartMillis: Long? = null,
     val observedEndMillis: Long? = null,
     val coverageMillis: Long = 0L,
@@ -43,5 +51,15 @@ data class StressInferenceTrace(
     val filterLowCutHz: Double? = null,
     val filterHighCutHz: Double? = null,
     val filterContractFingerprint: String? = null,
+    val detectorMethod: String? = null,
+    val detectorFingerprint: String? = null,
+    val peakChecksum: String? = null,
+    val troughChecksum: String? = null,
+    val peakCount: Int = 0,
+    val validIbiCount: Int = 0,
+    val adjacentIbiCount: Int = 0,
+    val physiologicalIbiRatio: Double? = null,
+    val morphologySupport: Int = 0,
+    val qualityStatus: String? = null,
     val rejectionReason: String? = null
 )

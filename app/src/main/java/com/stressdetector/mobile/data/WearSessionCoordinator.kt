@@ -243,30 +243,38 @@ class WearSessionCoordinator internal constructor(
         if (activeSessionId != sessionId) {
             return Result.failure(IllegalArgumentException("Watch drain session does not match active session"))
         }
-        val result = runCatching {
-            val ingressDrained = withContext(Dispatchers.IO) {
-                WearBatchListenerService.awaitIngressDrain(timeoutMillis)
+        var terminalError: Throwable? = null
+        try {
+            runCatching {
+                val ingressDrained = withContext(Dispatchers.IO) {
+                    WearBatchListenerService.awaitIngressDrain(timeoutMillis)
+                }
+                if (!ingressDrained) {
+                    ppgRepository.recordTransportIncomplete(
+                        "Phone PPG ingestion queue did not drain before finalization"
+                    )
+                }
+                // Direct MessageClient transport has no ACK/terminal receipt.
+                // Give the Watch a short bounded grace period, then process only
+                // the samples already accepted by the phone.
+                delay(timeoutMillis.coerceIn(250L, 1_000L))
+            }.also { result ->
+                terminalError = result.exceptionOrNull()
             }
-            if (!ingressDrained) {
-                ppgRepository.recordTransportIncomplete(
-                    "Phone PPG ingestion queue did not drain before finalization"
-                )
+        } catch (cancel: CancellationException) {
+            terminalError = cancel
+            throw cancel
+        } finally {
+            // A parent timeout must not strand the lease or allow late batches
+            // to alter the session after finalization starts.
+            withContext(NonCancellable) {
+                releaseActiveLease(sessionId)
+                clearActiveSession(sessionId)
+                mutableState.value = terminalError?.let { error ->
+                    WatchSessionState.Error(error.message ?: "Watch drain cancelled")
+                } ?: WatchSessionState.Ready
             }
-            // Direct MessageClient transport has no ACK/terminal receipt.
-            // Give the Watch a short bounded grace period, then process only
-            // the samples already accepted by the phone.
-            delay(timeoutMillis.coerceIn(250L, 1_000L))
         }
-        releaseActiveLease(sessionId)
-        clearActiveSession(sessionId)
-        if (result.isSuccess) {
-            mutableState.value = WatchSessionState.Ready
-            runCatching { connectionRepository.refreshAndPing(context) }
-        } else {
-            val error = result.exceptionOrNull()
-            mutableState.value = WatchSessionState.Error(error?.message ?: "Watch drain failed")
-        }
-        result
     }
 
     private suspend fun rollbackStart(sessionId: String, sessionNonce: String?, startCommandSent: Boolean, lease: PpgSessionLease?) {

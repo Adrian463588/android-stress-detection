@@ -1,5 +1,10 @@
 # Stress Detector Android: Phone + Wear
 
+> **Unduh aplikasi untuk dosen/supervisor — versi 0.1.0 (versionCode 1)**  
+> [APK Android Phone](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.0/StressDetector-Phone-v0.1.0.apk) · [APK pendamping Wear OS](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.0/StressDetector-Wear-v0.1.0.apk)  
+> SHA-256 Phone: `DB8DAFBC11FE16BD9E86E72995968BF23C7A7B764B27E0501B1C5C419115FA73` · Wear: `4C4A57AFEDB0DF13A5E8AA44E112579346ED1D8C3DB1D6A06ED67DD1273C021D`  
+> APK Phone memuat model PPG Green dan IR dari run `20260916T132736Z`. Keduanya adalah debug APK untuk evaluasi internal; output bersifat decision-support, bukan diagnosis. Repository bersifat private; akun GitHub harus memiliki akses untuk mengunduh.
+
 Android project untuk phone companion dan Galaxy Watch. Proyek ini mengintegrasikan pengumpulan data biosignal (PPG) dari smartwatch, inferensi ONNX lokal, serta fitur pendukung keputusan (Verbatim+) dan asisten RAG (AI+ Chatbot).
 
 ## Tampilan dan Fitur Utama Aplikasi
@@ -132,23 +137,70 @@ screenshot buatan yang ditambahkan sebagai bukti.
 Kontrak dan state machine lengkap berada di
 [`docs/specs/spec-ai-reminder/SPEC.md`](docs/specs/spec-ai-reminder/SPEC.md).
 
-Current device gate (2026-09-08): APK research berhasil dibuild. Satu percobaan
-install/launch manual berhasil, tetapi reinstall Gradle berikutnya diblokir oleh
-kebijakan perangkat (`INSTALL_FAILED_USER_RESTRICTED`) dan ADB kemudian tidak
-menampilkan device. Instrumented suite belum menjadi acceptance gate final;
-Sherpa/model parity, permission notifikasi, sesi PPG nyata, reboot/timezone, dan
-deep-link acceptance masih harus diverifikasi pada perangkat yang siap.
+Historical device gate (2026-09-08): APK research pernah dibuild untuk
+validasi handshake, tetapi variant tersebut sudah tidak menjadi target demo.
+Catatan ini dipertahankan sebagai evidence historis; acceptance aktif memakai
+production-only pair di bawah.
 
-## Build dan verifikasi lokal
+### Force-close and stress UI smoke — 2026-09-19/20
+
+The latest ADB enumeration found phone `QSWSEMRKNFZ9LJRC` and Watch
+`192.168.0.5:35999`. Production debug APKs were built from the run-scoped
+internal index
+`../data/artifacts/runs/20260916T132736Z/export/internal/internal_model_index.json`
+and installed in-place with `adb install -r -d`; no uninstall or `pm clear` was
+used. Phone SHA-256:
+`4b6f11f6d2bf957de39f960dfd3eac3904251010b50ad81da8ed179b17e6ce05`. Watch
+SHA-256:
+`75b10402e2885e9655d61a7be99a83b541032db9db47df50a0a070df7f0f0e75`.
+
+The phone launched, reached `APP_REACHABLE`, started Home stress detection, and
+remained alive through Stop. Actual PPG Green/IR batches were visible during a
+streaming run; a separate no-data run remained explicit and did not generate
+synthetic samples or predictions. The historical
+`research_holdout_access_forbidden` entries in the crash buffer occurred before
+the 00:10:18 APK update. Any later crash entries for
+`com.stressdetector.research` belonged to the stale research package removed
+during cleanup, not the production pair. This is smoke evidence only; it does
+not claim five-minute clinical validation or complete permission/reconnect
+coverage.
+
+PNG evidence is stored in the repository root under `docs/evidence/`:
+`android_stress_home_reachable_20260919.png`,
+`android_stress_monitor_stop_20260919.png`,
+`android_stress_monitor_ppg_20260919.png`,
+`android_ai_model_unavailable_20260919.png`, and
+`android_profile_from_ai_20260919.png`.
+
+Pada acceptance production 2026-09-20, sesi Home mencapai auto-complete lima
+menit dan menerima `Green=5700` serta `IR=7273` sample aktual. Finalisasi tetap
+fail-closed sebagai `Sinyal tidak cukup` karena core Green berakhir lebih awal
+(`core_end_early`, `228373 ms`); tidak ada prediksi atau sample sintetis yang
+disimpan. Ini adalah bukti timer/transport dan signal gate, bukan klaim sesi
+valid atau clinical validation.
+
+## Build dan verifikasi lokal — production-only
 
 Jalankan dari folder ini:
 
 ```powershell
-.\gradlew.bat :shared:test
-.\gradlew.bat :app:test :wear:test
-.\gradlew.bat :app:ktlintCheck :app:detekt :app:lint
-.\gradlew.bat :app:assembleDebug :wear:assembleDebug
+.\gradlew.bat :shared:test :inference:testProductionDebugUnitTest `
+  :app:testProductionDebugUnitTest :wear:testProductionDebugUnitTest `
+  "-PinternalModelIndex=..\data\artifacts\runs\20260916T132736Z\export\internal\internal_model_index.json" `
+  "-PdetectorContract=..\data\artifacts\runs\20260916T132736Z\export\internal\ppg_detector_contract.json"
+.\gradlew.bat :app:ktlintCheck :app:detekt :wear:ktlintCheck :wear:detekt `
+  :app:lintProductionDebug :wear:lintProductionDebug `
+  "-PinternalModelIndex=..\data\artifacts\runs\20260916T132736Z\export\internal\internal_model_index.json" `
+  "-PdetectorContract=..\data\artifacts\runs\20260916T132736Z\export\internal\ppg_detector_contract.json"
+.\gradlew.bat :app:assembleProductionDebug :wear:assembleProductionDebug `
+  "-PinternalModelIndex=..\data\artifacts\runs\20260916T132736Z\export\internal\internal_model_index.json" `
+  "-PdetectorContract=..\data\artifacts\runs\20260916T132736Z\export\internal\ppg_detector_contract.json"
 ```
+
+Production memakai satu-satunya `internalModelIndex` yang diizinkan:
+`20260916T132736Z`. Build gagal jika index hilang, run ID berbeda, schema
+internal tidak valid, checksum artifact tidak cocok, atau model berstatus
+research candidate.
 
 Compose drawer test pada perangkat/emulator:
 
@@ -166,13 +218,15 @@ layout; runtime tidak menggunakan fake, mock, dummy, placeholder, atau data sint
 Pasang APK tanpa menghapus data aplikasi:
 
 ```powershell
-adb -s <phone-serial> install -r -d app/build/outputs/apk/debug/app-debug.apk
-adb -s <phone-serial> shell monkey -p com.stressdetector 1
+adb -s <phone-serial> install -r -d app/build/outputs/apk/production/debug/app-production-debug.apk
+adb -s <watch-serial> install -r -d wear/build/outputs/apk/production/debug/wear-production-debug.apk
 ```
 
-Jangan gunakan `uninstall`, `pm clear`, atau penghapusan model untuk acceptance
-normal. Verifikasi package, serial, launch, crash log, dan APK checksum sebelum
-mengklaim device acceptance.
+Phone dan Watch harus sama-sama memakai package `com.stressdetector`. Sebelum
+acceptance, verifikasi serial, package, launch, crash log, APK checksum, dan
+model run. Untuk membersihkan instalasi demo lama, uninstall hanya
+`com.stressdetector.research`; jangan uninstall `com.stressdetector`, jangan
+gunakan `pm clear`, dan jangan menghapus model/data production.
 
 ## Evidence terakhir — 2026-08-27
 
@@ -208,6 +262,69 @@ APK debug yang diverifikasi:
 
 Software gate tidak menggantikan physical phone + Galaxy Watch acceptance. Root
 [`../README.md`](../README.md) menyimpan evidence matrix pipeline dan Android terbaru.
+
+## Watch reachability remediation — 2026-09-15
+
+Implementasi terbaru memisahkan diagnosis node dari reachability aplikasi Watch.
+`WearConnectionRepository` memakai gateway Data Layer yang dapat diuji, capability
+`stress_detector_wear_app` hanya untuk prioritas target, dan probe bounded dengan
+nonce delapan byte yang dikorelasikan dengan node sumber. Hanya urutan
+`PING_SENT` → `PING_RECEIVED` → `PONG_SENT` → `PONG_ACCEPTED` yang dapat membuka
+`APP_REACHABLE`; timeout langsung membebaskan nonce untuk retry. `Coba koneksi`
+tidak membuat lease atau memulai sesi.
+
+Home sekarang memakai copy dan CTA yang konsisten untuk `OFFLINE`,
+`NODE_DISCOVERED`, `CHECKING`, `APP_REACHABLE`, `DRAINING`, dan
+`PROTOCOL_ERROR`. Detail transport tetap progressive disclosure, sementara
+target aksi dan semantics accessibility dipertahankan pada minimum 48dp.
+
+### Identitas aplikasi demo
+
+Wear Data Layer hanya mengirim pesan ketika package name dan signing identity
+Phone dan Watch sama. Android demo sekarang hanya memiliki satu identity:
+
+| Variant | Phone | Watch |
+|---|---|---|
+| `production` | `com.stressdetector` | `com.stressdetector` |
+
+Tidak ada APK research yang dapat dibuild atau dipasang dari Android project.
+Artifact riset tetap berada di pipeline sebagai evidence historis, bukan sebagai
+mode aplikasi atau target demo.
+
+### Build, install, dan bukti perangkat production
+
+Gate yang dijalankan dari `android/` untuk satu-satunya variant production:
+
+```powershell
+.\gradlew.bat :app:testProductionDebugUnitTest :wear:testProductionDebugUnitTest :shared:test `
+  :inference:testProductionDebugUnitTest `
+  "-PinternalModelIndex=..\data\artifacts\runs\20260916T132736Z\export\internal\internal_model_index.json" `
+  "-PdetectorContract=..\data\artifacts\runs\20260916T132736Z\export\internal\ppg_detector_contract.json"
+```
+
+APK production dibangun dengan model-index run-scoped nyata, bukan index atau
+data buatan:
+
+| APK | Package | SHA-256 |
+|---|---|---|
+| `app/build/outputs/apk/production/debug/app-production-debug.apk` | `com.stressdetector` | `dibuat dari run 20260916T132736Z` |
+| `wear/build/outputs/apk/production/debug/wear-production-debug.apk` | `com.stressdetector` | `pasangan package production` |
+
+Kedua APK production dipasang in-place dengan `adb install -r -d`; data, model,
+dan package production tidak dihapus. Endpoint wireless Watch bersifat dinamis
+dan harus dibaca ulang sebelum acceptance.
+
+Setelah `Coba koneksi` pada Phone, log Watch menunjukkan `PING_RECEIVED` lalu
+`PONG_SENT`. Phone kemudian berpindah dari `NODE_DISCOVERED` ke `APP_REACHABLE`
+(`Siap`) dan menampilkan CTA `Mulai deteksi`. Ini membuktikan ping/pong aplikasi
+terkorlasi, bukan sekadar discovery node.
+
+PPG hanya boleh diklaim dari batch aktual Watch production. Izin sensor harus
+diberikan pada **Stress Watch**; tidak ada sampel, BPM, atau prediksi sintetis
+ketika izin atau transport belum tersedia.
+
+Endpoint wireless Watch dapat berubah. Selalu baca ulang `adb devices -l` sebelum
+instal atau acceptance, lalu pasang APK Phone dan Watch dari flavor yang sama.
 
 ## Model assets
 

@@ -39,13 +39,6 @@ android {
             dimension "evidence"
             buildConfigField "boolean", "RESEARCH_MODEL_MODE", "false"
         }
-        research {
-            dimension "evidence"
-            applicationIdSuffix ".research"
-            versionNameSuffix "-research"
-            buildConfigField "boolean", "RESEARCH_MODEL_MODE", "true"
-            manifestPlaceholders = [appLabel: "Stress Detector Research"]
-        }
     }
 
     compileOptions {
@@ -235,10 +228,6 @@ tasks.named("check").configure {
 
 tasks.matching { it.name == "assembleProductionDebug" }.configureEach {
     dependsOn("verifyNoLegacyModelAssets", "verifyNativeRuntimeContract", "verifyRagRuntimeContract")
-}
-
-tasks.matching { it.name == "assembleResearchDebug" }.configureEach {
-    dependsOn("verifyStaticSherpaRuntime", "verifyRagRuntimeContract")
 }
 
 tasks.named("preBuild").configure {

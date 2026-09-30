@@ -1,6 +1,8 @@
 package com.stressdetector.mobile.signal
 
 import com.stressdetector.shared.PredictionWindowConfig
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 
 /**
  * Slices one canonical, already-filtered session into model windows.
@@ -47,20 +49,42 @@ class PreparedPpgWindowSlicer(
         }
     }
 
-    private fun copyWindow(source: PreparedPpgWindow, indices: List<Int>, elapsed: LongArray): PreparedPpgWindow = source.copy(
-        timestampsMillis = LongArray(indices.size) { source.timestampsMillis[indices[it]] },
-        filteredValues = DoubleArray(indices.size) { source.filteredValues[indices[it]] },
-        rawSampleCount = indices.size,
-        interpolatedSampleCount = indices.count { source.interpolatedMask[it] },
-        sessionElapsedStartMillis = elapsed[indices.first()],
-        sessionElapsedEndMillis = elapsed[indices.last()],
-        elapsedTimestampsMillis = LongArray(indices.size) { elapsed[indices[it]] },
-        interpolatedMask = BooleanArray(indices.size) { source.interpolatedMask[indices[it]] },
-        sourceGapInterpolatedSampleCount = indices.count { source.sourceGapInterpolatedMask[it] },
-        sourceGapInterpolatedMask = BooleanArray(indices.size) {
-            source.sourceGapInterpolatedMask[indices[it]]
-        }
-    )
+    private fun copyWindow(source: PreparedPpgWindow, indices: List<Int>, elapsed: LongArray): PreparedPpgWindow {
+        val raw = source.rawValues.takeIf { it.size == source.size }
+            ?.let { values -> IntArray(indices.size) { values[indices[it]] } }
+            ?: IntArray(0)
+        val filtered = DoubleArray(indices.size) { source.filteredValues[indices[it]] }
+        val batchIds = source.timestampBatchIds.takeIf { it.size == source.size }
+            ?.let { ids -> Array(indices.size) { ids[indices[it]] } }
+            ?: emptyArray()
+        return source.copy(
+            timestampsMillis = LongArray(indices.size) { source.timestampsMillis[indices[it]] },
+            filteredValues = filtered,
+            rawValues = raw,
+            rawValuesSha256 = raw.takeIf { it.isNotEmpty() }?.let(::sha256Csv) ?: "",
+            filteredValuesSha256 = sha256Csv(filtered),
+            timestampBatchIds = batchIds,
+            sourceBatchIds = batchIds.asList().distinct(),
+            rawSampleCount = indices.size,
+            interpolatedSampleCount = indices.count { source.interpolatedMask[it] },
+            sessionElapsedStartMillis = elapsed[indices.first()],
+            sessionElapsedEndMillis = elapsed[indices.last()],
+            elapsedTimestampsMillis = LongArray(indices.size) { elapsed[indices[it]] },
+            interpolatedMask = BooleanArray(indices.size) { source.interpolatedMask[indices[it]] },
+            sourceGapInterpolatedSampleCount = indices.count { source.sourceGapInterpolatedMask[it] },
+            sourceGapInterpolatedMask = BooleanArray(indices.size) {
+                source.sourceGapInterpolatedMask[indices[it]]
+            },
+            observedSampleCount = indices.count { source.observedMask[it] },
+            observedMask = BooleanArray(indices.size) { source.observedMask[indices[it]] },
+            repairedShortGapSampleCount = indices.count { source.repairedShortGapMask[it] },
+            repairedShortGapMask = BooleanArray(indices.size) { source.repairedShortGapMask[indices[it]] },
+            trueGapCount = source.trueGapCount,
+            unresolvedSampleCount = source.unresolvedSampleCount,
+            gridResampledSampleCount = indices.count { source.gridResampledMask[it] },
+            gridResampledMask = BooleanArray(indices.size) { source.gridResampledMask[indices[it]] }
+        )
+    }
 
     private fun hasCoverage(indices: List<Int>, elapsed: LongArray, start: Long, end: Long, expectedDurationMillis: Long): Boolean {
         val first = indices.firstOrNull()?.let(elapsed::get) ?: return false
@@ -84,4 +108,12 @@ class PreparedPpgWindowSlicer(
                 ).coerceAtLeast(0L)
         }
     }
+
+    private fun sha256Csv(values: IntArray): String = sha256Text(values.joinToString(","))
+
+    private fun sha256Csv(values: DoubleArray): String = sha256Text(values.joinToString(","))
+
+    private fun sha256Text(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(StandardCharsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
 }

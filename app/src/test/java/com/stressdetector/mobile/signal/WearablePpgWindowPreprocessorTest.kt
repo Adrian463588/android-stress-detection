@@ -30,7 +30,7 @@ class WearablePpgWindowPreprocessorTest {
     }
 
     @Test
-    fun fractionalManifestRateDoesNotRejectAValidGreenWindow() {
+    fun mismatchedManifestRatesRejectInsteadOfCreatingGridSamples() {
         val fractionalPreprocessor = WearablePpgWindowPreprocessor(
             PpgPreprocessingContract(
                 sourceRateHz = 25.0,
@@ -44,14 +44,10 @@ class WearablePpgWindowPreprocessorTest {
             WindowSnapshot(batch.type, batch.timestampsMillis, batch.rawValues)
         )
 
-        val ready = result as PpgPreprocessResult.Ready
-        assertEquals(4_485, ready.window.size)
-        assertEquals(24.916666666666668, ready.window.modelRateHz, 1.0e-12)
         assertEquals(
-            PpgFilterContract.forChannel("ppg_green").fingerprint,
-            ready.window.filterContractFingerprint
+            "ppg_rate_resampling_not_permitted",
+            (result as PpgPreprocessResult.Rejected).reason
         )
-        assertTrue(ready.window.filteredValues.all(Double::isFinite))
     }
 
     @Test
@@ -62,10 +58,12 @@ class WearablePpgWindowPreprocessorTest {
         val result = preprocessor(batch.type).prepare(WindowSnapshot(batch.type, batch.timestampsMillis, batch.rawValues))
 
         val ready = result as PpgPreprocessResult.Ready
-        assertEquals(PpgType.IR.modelRateHz * 180, ready.window.size)
-        assertEquals(PpgType.IR.sourceRateHz * 181, ready.window.rawSampleCount)
+        assertEquals(PpgType.IR.modelRateHz * 180 + 1, ready.window.size)
+        assertEquals(ready.window.size, ready.window.rawSampleCount)
         assertEquals(0, ready.window.interpolatedSampleCount)
         assertEquals(0, ready.window.sourceGapInterpolatedSampleCount)
+        assertEquals(0, ready.window.gridResampledSampleCount)
+        assertEquals(ready.window.size, ready.window.observedSampleCount)
         val quality = SignalQualityGate(testLiveMonitorConfig()).evaluate(ready.window)
         assertTrue("native 100Hz source must remain usable", quality.isUsable)
         assertEquals(0.0, quality.missingRatio, 1.0e-9)
@@ -94,7 +92,7 @@ class WearablePpgWindowPreprocessorTest {
 
         val result = preprocessor(PpgType.GREEN).prepare(WindowSnapshot(PpgType.GREEN, timestamps, batch.rawValues))
 
-        assertEquals("ppg_gap_exceeds_interpolation_policy", (result as PpgPreprocessResult.Rejected).reason)
+        assertEquals("ppg_true_gap_detected", (result as PpgPreprocessResult.Rejected).reason)
     }
 
     @Test
@@ -105,7 +103,7 @@ class WearablePpgWindowPreprocessorTest {
 
         val result = preprocessor(PpgType.IR).prepare(WindowSnapshot(PpgType.IR, timestamps, batch.rawValues))
 
-        assertEquals("ppg_gap_exceeds_interpolation_policy", (result as PpgPreprocessResult.Rejected).reason)
+        assertEquals("ppg_true_gap_detected", (result as PpgPreprocessResult.Rejected).reason)
     }
 
     @Test
@@ -142,7 +140,7 @@ class WearablePpgWindowPreprocessorTest {
     }
 
     @Test
-    fun stableLowerRawCadenceIsResampledToCanonicalModelRate() {
+    fun lowerObservedCadenceIsRejectedInsteadOfResampled() {
         val timestamps = LongArray(2_251) { it * 80L }
         val values = IntArray(timestamps.size) { index ->
             (100_000.0 + 1_000.0 * sin(index / 12.0)).toInt()
@@ -150,12 +148,10 @@ class WearablePpgWindowPreprocessorTest {
 
         val result = preprocessor(PpgType.GREEN).prepare(WindowSnapshot(PpgType.GREEN, timestamps, values))
 
-        val ready = result as PpgPreprocessResult.Ready
-        assertEquals(2_251, ready.window.rawSampleCount)
-        assertEquals(PpgType.GREEN.samplingRateHz * 180, ready.window.size)
-        assertTrue(ready.window.interpolatedSampleCount > 0)
-        assertEquals(ready.window.interpolatedSampleCount, ready.window.interpolatedMask.count { it })
-        assertTrue(ready.window.filteredValues.all(Double::isFinite))
+        assertEquals(
+            "ppg_observed_cadence_out_of_contract",
+            (result as PpgPreprocessResult.Rejected).reason
+        )
     }
 
     @Test
@@ -172,7 +168,12 @@ class WearablePpgWindowPreprocessorTest {
 
         val result = preprocessor(PpgType.GREEN).prepare(WindowSnapshot(PpgType.GREEN, timestamps, values))
 
-        assertTrue(result is PpgPreprocessResult.Ready)
+        val ready = result as PpgPreprocessResult.Ready
+        assertEquals(0, ready.window.gridResampledSampleCount)
+        assertEquals(0, ready.window.interpolatedSampleCount)
+        assertEquals(ready.window.size, ready.window.observedSampleCount)
+        assertEquals(ready.window.size, ready.window.observedMask.count { it })
+        assertEquals(0, ready.window.gridResampledMask.count { it })
     }
 
     @Test

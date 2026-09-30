@@ -11,8 +11,7 @@ interface IWearConnectionRepository {
         context: Context,
         timeoutMillis: Long = WearConnectionRepositoryImpl.REACHABILITY_TIMEOUT_MILLIS
     ): WearConnectionState
-    fun markPong(nodeId: String)
-    fun markPong(nodeId: String, payload: ByteArray) = markPong(nodeId)
+    fun markPong(nodeId: String, payload: ByteArray): PongDisposition
 
     /** A real accepted PPG batch is stronger streaming evidence than discovery. */
     fun markStreamingEvidence(nodeId: String) = Unit

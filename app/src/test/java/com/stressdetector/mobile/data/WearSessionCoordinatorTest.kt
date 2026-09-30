@@ -164,7 +164,7 @@ class WearSessionCoordinatorTest {
 
         override suspend fun waitForReachable(context: Context, timeoutMillis: Long): WearConnectionState = mutableState.value
 
-        override fun markPong(nodeId: String) = Unit
+        override fun markPong(nodeId: String, payload: ByteArray): PongDisposition = PongDisposition.UNKNOWN_NONCE
 
         override fun markRecording(recording: Boolean) {
             if (recording) recordingStartedCalls += 1

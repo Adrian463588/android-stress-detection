@@ -168,7 +168,7 @@ fun ReminderStatusCard(state: AiReminderUiState, onRetry: () -> Unit, onRequestN
     }
 }
 
-private fun reminderStatusText(status: AiReminderStatus): String = when (status) {
+internal fun reminderStatusText(status: AiReminderStatus): String = when (status) {
     AiReminderStatus.Disabled -> "Reminder tidak aktif."
     is AiReminderStatus.NeedsConsent -> status.reason
     AiReminderStatus.NeedsNotificationPermission -> "Izin notifikasi diperlukan agar reminder dapat dikirim."
@@ -180,7 +180,7 @@ private fun reminderStatusText(status: AiReminderStatus): String = when (status)
     is AiReminderStatus.Failed -> "Reminder tidak dikirim: ${status.reason}."
 }
 
-private fun reminderStatusAction(
+internal fun reminderStatusAction(
     status: AiReminderStatus,
     onRetry: () -> Unit,
     onRequestNotificationPermission: () -> Unit

@@ -7,6 +7,7 @@ import com.stressdetector.inference.InferenceStatus
 import com.stressdetector.inference.InferenceTraceContext
 import com.stressdetector.inference.ModelArtifactRepository
 import com.stressdetector.inference.ModelArtifactResult
+import com.stressdetector.inference.ModelContractStatus
 import com.stressdetector.inference.ModelSessionContract
 import com.stressdetector.inference.StressInferenceEngine
 import com.stressdetector.inference.StressModelReadiness
@@ -40,11 +41,17 @@ class V3InferenceAdapter(private val artifactRepository: ModelArtifactRepository
     val readiness: StressModelReadiness
         get() = engine?.readiness ?: artifactReadiness
 
+    val sessionContractStatus: ModelContractStatus
+        get() = when (val result = artifactResult) {
+            is ModelArtifactResult.Ready -> result.resources.manifest.sessionContractStatus(
+                result.resources.detectorContract
+            )
+            is ModelArtifactResult.Unavailable -> ModelContractStatus.Unavailable(result.reason)
+            is ModelArtifactResult.Invalid -> ModelContractStatus.Unavailable(result.reason)
+        }
+
     val sessionContract: ModelSessionContract?
-        get() = (artifactResult as? ModelArtifactResult.Ready)
-            ?.resources
-            ?.manifest
-            ?.sessionContract()
+        get() = (sessionContractStatus as? ModelContractStatus.Ready)?.contract
 
     @Suppress("ReturnCount")
     fun infer(

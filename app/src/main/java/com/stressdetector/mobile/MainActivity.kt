@@ -53,6 +53,7 @@ import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSiz
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -63,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -75,6 +77,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.stressdetector.app.navigation.AppNavGraph
@@ -101,6 +105,7 @@ import com.stressdetector.mobile.ui.home.HomeSessionStatusCard
 import com.stressdetector.mobile.ui.home.HomeUiState
 import com.stressdetector.mobile.ui.parentDestinationFor
 import com.stressdetector.mobile.ui.screens.AiCounselorScreen
+import com.stressdetector.mobile.ui.screens.CounselorNavigation
 import com.stressdetector.mobile.ui.screens.CounselorPersonaScreen
 import com.stressdetector.mobile.ui.screens.DocumentLibraryScreen
 import com.stressdetector.mobile.ui.screens.HistoryDetailScreen
@@ -326,6 +331,7 @@ private fun StressDetectorApp(
     var showVerbatimExitDialog by remember { mutableStateOf(false) }
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
     val selectedDestination = parentDestinationFor(currentRoute)
+    val lifecycleOwner = LocalLifecycleOwner.current
     val verbatimCommandBusy = verbatimState.sessionCommandState !is SessionCommandState.Idle &&
         verbatimState.sessionCommandState !is SessionCommandState.Error
     val verbatimBusy = verbatimState.isSessionActive ||
@@ -341,6 +347,25 @@ private fun StressDetectorApp(
     }
 
     fun navigateHome() = navigateToRoot(Screen.Home)
+
+    LaunchedEffect(currentRoute, permissionStatus.allGranted) {
+        if (currentRoute == Screen.Home.route && permissionStatus.allGranted) {
+            viewModel.onHomeResumed()
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, currentRoute, permissionStatus.allGranted) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME &&
+                currentRoute == Screen.Home.route &&
+                permissionStatus.allGranted
+            ) {
+                viewModel.onHomeResumed()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(reminderIntentId) {
         reminderIntentId?.takeIf(String::isNotBlank)?.let { id ->
@@ -423,7 +448,10 @@ private fun StressDetectorApp(
                     highestIrSequence = state.highestIrSequence,
                     highestRedDiagnosticSequence = state.highestRedDiagnosticSequence,
                     modelStatus = modelStatusFor(state),
+                    debugLivePpgCaptureAvailable = BuildConfig.DEBUG,
+                    debugLivePpgCaptureEnabled = state.debugLivePpgCaptureEnabled,
                     twoColumnLayout = windowSizeClass != WindowWidthSizeClass.Compact,
+                    onDebugLivePpgCaptureEnabledChange = viewModel::setDebugLivePpgCaptureEnabled,
                     onStop = viewModel::stopWatchTracking
                 )
             } else {
@@ -474,7 +502,8 @@ private fun StressDetectorApp(
                                             permissionActions = PermissionActions(
                                                 onGrant = onGrantPermissions,
                                                 onOpenSettings = onOpenSettings
-                                            )
+                                            ),
+                                            onNavigateToProfile = { navigateToRoot(Screen.Profile) }
                                         )
                                     },
                                     historyScreen = {
@@ -505,15 +534,17 @@ private fun StressDetectorApp(
                                     counselorScreen = {
                                         AiCounselorScreen(
                                             viewModel = counselorViewModel,
-                                            windowSizeClass = windowSizeClass,
                                             aiReminderViewModel = aiReminderViewModel,
-                                            onNavigateToProfile = { navigateToRoot(Screen.Profile) },
-                                            onRequestNotificationPermission = onRequestNotificationPermission,
-                                            onNavigateToLibrary = {
-                                                navController.navigate(Screen.DocumentLibrary.route) {
-                                                    launchSingleTop = true
-                                                }
-                                            }
+                                            navigation = CounselorNavigation(
+                                                windowSizeClass = windowSizeClass,
+                                                onNavigateToLibrary = {
+                                                    navController.navigate(Screen.DocumentLibrary.route) {
+                                                        launchSingleTop = true
+                                                    }
+                                                },
+                                                onNavigateToProfile = { navigateToRoot(Screen.Profile) },
+                                                onRequestNotificationPermission = onRequestNotificationPermission
+                                            )
                                         )
                                     },
                                     counselorPersonaScreen = {
@@ -644,7 +675,12 @@ private fun AppNavigationRail(selectedDestination: Screen?, onSelect: (Screen) -
 // ─── Session Tab ──────────────────────────────────────────────────────────────
 
 @Composable
-private fun sessionTab(viewModel: StressViewModel, config: SessionUi, permissionActions: PermissionActions) {
+private fun sessionTab(
+    viewModel: StressViewModel,
+    config: SessionUi,
+    permissionActions: PermissionActions,
+    onNavigateToProfile: () -> Unit
+) {
     val homeState = HomeUiState.from(config.state, config.permissionStatus)
     val horizontalPadding = when (config.windowSizeClass) {
         WindowWidthSizeClass.Expanded -> AppSpacing.Large
@@ -673,7 +709,7 @@ private fun sessionTab(viewModel: StressViewModel, config: SessionUi, permission
         item {
             HomeSessionStatusCard(
                 state = homeState,
-                onEvent = { event -> handleHomeEvent(viewModel, event) }
+                onEvent = { event -> handleHomeEvent(viewModel, event, onNavigateToProfile) }
             )
         }
 
@@ -705,12 +741,13 @@ private fun sessionHeader() {
     }
 }
 
-private fun handleHomeEvent(viewModel: StressViewModel, event: HomeEvent) {
+private fun handleHomeEvent(viewModel: StressViewModel, event: HomeEvent, onNavigateToProfile: () -> Unit) {
     when (event) {
         HomeEvent.Start -> viewModel.startWatchTracking()
         HomeEvent.Stop -> viewModel.stopWatchTracking()
         HomeEvent.RefreshConnection -> viewModel.refreshWatchConnection()
         HomeEvent.RetryFinalization -> viewModel.retryFinalization()
+        HomeEvent.OpenProfile -> onNavigateToProfile()
     }
 }
 
@@ -756,18 +793,28 @@ private fun modelWindowStatus(availability: PredictionAvailability.WarmingUp): S
 @Composable
 private fun PermissionGateCard(status: PermissionStatus, onGrantPermissions: () -> Unit, onOpenSettings: () -> Unit) {
     if (status.allGranted) {
-        PremiumCard {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                StatusDot(color = NeonEmerald)
-                Text("Permissions granted", color = NeonEmerald, fontWeight = FontWeight.SemiBold)
-            }
-        }
+        PermissionGrantedCard()
         return
     }
 
+    PermissionMissingCard(status, onGrantPermissions, onOpenSettings)
+}
+
+@Composable
+private fun PermissionGrantedCard() {
+    PremiumCard {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            StatusDot(color = NeonEmerald)
+            Text("Izin sudah diberikan", color = NeonEmerald, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun PermissionMissingCard(status: PermissionStatus, onGrantPermissions: () -> Unit, onOpenSettings: () -> Unit) {
     val isPermanentlyDenied = !status.shouldShowRationale && status.missingPermissions.isNotEmpty()
 
     PremiumCard(
@@ -778,37 +825,41 @@ private fun PermissionGateCard(status: PermissionStatus, onGrantPermissions: () 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusDot(color = AlertRed)
                 Text(
-                    text = "ACTION REQUIRED",
+                    text = "Izin diperlukan",
                     color = AlertRed,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.labelLarge
                 )
             }
             Text(
-                text = "Missing: ${status.missingPermissions.joinToString { it.substringAfterLast('.') }}",
+                text = "Diperlukan: ${status.missingPermissions.joinToString { it.substringAfterLast('.') }}",
                 color = TextSecondary,
                 style = MaterialTheme.typography.bodySmall
             )
             if (isPermanentlyDenied) {
                 Text(
-                    text = "Permission was denied. Please enable it manually in Android Settings.",
+                    text = "Izin ditolak. Aktifkan kembali melalui pengaturan Android.",
                     color = WarnAmber,
                     style = MaterialTheme.typography.bodySmall
                 )
                 Button(
                     onClick = onOpenSettings,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = WarnAmber, contentColor = Color.Black)
                 ) {
-                    Text("Open App Settings", fontWeight = FontWeight.Bold)
+                    Text("Buka pengaturan aplikasi", fontWeight = FontWeight.Bold)
                 }
             } else {
                 Button(
                     onClick = onGrantPermissions,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AlertRed, contentColor = Color.White)
                 ) {
-                    Text("Grant Permissions", fontWeight = FontWeight.Bold)
+                    Text("Izinkan akses", fontWeight = FontWeight.Bold)
                 }
             }
         }

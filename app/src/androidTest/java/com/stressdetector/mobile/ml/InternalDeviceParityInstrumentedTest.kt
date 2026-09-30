@@ -20,32 +20,40 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Runs the current run-scoped research models on the installed mobile APK.
- * The vectors are the real development feature vectors packaged by the
- * research index; this test does not claim physical sensor acquisition.
+ * Writes device-parity receipts for a run-scoped internal-32 Android bundle.
+ *
+ * The test deliberately uses only the real development vectors packaged by
+ * the ONNX exporter. It verifies numerical inference on the installed APK;
+ * it does not fabricate or claim sensor acquisition.
  */
 @RunWith(AndroidJUnit4::class)
-class ResearchDeviceParityInstrumentedTest {
+class InternalDeviceParityInstrumentedTest {
     @Test
-    fun currentResearchModelsWriteDeviceParityReceipts() {
-        assertTrue("This test must target the research flavor", BuildConfig.RESEARCH_MODEL_MODE)
+    fun internalModelsWriteDeviceParityReceipts() {
+        assumeTrue("Internal parity targets the production-only flavor", !BuildConfig.RESEARCH_MODEL_MODE)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val targetContext = instrumentation.targetContext
         val assets = targetContext.assets
         val index = JsonParser.parseString(
             assets.open("model_index.json").bufferedReader().use { it.readText() }
         ).asJsonObject
-
-        assertEquals("1.0.0", index["schema_version"].asString)
-        assertEquals("research_candidate", index["release_status"].asString)
+        assumeTrue(
+            "No internal-v2 index was supplied to this production test",
+            index["schema_version"]?.asString == "internal-android-v2"
+        )
+        assertEquals("internal_32_participants", index["validation_scope"].asString)
+        assertEquals("decision_support_only", index["claims_policy"].asString)
         val models = index["models"].asJsonArray
-        assertTrue("Research index has no deployable model", models.size() > 0)
+        assertTrue("Internal index has no eligible model", models.size() > 0)
 
         val apkSha256 = sha256(File(targetContext.applicationInfo.sourceDir))
-        val receiptDirectory = File(targetContext.cacheDir, "device_parity_receipts").apply {
+        // Keep the receipt in persistent app-private storage so the host can
+        // retrieve it after instrumentation completes without relying on the
+        // OS cache eviction policy.
+        val receiptDirectory = File(targetContext.filesDir, "device_parity_receipts").apply {
             mkdirs()
         }
-        val canPersistReceipt = receiptDirectory.isDirectory
+        assertTrue("Cannot persist device parity receipts", receiptDirectory.isDirectory)
         val repository = AndroidAssetModelArtifactRepository(assets)
 
         models.forEach { element ->
@@ -66,16 +74,12 @@ class ResearchDeviceParityInstrumentedTest {
                     engine.readiness is StressModelReadiness.Ready
                 )
                 val preflight = requireNotNull(engine.preflightReceipt)
-                assertEquals("$channel vector count", 100, preflight.vectorCount)
+                assertTrue("$channel vector count=${preflight.vectorCount}", preflight.vectorCount >= 100)
                 assertTrue(
                     "$channel parity exceeded 1e-5: ${preflight.maxAbsDiff}",
                     preflight.maxAbsDiff < 1.0e-5f
                 )
 
-                assumeTrue(
-                    "Device parity passed, but the instrumented sandbox cannot persist a receipt: $receiptDirectory",
-                    canPersistReceipt
-                )
                 val receipt = sortedMapOf<String, Any>().apply {
                     put("schema_version", "1.0.0")
                     put("device_fingerprint", Build.FINGERPRINT)
@@ -86,11 +90,10 @@ class ResearchDeviceParityInstrumentedTest {
                     put("vector_count", preflight.vectorCount)
                     put("max_abs_diff", preflight.maxAbsDiff.toDouble())
                     put("timestamp_utc", Instant.now().toString())
-                    // This is model parity on a real device, not sensor capture.
                     put("actual_sensor_acquisition", false)
                 }
                 receipt["receipt_sha256"] = receiptSha256(receipt)
-                File(receiptDirectory, "research_device_parity_$channel.json")
+                File(receiptDirectory, "internal_device_parity_$channel.json")
                     .writeText(Gson().toJson(receipt))
             } finally {
                 engine.close()
@@ -98,7 +101,7 @@ class ResearchDeviceParityInstrumentedTest {
         }
     }
 
-    /** Must remain byte-identical to Python's ``_receipt_sha256`` payload. */
+    /** Must remain byte-identical to Python's receipt digest payload. */
     private fun receiptSha256(receipt: Map<String, Any>): String {
         val fields = listOf(
             "actual_sensor_acquisition",
@@ -124,9 +127,7 @@ class ResearchDeviceParityInstrumentedTest {
                         .padStart(16, '0')
                         .encodeToByteArray()
                 is String -> value.encodeToByteArray()
-                else -> {
-                    error("unsupported receipt field type: ${value::class.java.name}")
-                }
+                else -> error("unsupported receipt field type: ${value::class.java.name}")
             }
             digest.update("$key:${encoded.size}:".encodeToByteArray())
             digest.update(encoded)

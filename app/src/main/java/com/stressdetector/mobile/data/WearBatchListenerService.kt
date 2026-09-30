@@ -18,7 +18,15 @@ import com.stressdetector.shared.SessionProtocolCodec
 class WearBatchListenerService : WearableListenerService() {
     override fun onMessageReceived(messageEvent: MessageEvent) {
         if (messageEvent.path == MessagePath.CONNECTION_PONG) {
-            AppLocator.wearConnectionRepository.markPong(messageEvent.sourceNodeId, messageEvent.data)
+            val disposition = AppLocator.wearConnectionRepository.markPong(
+                messageEvent.sourceNodeId,
+                messageEvent.data
+            )
+            if (disposition == PongDisposition.ACCEPTED) {
+                Log.i(TAG, "PONG_ACCEPTED")
+            } else {
+                Log.w(TAG, "PONG_REJECTED disposition=$disposition")
+            }
             return
         }
         if (messageEvent.path == MessagePath.SESSION_READY) {
@@ -108,6 +116,8 @@ class WearBatchListenerService : WearableListenerService() {
                                 AppLocator.verbatimPpgArchive(applicationContext)
                                     .append(result.acknowledgedBatches)
                             }
+                            AppLocator.debugLivePpgCapture(applicationContext)
+                                .appendAcknowledged(result.acknowledgedBatches)
                         }
                     }.onFailure { error ->
                         AppLocator.ppgRepository.recordTransportIncomplete(

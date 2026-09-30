@@ -34,6 +34,8 @@ import com.stressdetector.mobile.data.search.SharedPreferencesWebConsentStore
 import com.stressdetector.mobile.data.search.WebGroundingGatewayImpl
 import com.stressdetector.mobile.data.stress.SharedPreferencesStressHistoryContextSettings
 import com.stressdetector.mobile.data.voice.SharedPreferencesVoiceSettingsRepository
+import com.stressdetector.mobile.diagnostics.DebugLivePpgCapture
+import com.stressdetector.mobile.diagnostics.DebugLivePpgCaptureSettings
 import com.stressdetector.mobile.domain.IStressInferenceUseCase
 import com.stressdetector.mobile.domain.StressInferenceUseCase
 import com.stressdetector.mobile.domain.engine.AnnotationRepository
@@ -536,6 +538,24 @@ object AppLocator {
     fun verbatimPpgArchive(context: Context): VerbatimPpgArchive = verbatimPpgArchiveInstance ?: synchronized(this) {
         verbatimPpgArchiveInstance ?: VerbatimPpgArchive(encryptedStorage(context))
             .also { verbatimPpgArchiveInstance = it }
+    }
+
+    @Volatile private var debugLivePpgCaptureSettingsInstance: DebugLivePpgCaptureSettings? = null
+    fun debugLivePpgCaptureSettings(context: Context): DebugLivePpgCaptureSettings =
+        debugLivePpgCaptureSettingsInstance ?: synchronized(this) {
+            debugLivePpgCaptureSettingsInstance ?: DebugLivePpgCaptureSettings(context.applicationContext)
+                .also { debugLivePpgCaptureSettingsInstance = it }
+        }
+
+    @Volatile private var debugLivePpgCaptureInstance: DebugLivePpgCapture? = null
+    fun debugLivePpgCapture(context: Context): DebugLivePpgCapture = debugLivePpgCaptureInstance ?: synchronized(this) {
+        debugLivePpgCaptureInstance ?: DebugLivePpgCapture(
+            rootDirectory = java.io.File(
+                context.applicationContext.filesDir,
+                DebugLivePpgCapture.DIRECTORY_NAME
+            ),
+            enabled = { debugLivePpgCaptureSettings(context.applicationContext).isEnabled }
+        ).also { debugLivePpgCaptureInstance = it }
     }
 
     @Volatile private var annotationRepoInstance: AnnotationRepository? = null

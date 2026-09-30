@@ -1,6 +1,7 @@
 package com.stressdetector.inference
 
 import com.google.gson.Gson
+import com.google.gson.JsonParser
 import java.nio.FloatBuffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -180,6 +181,10 @@ class InferenceContractTest {
         assertEquals(listOf("relax", "task"), decisionPolicy.labelOrder)
         assertEquals(0.5f, decisionPolicy.probabilityThreshold)
         assertEquals("test-calibration", decisionPolicy.calibrationVersion)
+        assertTrue(
+            validResources().manifest.copy(cohort_access_count = 0).sessionContractStatus() is
+                ModelContractStatus.Unavailable
+        )
     }
 
     @Test
@@ -330,6 +335,97 @@ class InferenceContractTest {
             )
 
         manifest.requireResearchValid()
+    }
+
+    @Test
+    fun internalManifestUsesFrozenTwentyEightFourContractWithoutLegacyReadinessFlags() {
+        val manifest =
+            validResources().manifest.copy(
+                schema_version = "internal-android-v2",
+                artifact_status = "internal_candidate",
+                evaluation_scope = "internal_32_participants",
+                validation_scope = "internal_32_participants",
+                claims_policy = "decision_support_only",
+                release_status = "internal_candidate",
+                gate_passed = true,
+                research_gate_passed = true,
+                balanced_accuracy_development = 0.80,
+                f1_development = 0.80,
+                roc_auc_development = 0.84,
+                balanced_accuracy_internal_test = 0.75,
+                f1_internal_test = 0.74,
+                roc_auc_internal_test = 0.76,
+                performance_tier = "research_usable",
+                deployment_scope = "internal",
+                research_disclaimer = "",
+                disclaimer_required = false,
+                validation_cohort_ids = (1..28).map { "ID-%02d".format(it) },
+                cohort_access_count = 1,
+                android_ready = false,
+                device_parity_receipt_sha256 = null,
+                holdout_evaluated = false,
+                clinical_validation_status = "",
+                hrv_prv_status = "GO",
+                training_admission_status = "GO",
+                development_model_status = "GO",
+                internal_test_status = "GO",
+                onnx_export_status = "GO",
+                android_device_parity_status = "PENDING",
+                internal_android_status = "PENDING_DEVICE_PARITY",
+                internal_test_participants = listOf("ID-29", "ID-30", "ID-31", "ID-32")
+            )
+
+        manifest.requireInternalValid()
+        assertTrue(manifest.sessionContractStatus() is ModelContractStatus.Ready)
+        assertThrows(IllegalArgumentException::class.java) {
+            manifest.copy(cohort_access_count = 0).requireInternalValid()
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            manifest.copy(android_ready = true).requireInternalValid()
+        }
+        assertTrue(
+            manifest.copy(cohort_access_count = 0).sessionContractStatus() is ModelContractStatus.Unavailable
+        )
+    }
+
+    @Test
+    fun internalManifestAllowsOmittedLegacyStatusFields() {
+        val manifest =
+            validResources().manifest.copy(
+                schema_version = "internal-android-v2",
+                artifact_status = "internal_candidate",
+                evaluation_scope = "internal_32_participants",
+                validation_scope = "internal_32_participants",
+                claims_policy = "decision_support_only",
+                release_status = "internal_candidate",
+                gate_passed = true,
+                research_gate_passed = true,
+                balanced_accuracy_development = 0.80,
+                f1_development = 0.80,
+                roc_auc_development = 0.84,
+                balanced_accuracy_internal_test = 0.75,
+                f1_internal_test = 0.74,
+                roc_auc_internal_test = 0.76,
+                performance_tier = "research_usable",
+                deployment_scope = "internal",
+                validation_cohort_ids = (1..28).map { "ID-%02d".format(it) },
+                cohort_access_count = 1,
+                hrv_prv_status = "GO",
+                training_admission_status = "GO",
+                development_model_status = "GO",
+                internal_test_status = "GO",
+                onnx_export_status = "GO",
+                android_device_parity_status = "PENDING",
+                internal_android_status = "PENDING_DEVICE_PARITY",
+                internal_test_participants = listOf("ID-29", "ID-30", "ID-31", "ID-32")
+            )
+        val json = Gson().toJson(manifest)
+        val objectJson = JsonParser.parseString(json).asJsonObject.apply {
+            remove("android_ready")
+            remove("clinical_validation_status")
+        }
+
+        Gson().fromJson(objectJson, ModelManifest::class.java).requireInternalValid()
     }
 
     @Test

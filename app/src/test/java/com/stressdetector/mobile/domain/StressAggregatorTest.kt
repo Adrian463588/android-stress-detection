@@ -4,6 +4,7 @@ import com.stressdetector.shared.ModelDecisionPolicy
 import com.stressdetector.shared.PpgType
 import com.stressdetector.shared.PredictionWindowConfig
 import com.stressdetector.shared.SignalQualitySummary
+import com.stressdetector.shared.StressInferenceTrace
 import com.stressdetector.shared.StressPrediction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -195,6 +196,25 @@ class StressAggregatorTest {
         assertEquals("inconsistent_model_decision_policy", result.rejectionReason)
     }
 
+    @Test
+    fun aggregateTraceUsesWindowNearestDisplayedMedianNotLastWindow() {
+        val aggregator = StressAggregator()
+        val probabilities = listOf(0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f)
+        probabilities.forEachIndexed { index, probability ->
+            aggregator.addPrediction(
+                prediction(1_000L + index * 10_000L, probability).copy(
+                    inferenceTrace = trace(sessionId = "session-$index", sourceRateHz = 20.0 + index)
+                )
+            )
+        }
+
+        val aggregate = aggregator.aggregate(PpgType.GREEN, attemptedWindowCount = 7).prediction
+
+        assertEquals(0.5f, aggregate?.stressProbability)
+        assertEquals("session-3", aggregate?.inferenceTrace?.sessionId)
+        assertEquals(23.0, aggregate?.inferenceTrace?.sourceRateHz ?: Double.NaN, 0.0)
+    }
+
     private fun prediction(timestamp: Long, probability: Float, decisionPolicy: ModelDecisionPolicy = defaultPolicy) = StressPrediction(
         sensor = PpgType.GREEN,
         label = decisionPolicy.labelFor(probability).value,
@@ -211,6 +231,24 @@ class StressAggregatorTest {
         ),
         generatedAtMillis = timestamp,
         decisionPolicy = decisionPolicy
+    )
+
+    private fun trace(sessionId: String, sourceRateHz: Double): StressInferenceTrace = StressInferenceTrace(
+        manifestFingerprint = "manifest",
+        sensorChannel = PpgType.GREEN.assetSuffix,
+        featureOrder = listOf("rmssd_ms"),
+        featureCount = 1,
+        sampleCount = 4_500,
+        sourceRateHz = sourceRateHz,
+        modelRateHz = sourceRateHz,
+        rawProbability = 0.5f,
+        calibratedProbability = 0.5f,
+        calibrationVersion = "calibration",
+        threshold = 0.5f,
+        finalLabel = "RELAX",
+        qualityTier = "good",
+        sessionId = sessionId,
+        windowId = sessionId
     )
 
     private companion object {

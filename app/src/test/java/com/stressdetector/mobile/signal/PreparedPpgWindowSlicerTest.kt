@@ -16,7 +16,10 @@ class PreparedPpgWindowSlicerTest {
             filteredValues = values.copyOf(),
             rawSampleCount = values.size,
             interpolatedSampleCount = 0,
-            elapsedTimestampsMillis = elapsed.copyOf()
+            elapsedTimestampsMillis = elapsed.copyOf(),
+            observedSampleCount = values.size,
+            observedMask = BooleanArray(values.size) { true },
+            gridResampledMask = BooleanArray(values.size)
         )
 
         val windows = PreparedPpgWindowSlicer(PredictionWindowConfig()).modelWindows(prepared)
@@ -28,6 +31,8 @@ class PreparedPpgWindowSlicerTest {
             val expectedSampleIndex = ((30_000L + index * 10_000L) / 40L).toInt()
             assertEquals(values[expectedSampleIndex], window.filteredValues.first(), 0.0)
             assertEquals(true, window.elapsedTimestampsMillis.last() < 270_000L)
+            assertEquals(window.size, window.observedSampleCount)
+            assertEquals(0, window.gridResampledSampleCount)
         }
     }
 

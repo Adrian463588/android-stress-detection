@@ -16,6 +16,11 @@ private fun String.toLivePpgType(): PpgType = when (this) {
     else -> error("Unsupported live monitor channel: $this")
 }
 
+private const val LEGACY_INDEX_SCHEMA = "1.0.0"
+private const val INTERNAL_INDEX_SCHEMA = "internal-android-v2"
+private const val INTERNAL_VALIDATION_SCOPE = "internal_32_participants"
+private const val DECISION_SUPPORT_ONLY = "decision_support_only"
+
 data class LiveMonitorConfig(
     val adrReference: String,
     val inferenceStepSeconds: Int,
@@ -130,28 +135,21 @@ class AssetLiveMonitorRuntimeContract(private val context: Context) {
     fun load(): LiveMonitorRuntimeContract {
         val config = loadConfig()
         val researchMode = BuildConfig.RESEARCH_MODEL_MODE
-        val indexJson = context.assets.open(MODEL_INDEX_ASSET).bufferedReader().use { it.readText() }
-        val index = Gson().fromJson(indexJson, CanonicalIndexWire::class.java)
-        require(index.schema_version == "1.0.0") { "unsupported_model_index_schema" }
+        val document = readModelIndex()
+        val index = document.index
+        val internalMode = validateIndex(document, researchMode)
         if (index.models.isEmpty()) {
-            require(index.release_status.startsWith("blocked_")) {
+            require(internalMode || index.release_status.startsWith("blocked_")) {
                 "empty_model_index_must_be_explicitly_blocked"
             }
             return buildContract(config, emptyMap())
         }
-        val expectedIndexStatus = if (researchMode) "research_candidate" else "accepted"
-        require(index.release_status == expectedIndexStatus) { "canonical_model_index_not_accepted" }
-        val policy = PackagedPerformancePolicyLoader.load(context.assets)
-        val accepted = index.models.filter {
-            if (researchMode) {
-                it.artifact_status == "research_candidate" &&
-                    it.evaluation_scope == "development_only" &&
-                    it.release_status == "blocked_existing_holdout_contract_mismatch" &&
-                    !it.android_ready
-            } else {
-                it.release_status == "accepted" && it.android_ready
-            }
+        if (!internalMode) {
+            val expectedIndexStatus = if (researchMode) "research_candidate" else "accepted"
+            require(index.release_status == expectedIndexStatus) { "canonical_model_index_not_accepted" }
         }
+        val policy = PackagedPerformancePolicyLoader.load(context.assets)
+        val accepted = selectAcceptedModels(index, researchMode, internalMode)
         val acceptedTypes = accepted.map(CanonicalModelWire::toPpgType).toSet()
         require(acceptedTypes.isNotEmpty()) { "no_android_ready_live_model" }
         require(acceptedTypes.size == accepted.size) { "duplicate_live_model_channel" }
@@ -160,11 +158,51 @@ class AssetLiveMonitorRuntimeContract(private val context: Context) {
         }
         val modelContracts = accepted.associate { model ->
             model.requireAndroidRateContract()
-            model.requirePerformancePolicy(policy, researchMode)
+            if (internalMode) {
+                model.requireInternalPerformancePolicy(policy)
+            } else {
+                model.requirePerformancePolicy(policy, researchMode)
+            }
             model.toPpgType() to model.toLiveModelContract().also(LiveModelContract::requireValid)
         }
         return buildContract(config, modelContracts)
     }
+
+    private data class ModelIndexDocument(val json: String, val index: CanonicalIndexWire)
+
+    private fun readModelIndex(): ModelIndexDocument {
+        val json = context.assets.open(MODEL_INDEX_ASSET).bufferedReader().use { it.readText() }
+        return ModelIndexDocument(json, Gson().fromJson(json, CanonicalIndexWire::class.java))
+    }
+
+    private fun validateIndex(document: ModelIndexDocument, researchMode: Boolean): Boolean {
+        val index = document.index
+        val internalMode = !researchMode && index.schema_version == INTERNAL_INDEX_SCHEMA
+        require(index.schema_version == LEGACY_INDEX_SCHEMA || internalMode) {
+            "unsupported_model_index_schema"
+        }
+        if (internalMode) {
+            require(
+                index.validation_scope == INTERNAL_VALIDATION_SCOPE &&
+                    index.claims_policy == DECISION_SUPPORT_ONLY
+            ) { "internal_model_index_contract_invalid" }
+            require(
+                !document.json.contains("\"android_ready\"") &&
+                    !document.json.contains("\"onnx_published\"") &&
+                    !document.json.contains("\"clinical_validation_status\"")
+            ) { "internal_model_index_contains_legacy_status" }
+        }
+        return internalMode
+    }
+
+    private fun selectAcceptedModels(index: CanonicalIndexWire, researchMode: Boolean, internalMode: Boolean): List<CanonicalModelWire> =
+        index.models.filter { model ->
+            when {
+                researchMode -> model.isResearchCandidate()
+                internalMode -> model.isInternalCandidate()
+                else -> model.release_status == "accepted" && model.android_ready
+            }
+        }
 
     /** Uses the same validated repository-backed manifests as Home. */
     fun load(manifestContracts: Map<PpgType, ModelSessionContract>): LiveMonitorRuntimeContract {
@@ -270,7 +308,9 @@ class AssetLiveMonitorRuntimeContract(private val context: Context) {
 
     private data class CanonicalIndexWire(
         val schema_version: String,
-        val release_status: String,
+        val release_status: String = "",
+        val validation_scope: String = "",
+        val claims_policy: String = "",
         val models: List<CanonicalModelWire> = emptyList()
     )
 
@@ -295,11 +335,43 @@ class AssetLiveMonitorRuntimeContract(private val context: Context) {
         val deployment_scope: String = "",
         val research_disclaimer: String = "",
         val disclaimer_required: Boolean = false,
+        val validation_scope: String = "",
+        val claims_policy: String = "",
+        val hrv_prv_status: String = "",
+        val training_admission_status: String = "",
+        val development_model_status: String = "",
+        val internal_test_status: String = "",
+        val onnx_export_status: String = "",
+        val android_device_parity_status: String = "",
+        val internal_android_status: String = "",
+        val balanced_accuracy_internal_test: Double = Double.NaN,
+        val f1_internal_test: Double = Double.NaN,
+        val roc_auc_internal_test: Double = Double.NaN,
         val analysis_seconds: Int = 0,
         val window_seconds: Int = 0,
         val stride_seconds: Int = 0,
         val expected_windows_per_session: Int = 0
     ) {
+        fun isResearchCandidate(): Boolean = artifact_status == "research_candidate" &&
+            evaluation_scope == "development_only" &&
+            release_status == "blocked_existing_holdout_contract_mismatch" &&
+            !android_ready
+
+        fun isInternalCandidate(): Boolean = artifact_status == "internal_candidate" &&
+            evaluation_scope == INTERNAL_VALIDATION_SCOPE &&
+            validation_scope == INTERNAL_VALIDATION_SCOPE &&
+            claims_policy == DECISION_SUPPORT_ONLY &&
+            listOf(
+                hrv_prv_status,
+                training_admission_status,
+                development_model_status,
+                internal_test_status,
+                onnx_export_status
+            ).all { status -> status == "GO" } &&
+            android_device_parity_status in setOf("PENDING", "GO") &&
+            internal_android_status in setOf("PENDING_DEVICE_PARITY", "GO") &&
+            deployment_scope == "internal"
+
         fun toPpgType(): PpgType = when (sensor_channel) {
             "ppg_green" -> PpgType.GREEN
             "ppg_ir" -> PpgType.IR
@@ -352,6 +424,48 @@ class AssetLiveMonitorRuntimeContract(private val context: Context) {
                     "live_research_disclaimer_mismatch"
                 }
             }
+        }
+
+        fun requireInternalPerformancePolicy(policy: PackagedPerformancePolicy) {
+            require(performance_policy_version == policy.performance_policy_version) {
+                "live_policy_version_mismatch"
+            }
+            require(performance_policy_sha256 == policy.performance_policy_sha256) {
+                "live_policy_checksum_mismatch"
+            }
+            val developmentMetricsPass = policy.minimum_research.accepts(
+                balanced_accuracy_development,
+                f1_development,
+                roc_auc_development
+            )
+            val internalMetricsPass = policy.minimum_research.accepts(
+                balanced_accuracy_internal_test,
+                f1_internal_test,
+                roc_auc_internal_test
+            )
+            require(developmentMetricsPass && internalMetricsPass) {
+                "live_internal_metrics_below_minimum"
+            }
+            val developmentTier = policy.declaredTier(
+                balanced_accuracy_development,
+                f1_development,
+                roc_auc_development
+            )
+            val internalTier = policy.declaredTier(
+                balanced_accuracy_internal_test,
+                f1_internal_test,
+                roc_auc_internal_test
+            )
+            val expectedTier = if (
+                developmentTier.wireName == "preferred" &&
+                internalTier.wireName == "preferred"
+            ) {
+                "preferred"
+            } else {
+                "research_usable"
+            }
+            require(performance_tier == expectedTier) { "live_internal_performance_tier_mismatch" }
+            require(deployment_scope == "internal") { "live_internal_deployment_scope_mismatch" }
         }
 
         fun toLiveModelContract(): LiveModelContract = LiveModelContract(

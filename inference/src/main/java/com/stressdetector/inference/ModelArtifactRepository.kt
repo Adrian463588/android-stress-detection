@@ -2,6 +2,7 @@ package com.stressdetector.inference
 
 import android.content.res.AssetManager
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 
 private const val REQUIRED_VECTOR_COUNT = 100
 
@@ -19,8 +20,12 @@ sealed interface ModelArtifactResult {
 }
 
 internal data class CanonicalModelIndex(
-    val schema_version: String,
-    val release_status: String,
+    @SerializedName("schema_version") val schemaVersion: String,
+    @SerializedName("run_id") val runId: String = "",
+    @SerializedName("release_status") val releaseStatus: String = "",
+    @SerializedName("validation_scope") val validationScope: String = "",
+    @SerializedName("claims_policy") val claimsPolicy: String = "",
+    @SerializedName("internal_android_status") val internalAndroidStatus: String = "",
     val models: List<CanonicalModelEntry> = emptyList()
 )
 
@@ -54,6 +59,18 @@ internal data class CanonicalModelEntry(
     val expected_windows_per_session: Int = 0,
     val source_rate_hz: Double = 0.0,
     val model_rate_hz: Double = 0.0,
+    val validation_scope: String = "",
+    val claims_policy: String = "",
+    val hrv_prv_status: String = "",
+    val training_admission_status: String = "",
+    val development_model_status: String = "",
+    val internal_test_status: String = "",
+    val onnx_export_status: String = "",
+    val android_device_parity_status: String = "",
+    val internal_android_status: String = "",
+    val balanced_accuracy_internal_test: Double = Double.NaN,
+    val f1_internal_test: Double = Double.NaN,
+    val roc_auc_internal_test: Double = Double.NaN,
     val files: Map<String, CanonicalFileDescriptor> = emptyMap()
 )
 
@@ -70,19 +87,33 @@ class AndroidAssetModelArtifactRepository(private val assets: AssetManager) : Mo
         val index =
             Gson().fromJson(indexJson, CanonicalModelIndex::class.java)
                 ?: return ModelArtifactResult.Invalid("model_index_unreadable")
-        if (index.schema_version != "1.0.0") {
+        val internalMode = !researchMode && index.schemaVersion == "internal-android-v2"
+        if (index.schemaVersion != "1.0.0" && !internalMode) {
             return ModelArtifactResult.Invalid("unsupported_model_index_schema")
+        }
+        val indexHasLegacyStatus =
+            indexJson.contains("\"android_ready\"") ||
+                indexJson.contains("\"onnx_published\"") ||
+                indexJson.contains("\"clinical_validation_status\"")
+        if (internalMode && indexHasLegacyStatus) {
+            return ModelArtifactResult.Invalid("internal_model_index_contains_legacy_status")
         }
         if (index.models.isEmpty()) {
             return ModelArtifactResult.Unavailable(
-                index.release_status
+                index.releaseStatus
                     .takeUnless { it == "blocked_android_evidence_pending" }
                     ?: "physical_device_parity_pending"
             )
         }
         val expectedIndexStatus = if (researchMode) "research_candidate" else "accepted"
-        if (index.release_status != expectedIndexStatus) {
-            return ModelArtifactResult.Unavailable(index.release_status)
+        if (!internalMode && index.releaseStatus != expectedIndexStatus) {
+            return ModelArtifactResult.Unavailable(index.releaseStatus)
+        }
+        val indexContractInvalid =
+            index.validationScope != "internal_32_participants" ||
+                index.claimsPolicy != "decision_support_only"
+        if (internalMode && indexContractInvalid) {
+            return ModelArtifactResult.Invalid("internal_model_index_contract_invalid")
         }
         val policy = PackagedPerformancePolicyLoader.load(assets)
         val indexedSensors = index.models.map { it.sensor_channel }.toSet()
@@ -110,6 +141,20 @@ class AndroidAssetModelArtifactRepository(private val assets: AssetManager) : Mo
                 candidate.release_status == "blocked_existing_holdout_contract_mismatch" &&
                 !candidate.android_ready &&
                 candidate.deployment_scope == "research"
+        } else if (internalMode) {
+            candidate.artifact_status == "internal_candidate" &&
+                candidate.evaluation_scope == "internal_32_participants" &&
+                candidate.validation_scope == "internal_32_participants" &&
+                candidate.claims_policy == "decision_support_only" &&
+                listOf(
+                    candidate.hrv_prv_status,
+                    candidate.training_admission_status,
+                    candidate.development_model_status,
+                    candidate.internal_test_status,
+                    candidate.onnx_export_status
+                ).all { it == "GO" } &&
+                candidate.android_device_parity_status in setOf("PENDING", "GO") &&
+                candidate.internal_android_status in setOf("PENDING_DEVICE_PARITY", "GO")
         } else {
             candidate.release_status == "accepted" && candidate.android_ready
         }
@@ -138,7 +183,7 @@ class AndroidAssetModelArtifactRepository(private val assets: AssetManager) : Mo
             candidate.files["test_vectors"]
                 ?: return ModelArtifactResult.Invalid("test_vectors_descriptor_missing")
         val receiptDescriptor = candidate.files["device_parity_receipt"]
-        if (!researchMode && receiptDescriptor == null) {
+        if (!researchMode && !internalMode && receiptDescriptor == null) {
             return ModelArtifactResult.Invalid("device_parity_receipt_descriptor_missing")
         }
         val assetRoot = "models/${candidate.model_version}/${candidate.sensor_channel}"
@@ -153,8 +198,16 @@ class AndroidAssetModelArtifactRepository(private val assets: AssetManager) : Mo
                 manifestBytes.decodeToString(),
                 ModelManifest::class.java
             ) ?: return ModelArtifactResult.Invalid("model_manifest_unreadable")
+        val detectorContract = readDetectorContract(
+            runId = index.runId,
+            manifest = indexedManifest,
+            modelBytes = modelBytes,
+            sensorChannel = sensorChannel
+        )
         if (researchMode) {
             policy.requireDevelopmentEntryCompatibility(candidate, indexedManifest)
+        } else if (internalMode) {
+            policy.requireInternalEntryCompatibility(candidate, indexedManifest)
         } else {
             policy.requireEntryCompatibility(candidate, indexedManifest)
             requireVectorContract(vectorBytes, indexedManifest)
@@ -168,17 +221,33 @@ class AndroidAssetModelArtifactRepository(private val assets: AssetManager) : Mo
             ModelArtifactLoader.loadResearch(
                 manifestJson = manifestBytes.decodeToString(),
                 modelBytes = modelBytes,
-                preflightVectors = preflightVectors
+                preflightVectors = preflightVectors,
+                detectorContract = detectorContract
+            )
+        } else if (internalMode) {
+            val manifestJson = manifestBytes.decodeToString()
+            val manifestHasLegacyStatus =
+                manifestJson.contains("\"android_ready\"") ||
+                    manifestJson.contains("\"clinical_validation_status\"")
+            if (manifestHasLegacyStatus) {
+                return ModelArtifactResult.Invalid("internal_manifest_contains_legacy_status")
+            }
+            ModelArtifactLoader.loadInternal(
+                manifestJson = manifestJson,
+                modelBytes = modelBytes,
+                preflightVectors = preflightVectors,
+                detectorContract = detectorContract
             )
         } else {
             ModelArtifactLoader.load(
                 manifestJson = manifestBytes.decodeToString(),
                 modelBytes = modelBytes,
                 preflightVector = preflightVectors.first(),
-                preflightVectors = preflightVectors
+                preflightVectors = preflightVectors,
+                detectorContract = detectorContract
             )
         }
-        if (!researchMode) {
+        if (!researchMode && !internalMode) {
             val receipt =
                 Gson().fromJson(
                     receiptBytes!!.decodeToString(),
@@ -218,6 +287,22 @@ class AndroidAssetModelArtifactRepository(private val assets: AssetManager) : Mo
         val bytes = assets.open("$root/$fileName").use { it.readBytes() }
         require(ModelArtifactLoader.sha256(bytes) == descriptor.sha256) { "artifact_checksum_mismatch" }
         return bytes
+    }
+
+    private fun readDetectorContract(
+        runId: String,
+        manifest: ModelManifest,
+        modelBytes: ByteArray,
+        sensorChannel: String
+    ): PpgDetectorContract {
+        require(runId.isNotBlank()) { "ppg_detector_contract_run_missing" }
+        val bytes = assets.open(DETECTOR_CONTRACT_PATH).use { it.readBytes() }
+        val bundle = PpgDetectorContractBundle.parse(bytes.decodeToString())
+        bundle.requireValid()
+        require(bundle.run_id == runId) { "ppg_detector_contract_run_mismatch" }
+        val contract = bundle.forChannel(sensorChannel)
+        contract.requireCompatible(runId, manifest, modelBytes)
+        return contract
     }
 
     private fun requireParityContract(bytes: ByteArray) {
@@ -336,6 +421,7 @@ class AndroidAssetModelArtifactRepository(private val assets: AssetManager) : Mo
 
     private companion object {
         const val INDEX_PATH = "model_index.json"
+        const val DETECTOR_CONTRACT_PATH = "ppg_detector_contract.json"
         val ACCEPTED_SENSORS = setOf("ppg_green", "ppg_ir")
         val SAFE_ID = Regex("[A-Za-z0-9._-]+")
         val SAFE_FILE = Regex("[A-Za-z0-9._-]+")

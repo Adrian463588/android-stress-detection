@@ -51,9 +51,11 @@ sealed interface HomeFinalizationResult {
 }
 
 /** Owns the final inference/persistence boundary for a Home stress session. */
-class HomeSessionFinalizer(private val dao: StressSessionDao, private val evidenceMode: String = "production") {
+class HomeSessionFinalizer(private val dao: StressSessionDao, private val evidenceMode: String = "internal") {
     init {
-        require(evidenceMode in setOf("production", "research")) { "unsupported_evidence_mode" }
+        require(evidenceMode in setOf("internal", "production", "research")) {
+            "unsupported_evidence_mode"
+        }
     }
 
     private val mutex = Mutex()

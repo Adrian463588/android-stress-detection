@@ -1,8 +1,6 @@
 package com.stressdetector.mobile.data
 
 import android.content.Context
-import com.google.android.gms.wearable.Wearable
-import com.stressdetector.shared.MessagePath
 import java.nio.ByteBuffer
 import java.security.SecureRandom
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +31,18 @@ enum class WearReachabilityPhase {
     PROTOCOL_ERROR
 }
 
+enum class ReachabilityProbeStatus {
+    IDLE,
+    CHECKING
+}
+
+enum class PongDisposition {
+    ACCEPTED,
+    MALFORMED_PAYLOAD,
+    UNKNOWN_NONCE,
+    EXPIRED_NONCE
+}
+
 data class WearConnectionState(
     val status: WatchConnectionStatus = WatchConnectionStatus.DISCONNECTED,
     val reachabilityPhase: WearReachabilityPhase = WearReachabilityPhase.OFFLINE,
@@ -43,8 +53,12 @@ data class WearConnectionState(
     val lastStreamingEvidenceMillis: Long = 0L,
     val lastStreamingNodeId: String? = null,
     val lastNodeIds: List<String> = emptyList(),
+    val probeStatus: ReachabilityProbeStatus = ReachabilityProbeStatus.IDLE,
     val message: String = "Watch not connected"
 ) {
+    val isProbeInFlight: Boolean
+        get() = probeStatus == ReachabilityProbeStatus.CHECKING
+
     val isAppReachable: Boolean
         get() = reachabilityPhase in setOf(
             WearReachabilityPhase.APP_REACHABLE,
@@ -64,8 +78,10 @@ data class WearConnectionState(
     val canAttemptCommands: Boolean
         get() = commandNodeId != null
 
-    fun isPongFresh(nowMillis: Long, freshnessMillis: Long = WearConnectionRepositoryImpl.PONG_FRESHNESS_MILLIS): Boolean =
-        lastPongMillis > 0L && nowMillis - lastPongMillis <= freshnessMillis
+    fun isPongFresh(nowMillis: Long, freshnessMillis: Long = WearConnectionRepositoryImpl.PONG_FRESHNESS_MILLIS): Boolean {
+        val ageMillis = nowMillis - lastPongMillis
+        return lastPongMillis > 0L && ageMillis in 0L..freshnessMillis
+    }
 
     /**
      * Session start requires current application evidence, not node discovery.
@@ -74,12 +90,14 @@ data class WearConnectionState(
      */
     fun canStartSession(nowMillis: Long = System.currentTimeMillis()): Boolean = reachabilityPhase ==
         WearReachabilityPhase.APP_REACHABLE &&
+        probeStatus == ReachabilityProbeStatus.IDLE &&
         commandNodeId != null &&
         lastPongNodeId == commandNodeId &&
         isPongFresh(nowMillis)
 }
 
-class WearConnectionRepositoryImpl : IWearConnectionRepository {
+class WearConnectionRepositoryImpl internal constructor(private val dataLayer: WearDataLayerGateway = GoogleWearDataLayerGateway()) :
+    IWearConnectionRepository {
     companion object {
         const val PONG_FRESHNESS_MILLIS = 15_000L
         const val REACHABILITY_TIMEOUT_MILLIS = 4_000L
@@ -87,9 +105,9 @@ class WearConnectionRepositoryImpl : IWearConnectionRepository {
         private const val PING_NONCE_LEASE_MILLIS = 15_000L
     }
 
-    internal data class PendingPing(val nonce: Long, val issuedAtMillis: Long)
+    internal data class PendingPing(val nonce: Long, val issuedAtMillis: Long, val expiresAtMillis: Long)
 
-    /** Thread-safe nonce owner; a refresh must not replace an in-flight ping lease. */
+    /** Thread-safe nonce owner; a probe must not replace an active ping lease. */
     internal class PendingPingRegistry(private val leaseMillis: Long, private val nonceFactory: () -> Long) {
         private val entries = mutableMapOf<String, PendingPing>()
 
@@ -104,138 +122,79 @@ class WearConnectionRepositoryImpl : IWearConnectionRepository {
         }
 
         @Synchronized
-        fun prepare(nodeId: String, nowMillis: Long): Long? {
+        fun prepare(nodeId: String, nowMillis: Long, validityMillis: Long = leaseMillis): Long? {
             val pending = entries[nodeId]
-            if (pending != null && nowMillis - pending.issuedAtMillis < leaseMillis) return null
+            if (pending != null && nowMillis < pending.expiresAtMillis) return null
             val nonce = nonceFactory()
-            entries[nodeId] = PendingPing(nonce, nowMillis)
+            entries[nodeId] = PendingPing(
+                nonce = nonce,
+                issuedAtMillis = nowMillis,
+                expiresAtMillis = nowMillis + validityMillis.coerceAtLeast(1L)
+            )
             return nonce
         }
 
         @Synchronized
-        fun discardIfMatches(nodeId: String, nonce: Long) {
+        fun expireIfMatches(nodeId: String, nonce: Long) {
             if (entries[nodeId]?.nonce == nonce) entries.remove(nodeId)
         }
 
         @Synchronized
-        fun consumeIfMatches(nodeId: String, nonce: Long): Boolean {
-            if (entries[nodeId]?.nonce != nonce) return false
-            entries.remove(nodeId)
-            return true
+        fun consumeIfMatches(nodeId: String, nonce: Long, nowMillis: Long): PongDisposition {
+            val pending = entries[nodeId]
+            return when {
+                pending == null -> PongDisposition.UNKNOWN_NONCE
+                nowMillis >= pending.expiresAtMillis -> {
+                    entries.remove(nodeId)
+                    PongDisposition.EXPIRED_NONCE
+                }
+                pending.nonce != nonce -> PongDisposition.UNKNOWN_NONCE
+                else -> {
+                    entries.remove(nodeId)
+                    PongDisposition.ACCEPTED
+                }
+            }
         }
-
-        @Synchronized
-        fun consumeAny(nodeId: String): Boolean = entries.remove(nodeId) != null
     }
 
     private val nonceRandom = SecureRandom()
     private val mutableState = MutableStateFlow(WearConnectionState())
     private val pendingPingNonces = PendingPingRegistry(PING_NONCE_LEASE_MILLIS, nonceRandom::nextLong)
     private val refreshMutex = Mutex()
+    private val reachabilityProbe = WearReachabilityProbe(
+        dataLayer = dataLayer,
+        pendingPingNonces = pendingPingNonces,
+        mutableState = mutableState
+    )
     override val state: StateFlow<WearConnectionState> = mutableState.asStateFlow()
 
-    override suspend fun refreshAndPing(context: Context): WearConnectionState = refreshMutex.withLock {
-        refreshAndPingLocked(context)
-    }
+    override suspend fun refreshAndPing(context: Context): WearConnectionState = probe(context, REACHABILITY_TIMEOUT_MILLIS)
 
-    private suspend fun refreshAndPingLocked(context: Context): WearConnectionState {
-        val now = System.currentTimeMillis()
-        return runCatching {
-            // Node discovery is the transport truth for a paired/reachable
-            // Wear node. Capability discovery is useful for feature lookup,
-            // but it is not a reliable substitute for the node that will
-            // receive SESSION_START and PPG messages.
-            val nodes = Wearable.getNodeClient(context).connectedNodes.awaitResult()
-            if (nodes.isEmpty()) {
-                pendingPingNonces.clear()
-                mutableState.value = WearConnectionState(
-                    status = WatchConnectionStatus.DISCONNECTED,
-                    reachabilityPhase = WearReachabilityPhase.OFFLINE,
-                    lastCheckedMillis = now,
-                    message = "No Galaxy Watch node found"
-                )
-                return mutableState.value
-            }
+    override suspend fun waitForReachable(context: Context, timeoutMillis: Long): WearConnectionState = probe(context, timeoutMillis)
 
-            val ids = nodes.map { it.id }
-            val current = mutableState.value
-            val hasFreshPong = current.isPongFresh(now) &&
-                current.lastPongNodeId in ids
-            mutableState.update {
-                it.copy(
-                    status = when {
-                        it.status == WatchConnectionStatus.RECORDING -> WatchConnectionStatus.RECORDING
-                        hasFreshPong -> WatchConnectionStatus.APP_REACHABLE
-                        else -> WatchConnectionStatus.NODE_ONLY
-                    },
-                    reachabilityPhase = when {
-                        it.reachabilityPhase == WearReachabilityPhase.STREAMING -> WearReachabilityPhase.STREAMING
-                        hasFreshPong -> WearReachabilityPhase.APP_REACHABLE
-                        else -> WearReachabilityPhase.NODE_DISCOVERED
-                    },
-                    nodeCount = nodes.size,
-                    lastCheckedMillis = now,
-                    lastNodeIds = ids,
-                    message = if (hasFreshPong) "Watch app reachable" else "Watch paired; waiting for app response"
-                )
-            }
-
-            var failed = 0
-            pendingPingNonces.retainNodes(ids.toSet())
-            val pingRequests = nodes.mapNotNull { node ->
-                pendingPingNonces.prepare(node.id, now)?.let { nonce -> node.id to nonce }
-            }
-            pingRequests.forEach { (nodeId, nonce) ->
-                val payload = ByteBuffer.allocate(Long.SIZE_BYTES).putLong(nonce).array()
-                runCatching {
-                    Wearable.getMessageClient(context)
-                        .sendMessage(nodeId, MessagePath.CONNECTION_PING, payload)
-                        .awaitResult()
-                }.onFailure {
-                    failed += 1
-                    pendingPingNonces.discardIfMatches(nodeId, nonce)
-                }
-            }
-            if (pingRequests.isNotEmpty() && failed == pingRequests.size) {
-                mutableState.update {
-                    it.copy(
-                        status = WatchConnectionStatus.NODE_ONLY,
-                        reachabilityPhase = WearReachabilityPhase.NODE_DISCOVERED,
-                        message = "Watch ditemukan, tetapi aplikasi Watch belum merespons"
-                    )
-                }
-            }
-            mutableState.value
-        }.getOrElse { error ->
-            mutableState.value = WearConnectionState(
-                status = WatchConnectionStatus.ERROR,
-                reachabilityPhase = WearReachabilityPhase.OFFLINE,
-                lastCheckedMillis = now,
-                message = "Watch connection check failed: ${error.message}"
-            )
-            mutableState.value
-        }
-    }
-
-    override suspend fun waitForReachable(context: Context, timeoutMillis: Long): WearConnectionState {
+    /** Runs one complete bounded probe so no caller leaves an orphaned nonce lease. */
+    private suspend fun probe(context: Context, timeoutMillis: Long): WearConnectionState = refreshMutex.withLock {
+        val timeout = timeoutMillis.coerceAtLeast(MIN_REACHABILITY_WAIT_MILLIS)
         val previousPongMillis = state.value.lastPongMillis
-        val refreshed = refreshAndPing(context)
-        val result = if (
-            refreshed.reachabilityPhase == WearReachabilityPhase.OFFLINE ||
-            refreshed.reachabilityPhase == WearReachabilityPhase.PROTOCOL_ERROR
-        ) {
-            refreshed
-        } else {
-            val reached = withTimeoutOrNull(timeoutMillis.coerceAtLeast(MIN_REACHABILITY_WAIT_MILLIS)) {
-                state.filter { candidate ->
-                    candidate.lastPongMillis > previousPongMillis &&
-                        candidate.canStartSession()
-                }.first()
-            }
-            reached ?: markReachabilityTimeout()
+        val requests = discoverAndPing(context, timeout)
+        if (requests.isEmpty()) return@withLock state.value
+
+        val reached = withTimeoutOrNull(timeout) {
+            state.filter { candidate ->
+                candidate.lastPongMillis > previousPongMillis &&
+                    candidate.canStartSession()
+            }.first()
         }
-        return result
+        if (reached != null) return@withLock reached
+
+        requests.forEach { request ->
+            pendingPingNonces.expireIfMatches(request.nodeId, request.nonce)
+        }
+        markReachabilityTimeout()
     }
+
+    private suspend fun discoverAndPing(context: Context, timeoutMillis: Long): List<PingRequest> =
+        reachabilityProbe.discoverAndPing(context, timeoutMillis)
 
     private fun markReachabilityTimeout(): WearConnectionState {
         mutableState.update { current ->
@@ -253,6 +212,7 @@ class WearConnectionRepositoryImpl : IWearConnectionRepository {
                     } else {
                         WearReachabilityPhase.OFFLINE
                     },
+                    probeStatus = ReachabilityProbeStatus.IDLE,
                     message = if (current.nodeCount > 0) {
                         "Watch ditemukan, tetapi aplikasi Watch belum merespons"
                     } else {
@@ -264,13 +224,8 @@ class WearConnectionRepositoryImpl : IWearConnectionRepository {
         return state.value
     }
 
-    override fun markPong(nodeId: String) {
-        val isCorrelated = pendingPingNonces.consumeAny(nodeId)
-        if (!isCorrelated) return
-        recordCorrelatedPong(nodeId)
-    }
-
     private fun recordCorrelatedPong(nodeId: String) {
+        pendingPingNonces.clear()
         val now = System.currentTimeMillis()
         mutableState.update {
             it.copy(
@@ -289,17 +244,22 @@ class WearConnectionRepositoryImpl : IWearConnectionRepository {
                 lastPongMillis = now,
                 lastPongNodeId = nodeId,
                 lastNodeIds = if (nodeId in it.lastNodeIds) it.lastNodeIds else it.lastNodeIds + nodeId,
+                probeStatus = ReachabilityProbeStatus.IDLE,
                 message = "Watch app reachable"
             )
         }
     }
 
-    override fun markPong(nodeId: String, payload: ByteArray) {
-        if (payload.size != Long.SIZE_BYTES) return
+    override fun markPong(nodeId: String, payload: ByteArray): PongDisposition {
+        if (payload.size != Long.SIZE_BYTES) return PongDisposition.MALFORMED_PAYLOAD
         val receivedNonce = ByteBuffer.wrap(payload).long
-        val isCorrelated = pendingPingNonces.consumeIfMatches(nodeId, receivedNonce)
-        if (!isCorrelated) return
-        recordCorrelatedPong(nodeId)
+        val disposition = pendingPingNonces.consumeIfMatches(
+            nodeId = nodeId,
+            nonce = receivedNonce,
+            nowMillis = System.currentTimeMillis()
+        )
+        if (disposition == PongDisposition.ACCEPTED) recordCorrelatedPong(nodeId)
+        return disposition
     }
 
     override fun markStreamingEvidence(nodeId: String) {

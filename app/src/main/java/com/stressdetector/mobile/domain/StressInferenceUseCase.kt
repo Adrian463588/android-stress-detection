@@ -1,6 +1,7 @@
 package com.stressdetector.mobile.domain
 
 import android.content.Context
+import com.stressdetector.inference.ModelContractStatus
 import com.stressdetector.inference.ModelSessionContract
 import com.stressdetector.mobile.data.WindowSnapshot
 import com.stressdetector.mobile.ml.StressInferenceRuntime
@@ -29,6 +30,8 @@ class StressInferenceUseCase(private val runtime: StressInferenceRuntime, contex
     }
 
     override fun modelContract(type: PpgType): ModelSessionContract? = runtime.modelContract(type)
+
+    override fun modelContractStatus(type: PpgType): ModelContractStatus = runtime.modelContractStatus(type)
 
     override fun process(window: WindowSnapshot): PpgProcessingSnapshot = coordinator.process(window)
 

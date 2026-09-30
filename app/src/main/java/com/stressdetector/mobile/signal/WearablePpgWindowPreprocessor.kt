@@ -5,6 +5,9 @@ import com.stressdetector.shared.PpgFilterContract
 import com.stressdetector.shared.PpgTransportDiagnostics
 import com.stressdetector.shared.PpgType
 import com.stressdetector.shared.SessionConfig
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import kotlin.math.abs
 import kotlin.math.roundToLong
 
 /** A raw-watch window that is safe to pass to the canonical feature extractor. */
@@ -12,6 +15,13 @@ data class PreparedPpgWindow(
     val type: PpgType,
     val timestampsMillis: LongArray,
     val filteredValues: DoubleArray,
+    /** Raw Watch values aligned one-to-one with [timestampsMillis]. */
+    val rawValues: IntArray = IntArray(0),
+    val rawValuesSha256: String = "",
+    val filteredValuesSha256: String = "",
+    val timestampBatchIds: Array<String> = emptyArray(),
+    val sourceBatchIds: List<String> = emptyList(),
+    val sourceBatchChecksums: List<String> = emptyList(),
     val rawSampleCount: Int,
     val interpolatedSampleCount: Int,
     val sessionElapsedStartMillis: Long = 0L,
@@ -24,6 +34,18 @@ data class PreparedPpgWindow(
     /** Target samples interpolated across a true source-rate gap. */
     val sourceGapInterpolatedSampleCount: Int = 0,
     val sourceGapInterpolatedMask: BooleanArray = BooleanArray(filteredValues.size),
+    /** Observed samples retained after deterministic duplicate removal. */
+    val observedSampleCount: Int = rawSampleCount,
+    val observedMask: BooleanArray = BooleanArray(filteredValues.size) { true },
+    /** Short-gap repair is unsupported by the active live contract and stays zero. */
+    val repairedShortGapSampleCount: Int = 0,
+    val repairedShortGapMask: BooleanArray = BooleanArray(filteredValues.size),
+    /** True timestamp gaps are never bridged into model input. */
+    val trueGapCount: Int = 0,
+    val unresolvedSampleCount: Int = 0,
+    /** Grid resampling is forbidden for the active run-scoped live contract. */
+    val gridResampledSampleCount: Int = 0,
+    val gridResampledMask: BooleanArray = BooleanArray(filteredValues.size),
     val sourceRateHz: Double = type.sourceRateHz.toDouble(),
     val modelRateHz: Double = type.modelRateHz.toDouble(),
     val preprocessingVersion: String = "wearable_ppg_v1",
@@ -71,6 +93,10 @@ data class PpgRejectionDiagnostics(
     val rejectedSampleCount: Int = 0,
     val duplicateSampleCount: Int = 0,
     val sequenceLossCount: Long = 0L,
+    val observedSampleCount: Int = acceptedSampleCount,
+    val trueGapCount: Int = 0,
+    val unresolvedSampleCount: Int = 0,
+    val gridResampledSampleCount: Int = 0,
     val rejectionReason: String
 )
 
@@ -96,22 +122,24 @@ data class PpgPreprocessingContract(
 
 /** Bounded signal-quality policy; kept separate from model identity. */
 data class PpgPreprocessingPolicy(
-    val maxInterpolationGapMillis: Long = 500L,
-    val maximumCadenceJitterRatio: Double = 0.20,
-    /** Require at least 20% of the contract rate before accepting a window. */
-    val minimumObservedRateRatio: Double = 0.20
+    /** A larger gap is a structural rejection, never a request to manufacture samples. */
+    val maxObservedGapMillis: Long = 500L,
+    /** The aggregate observed cadence may differ slightly from the frozen source rate. */
+    val maximumObservedRateDeviationRatio: Double = 0.20
 ) {
     init {
-        require(maxInterpolationGapMillis >= 0L) { "maxInterpolationGapMillis must be non-negative" }
-        require(maximumCadenceJitterRatio >= 0.0) { "maximumCadenceJitterRatio must be non-negative" }
-        require(minimumObservedRateRatio in 0.0..1.0) { "minimumObservedRateRatio must be in [0,1]" }
+        require(maxObservedGapMillis >= 0L) { "maxObservedGapMillis must be non-negative" }
+        require(maximumObservedRateDeviationRatio in 0.0..1.0) {
+            "maximumObservedRateDeviationRatio must be in [0,1]"
+        }
     }
 }
 
 /**
  * Single phone-side boundary for raw Galaxy Watch PPG. The watch is kept raw;
- * this class owns time normalization, bounded interpolation, filtering, and
- * MADC so model callers cannot accidentally preprocess twice.
+ * this class owns duplicate removal, contract-gated filtering, and MADC so
+ * model callers cannot accidentally preprocess twice. It never creates a
+ * timestamp grid for the active live contract.
  */
 class WearablePpgWindowPreprocessor(
     private val contract: PpgPreprocessingContract = PpgPreprocessingContract(),
@@ -137,20 +165,20 @@ class WearablePpgWindowPreprocessor(
         }
         // Raw buffers preserve duplicate callback timestamps for transport and
         // diagnostics. Canonical preprocessing collapses only here, once.
-        val deduplicated = collapseDuplicatesForResampling(snapshot)
+        val deduplicated = collapseDuplicates(snapshot)
             ?: return PpgPreprocessResult.Rejected("ppg_timestamp_out_of_order")
         val duplicateSampleCount = (snapshot.timestampsMillis.size - deduplicated.timestamps.size).coerceAtLeast(0)
         val sourceRateHz = sourceRate(snapshot.type)
         val modelRateHz = modelRate(snapshot.type)
         val required = targetDurationSeconds?.let { requiredSamples(snapshot.type, it) }
-        val requiredDuration = targetDurationSeconds?.let { requiredDurationMillis(snapshot.type, it) }
+        val requiredDuration = targetDurationSeconds?.let { requiredDurationMillis(sourceRateHz, it) }
         val boundaryTolerance = sourceBoundaryToleranceMillis(sourceRateHz)
         val availableDuration = deduplicated.timestamps.lastOrNull()?.minus(
             deduplicated.timestamps.firstOrNull() ?: 0L
         ) ?: 0L
         // Samsung source cadence is quantized to integer milliseconds. Allow
-        // at most one source interval at either boundary; target timestamps
-        // stay within captured endpoints and no source sample is extrapolated.
+        // at most one source interval at either boundary while retaining only
+        // captured samples; no endpoint is extrapolated.
         if (required != null &&
             requiredDuration != null &&
             availableDuration + boundaryTolerance < requiredDuration
@@ -160,35 +188,56 @@ class WearablePpgWindowPreprocessor(
         if (availableDuration <= 0L) {
             return PpgPreprocessResult.Rejected("ppg_duration_insufficient")
         }
-        val expectedInterval = sourceIntervalMillis(sourceRateHz)
-        if (deduplicated.timestamps.indices.drop(1).any { index ->
-                deduplicated.timestamps[index] -
-                    deduplicated.timestamps[index - 1] > qualityPolicy.maxInterpolationGapMillis
-            }
-        ) {
-            return PpgPreprocessResult.Rejected("ppg_gap_exceeds_interpolation_policy")
-        }
-        if (!hasPlausibleCadence(deduplicated.timestamps, expectedInterval)) {
-            return PpgPreprocessResult.Rejected("ppg_cadence_unstable")
-        }
-
-        val targetTimes = canonicalTargetTimes(
-            firstTimestamp = deduplicated.timestamps.first(),
-            lastTimestamp = deduplicated.timestamps.last(),
-            type = snapshot.type,
-            targetDurationSeconds = targetDurationSeconds
-        )
-        if (targetDurationSeconds != null &&
-            deduplicated.timestamps.first() - targetTimes.first() > boundaryTolerance
-        ) {
-            return PpgPreprocessResult.WarmingUp(
-                deduplicated.timestamps.size,
-                required ?: requiredSamples(snapshot.type)
+        if (!ratesMatch(sourceRateHz, modelRateHz)) {
+            return PpgPreprocessResult.Rejected(
+                "ppg_rate_resampling_not_permitted",
+                rejectionDiagnostics(
+                    snapshot = snapshot,
+                    sourceRateHz = sourceRateHz,
+                    modelRateHz = modelRateHz,
+                    observedCadenceHz = observedCadence(deduplicated.timestamps),
+                    maxGapMillis = maxGap(deduplicated.timestamps),
+                    deduplicatedCount = deduplicated.timestamps.size,
+                    duplicateSampleCount = duplicateSampleCount,
+                    reason = "ppg_rate_resampling_not_permitted"
+                )
             )
         }
-        val resampled = resampleBounded(deduplicated, targetTimes, expectedInterval)
-            ?: return PpgPreprocessResult.Rejected("ppg_gap_exceeds_interpolation_policy")
-        if (resampled.values.all { it == resampled.values.first() }) {
+        val expectedInterval = sourceIntervalMillis(sourceRateHz)
+        val trueGapCount = countTrueGaps(deduplicated.timestamps, expectedInterval)
+        if (trueGapCount > 0) {
+            return PpgPreprocessResult.Rejected(
+                "ppg_true_gap_detected",
+                rejectionDiagnostics(
+                    snapshot = snapshot,
+                    sourceRateHz = sourceRateHz,
+                    modelRateHz = modelRateHz,
+                    observedCadenceHz = observedCadence(deduplicated.timestamps),
+                    maxGapMillis = maxGap(deduplicated.timestamps),
+                    deduplicatedCount = deduplicated.timestamps.size,
+                    duplicateSampleCount = duplicateSampleCount,
+                    trueGapCount = trueGapCount,
+                    reason = "ppg_true_gap_detected"
+                )
+            )
+        }
+        if (!hasPlausibleCadence(deduplicated.timestamps, expectedInterval)) {
+            return PpgPreprocessResult.Rejected(
+                "ppg_observed_cadence_out_of_contract",
+                rejectionDiagnostics(
+                    snapshot = snapshot,
+                    sourceRateHz = sourceRateHz,
+                    modelRateHz = modelRateHz,
+                    observedCadenceHz = observedCadence(deduplicated.timestamps),
+                    maxGapMillis = maxGap(deduplicated.timestamps),
+                    deduplicatedCount = deduplicated.timestamps.size,
+                    duplicateSampleCount = duplicateSampleCount,
+                    reason = "ppg_observed_cadence_out_of_contract"
+                )
+            )
+        }
+        val observed = trailingObservedWindow(deduplicated, targetDurationSeconds, sourceRateHz)
+        if (observed.values.all { it == observed.values.first() }) {
             return PpgPreprocessResult.Rejected("ppg_flatline_signal")
         }
 
@@ -206,8 +255,8 @@ class WearablePpgWindowPreprocessor(
             )
         val filtered = try {
             butterworthFilter.filter(
-                signal = resampled.values,
-                samplingRateHz = modelRateHz,
+                signal = observed.values,
+                samplingRateHz = sourceRateHz,
                 contract = filterContract
             )
         } catch (_: IllegalArgumentException) {
@@ -229,27 +278,35 @@ class WearablePpgWindowPreprocessor(
         if (filtered.any { !it.isFinite() }) {
             return PpgPreprocessResult.Rejected("ppg_filter_output_non_finite")
         }
-        val elapsedTargetTimes = LongArray(targetTimes.size) { index ->
-            (
-                snapshot.sessionElapsedStartMillis +
-                    (targetTimes[index] - deduplicated.timestamps.first())
-                ).coerceAtLeast(0L)
-        }
+        val elapsedObservedTimes = observed.elapsedTimestamps
         return PpgPreprocessResult.Ready(
             PreparedPpgWindow(
                 type = snapshot.type,
-                timestampsMillis = targetTimes,
+                timestampsMillis = observed.timestamps,
                 filteredValues = filtered,
-                rawSampleCount = deduplicated.timestamps.size,
-                interpolatedSampleCount = resampled.interpolatedMask.count { it },
+                rawValues = observed.rawValues,
+                rawValuesSha256 = sha256Text(observed.rawValues.joinToString(",")),
+                filteredValuesSha256 = sha256Text(filtered.joinToString(",")),
+                timestampBatchIds = observed.batchIds,
+                sourceBatchIds = observed.batchIds.asList().distinct(),
+                rawSampleCount = observed.timestamps.size,
+                interpolatedSampleCount = 0,
                 sessionElapsedStartMillis = snapshot.sessionElapsedStartMillis,
-                sessionElapsedEndMillis = elapsedTargetTimes.lastOrNull()
+                sessionElapsedEndMillis = elapsedObservedTimes.lastOrNull()
                     ?: snapshot.sessionElapsedEndMillis,
-                elapsedTimestampsMillis = elapsedTargetTimes,
-                interpolatedMask = resampled.interpolatedMask,
+                elapsedTimestampsMillis = elapsedObservedTimes,
+                interpolatedMask = BooleanArray(observed.timestamps.size),
                 motionAnnotation = motionAnnotator.annotate(filtered),
-                sourceGapInterpolatedSampleCount = resampled.sourceGapInterpolatedMask.count { it },
-                sourceGapInterpolatedMask = resampled.sourceGapInterpolatedMask,
+                sourceGapInterpolatedSampleCount = 0,
+                sourceGapInterpolatedMask = BooleanArray(observed.timestamps.size),
+                observedSampleCount = observed.timestamps.size,
+                observedMask = BooleanArray(observed.timestamps.size) { true },
+                repairedShortGapSampleCount = 0,
+                repairedShortGapMask = BooleanArray(observed.timestamps.size),
+                trueGapCount = 0,
+                unresolvedSampleCount = 0,
+                gridResampledSampleCount = 0,
+                gridResampledMask = BooleanArray(observed.timestamps.size),
                 sourceRateHz = sourceRateHz,
                 modelRateHz = modelRateHz,
                 preprocessingVersion = contract.preprocessingVersion,
@@ -258,11 +315,11 @@ class WearablePpgWindowPreprocessor(
                 sessionId = snapshot.sessionId,
                 windowId = snapshot.windowId
                     ?: "${snapshot.type.assetSuffix}:" +
-                    "${elapsedTargetTimes.firstOrNull() ?: 0L}-" +
-                    (elapsedTargetTimes.lastOrNull() ?: 0L),
+                    "${elapsedObservedTimes.firstOrNull() ?: 0L}-" +
+                    (elapsedObservedTimes.lastOrNull() ?: 0L),
                 duplicateSampleCount = duplicateSampleCount,
-                observedCadenceHz = observedCadence(deduplicated.timestamps),
-                maxObservedGapMillis = maxGap(deduplicated.timestamps),
+                observedCadenceHz = observedCadence(observed.timestamps),
+                maxObservedGapMillis = maxGap(observed.timestamps),
                 filterAlgorithm = filterContract.algorithm,
                 filterOrder = filterContract.order,
                 filterLowCutHz = filterContract.lowCutHz,
@@ -278,101 +335,82 @@ class WearablePpgWindowPreprocessor(
     private fun requiredSamples(type: PpgType, durationSeconds: Int): Int =
         kotlin.math.ceil(sourceRate(type) * durationSeconds).toInt().coerceAtLeast(2)
 
-    private fun requiredModelSamples(type: PpgType, durationSeconds: Int): Int =
-        kotlin.math.ceil(modelRate(type) * durationSeconds).toInt().coerceAtLeast(2)
-
-    private fun collapseDuplicatesForResampling(snapshot: WindowSnapshot): TimedSamples? {
+    private fun collapseDuplicates(snapshot: WindowSnapshot): TimedSamples? {
         val timestamps = ArrayList<Long>(snapshot.size)
+        val rawValues = ArrayList<Int>(snapshot.size)
+        val batchIds = ArrayList<String>(snapshot.size)
         val values = ArrayList<Double>(snapshot.size)
+        val elapsed = ArrayList<Long>(snapshot.size)
+        val hasElapsedTimestamps = snapshot.elapsedTimestampsMillis.size == snapshot.timestampsMillis.size
         var previous = Long.MIN_VALUE
         snapshot.timestampsMillis.indices.forEach { index ->
             val timestamp = snapshot.timestampsMillis[index]
             if (timestamp < previous) return null
             if (timestamp > previous) {
                 timestamps += timestamp
+                rawValues += snapshot.rawValues[index]
+                if (snapshot.timestampBatchIds.size == snapshot.timestampsMillis.size) {
+                    batchIds += snapshot.timestampBatchIds[index]
+                }
                 values += snapshot.rawValues[index].toDouble()
+                elapsed += if (hasElapsedTimestamps) {
+                    snapshot.elapsedTimestampsMillis[index]
+                } else {
+                    0L
+                }
             }
             previous = timestamp
         }
-        return TimedSamples(timestamps.toLongArray(), values.toDoubleArray())
+        val retainedTimestamps = timestamps.toLongArray()
+        val retainedElapsed = if (hasElapsedTimestamps) {
+            elapsed.toLongArray()
+        } else {
+            LongArray(retainedTimestamps.size) { index ->
+                (
+                    snapshot.sessionElapsedStartMillis +
+                        (retainedTimestamps[index] - retainedTimestamps.first())
+                    ).coerceAtLeast(0L)
+            }
+        }
+        return TimedSamples(
+            timestamps = retainedTimestamps,
+            rawValues = rawValues.toIntArray(),
+            batchIds = batchIds.toTypedArray(),
+            values = values.toDoubleArray(),
+            elapsedTimestamps = retainedElapsed
+        )
     }
 
     private fun hasPlausibleCadence(timestamps: LongArray, expectedInterval: Double): Boolean {
         if (timestamps.size < 2) return false
         val intervals = LongArray(timestamps.size - 1) { index -> timestamps[index + 1] - timestamps[index] }
         if (intervals.any { it <= 0L }) return false
-        // Health Tracking batches are not a metronome: valid callbacks show
-        // 20/31 ms jitter and duplicate timestamps. Gate sustained density and
-        // true dropout only; max gap is already checked separately.
+        // Health Tracking batches are not a metronome. We judge aggregate
+        // sensor cadence, not each individual integer-millisecond delta.
         val spanMillis = (timestamps.last() - timestamps.first()).coerceAtLeast(1L)
         val observedRateHz = (timestamps.size - 1) * 1_000.0 / spanMillis
-        return observedRateHz >= snapshotMinimumRate(expectedInterval)
+        val expectedRateHz = 1_000.0 / expectedInterval
+        val deviation = abs(observedRateHz - expectedRateHz) / expectedRateHz
+        return deviation <= qualityPolicy.maximumObservedRateDeviationRatio
     }
 
-    private fun snapshotMinimumRate(expectedInterval: Double): Double =
-        (1_000.0 / expectedInterval) * qualityPolicy.minimumObservedRateRatio
-
-    @Suppress("ReturnCount")
-    private fun canonicalTargetTimes(firstTimestamp: Long, lastTimestamp: Long, type: PpgType, targetDurationSeconds: Int?): LongArray {
-        val interval = modelIntervalMillis(type)
-        if (targetDurationSeconds == null) {
-            val sampleCount = ((lastTimestamp - firstTimestamp) / interval).toInt() + 1
-            return LongArray(sampleCount.coerceAtLeast(2)) { index ->
-                (firstTimestamp + (index * interval).roundToLong()).coerceAtMost(lastTimestamp)
-            }
-        }
-        val required = requiredModelSamples(type, targetDurationSeconds)
-        val nominalSpan = ((required - 1) * interval).roundToLong()
-        val start = lastTimestamp - nominalSpan
-        if (firstTimestamp > start) {
-            // Only the one-millisecond rounding allowance reaches this
-            // branch. Preserve both real endpoints instead of extrapolating
-            // a synthetic sample outside the captured interval.
-            val sourceSpan = lastTimestamp - firstTimestamp
-            return LongArray(required) { index ->
-                firstTimestamp + (sourceSpan * index.toLong() / (required - 1))
-            }
-        }
-        return LongArray(required) { index -> start + (index * interval).roundToLong() }
-    }
-
-    @Suppress("ReturnCount")
-    private fun resampleBounded(source: TimedSamples, targetTimes: LongArray, expectedSourceIntervalMillis: Double): ResampledSamples? {
-        val output = DoubleArray(targetTimes.size)
-        val interpolatedMask = BooleanArray(targetTimes.size)
-        val sourceGapInterpolatedMask = BooleanArray(targetTimes.size)
-        var rightIndex = 0
-        targetTimes.forEachIndexed { targetIndex, targetTime ->
-            while (rightIndex < source.timestamps.size && source.timestamps[rightIndex] < targetTime) {
-                rightIndex++
-            }
-            if (rightIndex < source.timestamps.size && source.timestamps[rightIndex] == targetTime) {
-                output[targetIndex] = source.values[rightIndex]
-                return@forEachIndexed
-            }
-            val leftIndex = rightIndex - 1
-            if (leftIndex < 0 || rightIndex >= source.timestamps.size) return null
-            val leftTime = source.timestamps[leftIndex]
-            val rightTime = source.timestamps[rightIndex]
-            val gap = rightTime - leftTime
-            if (gap > qualityPolicy.maxInterpolationGapMillis) return null
-            val weight = (targetTime - leftTime).toDouble() / gap.toDouble()
-            output[targetIndex] = source.values[leftIndex] * (1.0 - weight) + source.values[rightIndex] * weight
-            interpolatedMask[targetIndex] = true
-            sourceGapInterpolatedMask[targetIndex] =
-                gap >= (expectedSourceIntervalMillis * 2.0).roundToLong()
-        }
-        return ResampledSamples(output, interpolatedMask, sourceGapInterpolatedMask)
+    private fun trailingObservedWindow(source: TimedSamples, targetDurationSeconds: Int?, sourceRateHz: Double): TimedSamples {
+        if (targetDurationSeconds == null) return source
+        val targetDurationMillis = requiredDurationMillis(sourceRateHz, targetDurationSeconds)
+        val boundaryTolerance = sourceBoundaryToleranceMillis(sourceRateHz)
+        val startInclusive = source.timestamps.last() - targetDurationMillis - boundaryTolerance
+        val firstIndex = source.timestamps.indexOfFirst { it >= startInclusive }.coerceAtLeast(0)
+        return source.slice(firstIndex)
     }
 
     private fun sourceIntervalMillis(sourceRateHz: Double): Double = 1_000.0 / sourceRateHz
 
     private fun sourceBoundaryToleranceMillis(sourceRateHz: Double): Long = sourceIntervalMillis(sourceRateHz).roundToLong()
 
-    private fun modelIntervalMillis(type: PpgType): Double = 1_000.0 / modelRate(type)
-
-    private fun requiredDurationMillis(type: PpgType, durationSeconds: Int): Long =
-        ((requiredSamples(type, durationSeconds) - 1) * sourceIntervalMillis(sourceRate(type))).roundToLong()
+    private fun requiredDurationMillis(sourceRateHz: Double, durationSeconds: Int): Long = (
+        (kotlin.math.ceil(sourceRateHz * durationSeconds).toInt().coerceAtLeast(2) - 1) *
+            sourceIntervalMillis(sourceRateHz)
+        ).roundToLong()
 
     private fun sourceRate(type: PpgType): Double = contract.sourceRateHz
         ?.takeIf { it.isFinite() && it > 0.0 }
@@ -392,6 +430,21 @@ class WearablePpgWindowPreprocessor(
         .zipWithNext { left, right -> (right - left).coerceAtLeast(0L) }
         .maxOrNull() ?: 0L
 
+    private fun countTrueGaps(timestamps: LongArray, expectedIntervalMillis: Double): Int {
+        // Delivery jitter is tolerated, but a missing block is not silently
+        // bridged. Four source intervals supports the observed 20/60 ms Green
+        // jitter while rejecting an IR dropout that skips multiple 10 ms beats.
+        val maximumContractGap = minOf(
+            qualityPolicy.maxObservedGapMillis.toDouble(),
+            expectedIntervalMillis * MAX_CONSECUTIVE_OBSERVED_INTERVALS
+        )
+        return timestamps.asSequence()
+            .zipWithNext { left, right -> right - left }
+            .count { gap -> gap > maximumContractGap }
+    }
+
+    private fun ratesMatch(sourceRateHz: Double, modelRateHz: Double): Boolean = abs(sourceRateHz - modelRateHz) <= RATE_MATCH_TOLERANCE_HZ
+
     @Suppress("LongParameterList")
     private fun rejectionDiagnostics(
         snapshot: WindowSnapshot,
@@ -401,6 +454,7 @@ class WearablePpgWindowPreprocessor(
         maxGapMillis: Long = 0L,
         deduplicatedCount: Int,
         duplicateSampleCount: Int,
+        trueGapCount: Int = 0,
         filterContract: PpgFilterContract? = contract.filterContract,
         reason: String
     ): PpgRejectionDiagnostics = PpgRejectionDiagnostics(
@@ -428,14 +482,37 @@ class WearablePpgWindowPreprocessor(
         rejectedSampleCount = snapshot.transportDiagnostics?.rejectedSampleCount?.toInt() ?: 0,
         duplicateSampleCount = duplicateSampleCount,
         sequenceLossCount = snapshot.transportDiagnostics?.sequenceLossCount ?: 0L,
+        observedSampleCount = deduplicatedCount,
+        trueGapCount = trueGapCount,
+        unresolvedSampleCount = 0,
+        gridResampledSampleCount = 0,
         rejectionReason = reason
     )
 
-    private data class TimedSamples(val timestamps: LongArray, val values: DoubleArray)
-
-    private data class ResampledSamples(
+    private data class TimedSamples(
+        val timestamps: LongArray,
+        val rawValues: IntArray,
+        val batchIds: Array<String>,
         val values: DoubleArray,
-        val interpolatedMask: BooleanArray,
-        val sourceGapInterpolatedMask: BooleanArray
-    )
+        val elapsedTimestamps: LongArray
+    ) {
+        fun slice(fromIndex: Int): TimedSamples = TimedSamples(
+            timestamps = timestamps.copyOfRange(fromIndex, timestamps.size),
+            rawValues = rawValues.copyOfRange(fromIndex, rawValues.size),
+            batchIds = batchIds.takeIf { it.size == timestamps.size }
+                ?.copyOfRange(fromIndex, batchIds.size)
+                ?: emptyArray(),
+            values = values.copyOfRange(fromIndex, values.size),
+            elapsedTimestamps = elapsedTimestamps.copyOfRange(fromIndex, elapsedTimestamps.size)
+        )
+    }
+
+    private companion object {
+        const val RATE_MATCH_TOLERANCE_HZ = 1.0e-6
+        const val MAX_CONSECUTIVE_OBSERVED_INTERVALS = 4.0
+    }
+
+    private fun sha256Text(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(StandardCharsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
 }

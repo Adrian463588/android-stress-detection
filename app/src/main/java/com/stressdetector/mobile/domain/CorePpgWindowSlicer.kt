@@ -179,6 +179,9 @@ class CorePpgWindowSlicer(
         type = source.type,
         timestampsMillis = LongArray(indices.size) { source.timestampsMillis[indices[it]] },
         rawValues = IntArray(indices.size) { source.rawValues[indices[it]] },
+        timestampBatchIds = source.timestampBatchIds.takeIf { it.size == source.size }
+            ?.let { ids -> Array(indices.size) { ids[indices[it]] } }
+            ?: emptyArray(),
         sessionElapsedStartMillis = elapsed[indices.first()],
         sessionElapsedEndMillis = elapsed[indices.last()],
         elapsedTimestampsMillis = LongArray(indices.size) { elapsed[indices[it]] },

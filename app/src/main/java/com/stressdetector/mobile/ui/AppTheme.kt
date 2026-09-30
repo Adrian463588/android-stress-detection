@@ -55,13 +55,13 @@ private val AppColorScheme = darkColorScheme(
     background = AppPalette.Background,
     surface = AppPalette.Surface,
     surfaceVariant = AppPalette.SurfaceElevated,
-    onPrimary = Color.White,
-    onSecondary = Color.White,
+    onPrimary = AppPalette.Background,
+    onSecondary = AppPalette.Background,
     onBackground = AppPalette.TextPrimary,
     onSurface = AppPalette.TextPrimary,
     onSurfaceVariant = AppPalette.TextSecondary,
     error = AppPalette.Error,
-    onError = Color.White
+    onError = AppPalette.Background
 )
 
 private val AppShapes = Shapes(

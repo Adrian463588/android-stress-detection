@@ -15,10 +15,20 @@ android {
         versionCode 1
         versionName "0.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders = [wearAppLabel: "Stress Watch"]
     }
 
     buildFeatures {
         compose true
+    }
+
+    // Wear Data Layer only delivers between packages with the same application
+    // ID and signing identity. Keep the demo pair on the production identity.
+    flavorDimensions "evidence"
+    productFlavors {
+        production {
+            dimension "evidence"
+        }
     }
 
     lint {
