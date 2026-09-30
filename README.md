@@ -1,7 +1,7 @@
 # Stress Detector Android: Phone + Wear
 
 > **Unduh aplikasi untuk dosen/supervisor — versi 0.1.0 (versionCode 1)**  
-> [APK Android Phone](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.0/StressDetector-Phone-v0.1.0.apk) · [APK pendamping Wear OS](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.0/StressDetector-Wear-v0.1.0.apk)  
+> [APK Android Phone](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.0/app-production-debug.apk) · [APK pendamping Wear OS](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.0/wear-production-debug.apk)  
 > SHA-256 Phone: `DB8DAFBC11FE16BD9E86E72995968BF23C7A7B764B27E0501B1C5C419115FA73` · Wear: `4C4A57AFEDB0DF13A5E8AA44E112579346ED1D8C3DB1D6A06ED67DD1273C021D`  
 > APK Phone memuat model PPG Green dan IR dari run `20260916T132736Z`. Keduanya adalah debug APK untuk evaluasi internal; output bersifat decision-support, bukan diagnosis. Repository bersifat private; akun GitHub harus memiliki akses untuk mengunduh.
 
