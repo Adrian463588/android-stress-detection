@@ -1,52 +1,42 @@
-# Device Test Guide — Production Only
+# Uji perangkat HP dan Galaxy Watch
 
-## Build APK demo
+Panduan ini untuk APK `productionDebug` v0.1.0 dengan model internal dari run `20260916T132736Z`. Model ONNX berada di HP; Watch hanya merekam dan mengirim PPG. Instalasi dan unit test **bukan** bukti bahwa jalur sensor nyata sudah lolos.
+
+## Sebelum mulai
+
+1. Gunakan pasangan APK HP dan Watch dari [rilis yang sama](../README.md), atau build keduanya dengan index dan detector contract run yang sama.
+2. Aktifkan USB debugging di HP dan wireless debugging di Watch. Baca serial saat ini lewat `adb devices -l`; port Watch dapat berubah.
+3. Pastikan kedua perangkat muncul sebagai `device`, bukan `offline` atau `unauthorized`.
+
+Jika Watch tidak muncul, hentikan uji sensor. Jangan mengganti dengan batch, sesi, atau hasil buatan.
+
+## Instal tanpa menghapus data
+
+Isi serial yang benar-benar tampil pada `adb devices -l` dan path dua APK yang
+diunduh atau dibangun:
 
 ```powershell
-cd D:\SEMESTER12\SkripiDump\ProsesData\android
-.\gradlew.bat :app:assembleProductionDebug :wear:assembleProductionDebug `
-  "-PinternalModelIndex=..\data\artifacts\runs\20260916T132736Z\export\internal\internal_model_index.json" `
-  "-PdetectorContract=..\data\artifacts\runs\20260916T132736Z\export\internal\ppg_detector_contract.json"
+$phoneSerial = Read-Host 'Serial ADB HP'
+$watchSerial = Read-Host 'Serial ADB Watch'
+$phoneApk = (Resolve-Path -LiteralPath (Read-Host 'Path APK HP')).Path
+$watchApk = (Resolve-Path -LiteralPath (Read-Host 'Path APK Watch')).Path
+
+adb -s $phoneSerial install -r $phoneApk
+adb -s $watchSerial install -r $watchApk
+adb -s $phoneSerial shell pm path com.stressdetector
+adb -s $watchSerial shell pm path com.stressdetector
 ```
 
-APK demo:
+Kedua APK harus memiliki package `com.stressdetector` dan identitas penandatanganan yang cocok. Jangan memakai `pm clear`, uninstall, atau APK dari run lain untuk mengatasi kegagalan koneksi.
 
-```text
-app/build/outputs/apk/production/debug/app-production-debug.apk
-wear/build/outputs/apk/production/debug/wear-production-debug.apk
-```
+## Periksa satu sesi nyata
 
-Package Phone dan Watch harus sama-sama `com.stressdetector`. Android project
-tidak lagi menghasilkan APK research. Artifact research lama hanya disimpan
-sebagai evidence pipeline historis.
+1. Buka aplikasi Watch dan berikan izin sensor yang diminta. Buka aplikasi HP dan berikan izin koneksi yang diperlukan.
+2. Di HP, pilih **Coba koneksi**. Status penemuan perangkat saja belum cukup; tunggu aplikasi Watch dapat dijangkau.
+3. Jalankan sesi penuh sekitar 300 detik. Catat jumlah sampel Green/IR yang benar-benar diterima, gap transport, dan status kualitas; jangan menganggap jumlah nominal sebagai bukti penerimaan.
+4. Tunggu finalisasi berhenti pada hasil, sinyal tidak cukup, gagal, atau timeout. Jika kualitas gagal, aplikasi tidak boleh menampilkan prediksi stres yang yakin.
+5. Periksa run ID model `20260916T132736Z`, kontrak detector, serta trace Green dan IR. Red bersifat diagnostik dan tidak memiliki model stres pada run ini.
 
-## Manual Test Flow
+Parity ONNX pada vektor fitur dan parity jalur **Watch nyata sampai fitur/probabilitas** adalah dua pemeriksaan berbeda. Receipt sensor hanya sah jika batch Watch aktual, lineage, kedua kanal, dan hasil verifier Python cocok. Ketiadaan capture atau satu kanal valid saja tetap `PENDING_DEVICE_CAPTURE`/`NO_GO`, bukan keberhasilan.
 
-1. Baca ulang serial Phone dan endpoint wireless Watch dengan `adb devices -l`.
-2. Jika masih terpasang, uninstall hanya package `com.stressdetector.research`
-   pada Phone dan Watch. Jangan uninstall `com.stressdetector` atau memakai
-   `pm clear`.
-3. Install pasangan APK production dengan `adb install -r -d`.
-4. Open the watch app once and grant body sensor permissions.
-5. Open the phone app.
-6. Press `Coba koneksi` and wait for `Siap` / `Mulai deteksi`; node discovery alone is not sufficient.
-7. Press `Mulai deteksi` from the phone, or press `Start` on the watch.
-8. Wait until the session reaches the full `300 s` boundary.
-9. A stable session should show approximately `7500` raw Green samples and `7500` raw IR samples from the Watch; IR is resampled to the model rate on the phone.
-10. Final inference requires up to seven valid 180-second windows from the core `[30 s, 270 s)` interval.
-11. Confirm the packaged model run is `20260916T132736Z` and no `.research` launcher exists.
-
-## Device requirement
-
-There is no production synthetic-session shortcut. Without a paired phone and Watch,
-the flow cannot produce device acceptance evidence and must remain pending.
-
-## Expected Behavior
-
-- Green is the primary production candidate.
-- IR is secondary when `stress_ppg_ir_model.onnx` exists.
-- If quality is poor or window is too short, the UI shows `Invalid` rather than a confident prediction.
-
-## Known Runtime Risk
-
-Samsung Health Sensor SDK access can fail with policy or permission errors on unsupported watches or non-approved environments. In that case the watch app will show the SDK error in its status line.
+Jika Samsung Health Sensor SDK menolak akses, tampilkan dan catat pesan izin/kebijakan SDK; jangan mengisi sampel yang hilang. Hasil ini adalah dukungan keputusan internal, bukan diagnosis.
