@@ -11,8 +11,12 @@ diagnosis medis.
 
 Kedua berkas berasal dari [rilis yang sama](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.0).
 Instal keduanya: Watch merekam PPG, sedangkan model ONNX berjalan di HP. APK
-ini **debug build untuk evaluasi internal**, bukan rilis Play Store. Repositori
-bersifat privat; dosen atau developer perlu akses GitHub untuk mengunduhnya.
+ini **debug build untuk evaluasi internal**, bukan rilis Play Store. Jika repo
+masih privat, unduhan memerlukan akun GitHub yang diberi akses.
+
+> **Sebelum membuka repo atau rilis untuk publik:** pastikan persetujuan partner
+> Samsung untuk mendistribusikan aplikasi yang memakai Health Sensor SDK sudah
+> diperoleh. Lihat [ketentuan distribusi Samsung](https://developer.samsung.com/health/sensor/guide/developer-mode.html).
 
 Model yang dikemas berasal dari run `20260916T132736Z`. Green menjadi kanal
 utama, IR dinilai terpisah, dan Red tidak memiliki model stres. Kualitas sinyal
@@ -69,6 +73,23 @@ tiruan ketika sensor, kontrak, atau model tidak tersedia.
 
 Build sengaja gagal jika artefak run tersebut hilang, berubah, atau tidak cocok.
 Tidak ada fallback ke index model global.
+
+### Samsung Health Sensor SDK
+
+Modul Watch memakai Samsung Health Sensor SDK v1.4.1. SDK tidak disimpan di Git;
+unduh dari [portal resmi Samsung Developer](https://developer.samsung.com/health/sensor/overview.html).
+
+1. Unduh dan ekstrak SDK dari halaman resmi.
+2. Salin `samsung-health-sensor-api.aar` ke `wear/libs/`.
+3. Jalankan build seperti biasa. Gradle membaca AAR lokal dari folder tersebut.
+
+Aturan `.gitignore` mengecualikan AAR ini dan folder hasil ekstraksi `1.4.1/`.
+Jangan menghapus aturan tersebut atau memasukkan kembali arsip SDK ke commit.
+
+Samsung mensyaratkan persetujuan partner sebelum aplikasi yang memakai SDK
+didistribusikan. Developer mode hanya untuk pengujian dan debugging. Baca
+[panduan resmi Developer Mode](https://developer.samsung.com/health/sensor/guide/developer-mode.html)
+sebelum uji pada Watch.
 
 Jalankan dari direktori `android/` di checkout ProsesData:
 

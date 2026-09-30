@@ -41,6 +41,13 @@ device-backups/
 # Keystore files (Security: Prevent leaking signing keys)
 *.jks
 *.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+credentials.properties
+signing.properties
+key.properties
 
 # External native build folder
 .externalNativeBuild
@@ -49,11 +56,16 @@ device-backups/
 # Google Services / Secrets (DevSecOps)
 google-services.json
 .env
+.env.*
+!.env.example
 
 # Project specific
 scratch.kt
 TestFilter.kt
 *.log
 /data/
-wear/libs/*.aar
+
+# Samsung Health Sensor SDK: download locally from Samsung Developer.
+1.4.1/
+wear/libs/samsung-health-sensor-api*.aar
 test_vectors*.json
