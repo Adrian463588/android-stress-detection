@@ -19,7 +19,9 @@ data class PpgBatch(
     val protocolVersion: Int = SessionIdentity.CURRENT_PROTOCOL_VERSION,
     /** Phone-local node that owns the session. */
     val peerNodeId: String = "",
-    val generation: Long = 0L
+    val generation: Long = 0L,
+    /** Optional observed motion evidence; never a PPG or model feature. */
+    val accelerometerSamples: List<AccelerometerSample> = emptyList()
 ) {
     init {
         require(sessionId.isNotBlank()) { "sessionId must not be blank" }
@@ -47,6 +49,18 @@ data class PpgBatch(
             "timestampsMillis and rawValues must have the same size"
         }
         require(rawValues.isNotEmpty()) { "PpgBatch must not be empty" }
+        require(accelerometerSamples.size <= MAX_ACCELEROMETER_SAMPLES) { "Too many accelerometer samples" }
+        require(accelerometerSamples.isEmpty() || schemaVersion >= ACCELEROMETER_SCHEMA_VERSION) {
+            "Accelerometer samples require the V5 batch schema"
+        }
+        require(accelerometerSamples.all { it.elapsedMillis in elapsedStartMillis..elapsedEndMillis }) {
+            "Accelerometer samples must be within the PPG batch elapsed span"
+        }
+        require(
+            accelerometerSamples.zipWithNext().all { (first, second) ->
+                first.sensorTimestampNanos < second.sensorTimestampNanos && first.elapsedMillis <= second.elapsedMillis
+            }
+        ) { "Accelerometer samples must be monotonic" }
         require(
             (1 until timestampsMillis.size).all { index ->
                 timestampsMillis[index] >= timestampsMillis[index - 1]
@@ -83,7 +97,8 @@ data class PpgBatch(
             sessionNonce == other.sessionNonce &&
             protocolVersion == other.protocolVersion &&
             peerNodeId == other.peerNodeId &&
-            generation == other.generation
+            generation == other.generation &&
+            accelerometerSamples == other.accelerometerSamples
     }
 
     override fun hashCode(): Int {
@@ -102,6 +117,7 @@ data class PpgBatch(
         result = 31 * result + protocolVersion
         result = 31 * result + peerNodeId.hashCode()
         result = 31 * result + generation.hashCode()
+        result = 31 * result + accelerometerSamples.hashCode()
         return result
     }
 
@@ -119,10 +135,12 @@ data class PpgBatch(
     companion object {
         const val LEGACY_SCHEMA_VERSION: Int = 0
 
-        /** V1 is line transport, V2 binary legacy, V3 adds source rate, V4 adds protocol identity. */
-        const val CURRENT_SCHEMA_VERSION: Int = 4
+        /** V1 line transport, V2 binary, V3 source rate, V4 identity, V5 observed accelerometer. */
+        const val CURRENT_SCHEMA_VERSION: Int = 5
         const val SOURCE_RATE_SCHEMA_VERSION: Int = 3
         const val IDENTITY_SCHEMA_VERSION: Int = 4
+        const val ACCELEROMETER_SCHEMA_VERSION: Int = 5
+        const val MAX_ACCELEROMETER_SAMPLES: Int = 1_024
 
         fun batchIdFor(sessionId: String, type: PpgType, sequenceNumber: Long): String = "$sessionId|${type.name}|$sequenceNumber"
 

@@ -76,7 +76,11 @@ class SpeechUtteranceSegmenter(
         return SpeechSegmenterEmission(framesToTranscribe, completed)
     }
 
-    fun finish(): SpeechUtterance? = if (activeFrames.isEmpty()) null else emitAndReset()
+    fun finish(): SpeechUtterance? {
+        preRoll.clear()
+        preRollStartOffsetMs = null
+        return if (activeFrames.isEmpty()) null else emitAndReset()
+    }
 
     private fun addPreRoll(frame: SpeechFrame) {
         if (preRoll.isEmpty()) preRollStartOffsetMs = frame.startOffsetMs

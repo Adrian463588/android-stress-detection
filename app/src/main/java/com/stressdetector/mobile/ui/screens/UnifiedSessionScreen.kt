@@ -13,6 +13,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,11 +23,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
@@ -38,7 +44,6 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -53,6 +58,7 @@ import androidx.compose.material3.PermanentDrawerSheet
 import androidx.compose.material3.PermanentNavigationDrawer
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -98,13 +104,15 @@ import com.stressdetector.mobile.domain.engine.SessionFinalizationStage
 import com.stressdetector.mobile.domain.engine.SpeechRuntimeState
 import com.stressdetector.mobile.domain.engine.VerbatimSessionSummary
 import com.stressdetector.mobile.ui.AppSpacing
-import com.stressdetector.mobile.ui.DefaultSpeakerBubbleToneResolver
+import com.stressdetector.mobile.ui.LocalAppMotion
 import com.stressdetector.mobile.ui.PremiumCard
-import com.stressdetector.mobile.ui.SpeakerBubbleTone
 import com.stressdetector.mobile.ui.viewmodels.SessionCommandState
 import com.stressdetector.mobile.ui.viewmodels.UnifiedSessionEffect
 import com.stressdetector.mobile.ui.viewmodels.UnifiedSessionUiState
 import com.stressdetector.mobile.ui.viewmodels.UnifiedSessionViewModel
+import com.stressdetector.mobile.ui.viewmodels.VerbatimMarkerCounts
+import com.stressdetector.mobile.ui.viewmodels.VerbatimMarkerFilter
+import com.stressdetector.mobile.ui.viewmodels.VerbatimWorkspace
 import com.stressdetector.mobile.ui.viewmodels.drawerStatusLabel
 import com.stressdetector.mobile.ui.viewmodels.drawerStorageLabel
 import com.stressdetector.mobile.ui.viewmodels.needsVerbatimStorageRecovery
@@ -134,7 +142,10 @@ fun UnifiedSessionScreen(
     var pendingAudioUri by rememberSaveable { mutableStateOf<String?>(null) }
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
-    ) { uri -> uri?.let(viewModel::exportLastSession) }
+    ) { uri -> viewModel.exportLastSession(uri) }
+    val textExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri -> viewModel.exportTranscript(uri) }
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -151,8 +162,10 @@ fun UnifiedSessionScreen(
     }
 
     var showConsentDialog by rememberSaveable { mutableStateOf(false) }
+    var microphoneDenied by rememberSaveable { mutableStateOf(false) }
     var showSessionNameDialog by rememberSaveable { mutableStateOf(false) }
     var sessionName by rememberSaveable { mutableStateOf("Sesi Verbatim") }
+    var monitoringEnabled by rememberSaveable { mutableStateOf(false) }
     var consentConfirmedForPendingStart by rememberSaveable { mutableStateOf(false) }
     var deleteTargetSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var showDeleteAllDialog by rememberSaveable { mutableStateOf(false) }
@@ -161,6 +174,9 @@ fun UnifiedSessionScreen(
 
     LaunchedEffect(viewModel, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                microphoneDenied = false
+            }
             viewModel.refreshSpeechRuntime()
             viewModel.effects.collect { effect ->
                 when (effect) {
@@ -184,9 +200,11 @@ fun UnifiedSessionScreen(
             (permissions[Manifest.permission.RECORD_AUDIO] ?: false) ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         if (audioGranted && consentConfirmedForPendingStart) {
+            microphoneDenied = false
             consentConfirmedForPendingStart = false
-            viewModel.startSession(sessionName)
+            viewModel.startSession(sessionName, monitoringEnabled)
         } else {
+            microphoneDenied = needsMicrophone && !audioGranted
             consentConfirmedForPendingStart = false
             Toast.makeText(
                 context,
@@ -204,8 +222,9 @@ fun UnifiedSessionScreen(
         val needsMicrophone = pendingAudioUri == null
         val audioPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
         if (!needsMicrophone || audioPermission == PackageManager.PERMISSION_GRANTED) {
+            microphoneDenied = false
             consentConfirmedForPendingStart = false
-            viewModel.startSession(sessionName)
+            viewModel.startSession(sessionName, monitoringEnabled)
         } else {
             val permissions = buildList {
                 if (needsMicrophone) add(Manifest.permission.RECORD_AUDIO)
@@ -218,7 +237,18 @@ fun UnifiedSessionScreen(
         AlertDialog(
             onDismissRequest = { showConsentDialog = false },
             title = { Text("Persetujuan pasien") },
-            text = { Text("Pastikan persetujuan perekaman sudah diberikan sebelum sesi dimulai.") },
+            text = {
+                Text(
+                    "Pastikan semua pembicara menyetujui perekaman dan analisis lokal." +
+                        if (monitoringEnabled &&
+                            pendingAudioUri == null
+                        ) {
+                            " Sesi ini juga memakai PPG Galaxy Watch dengan persetujuan pemakainya."
+                        } else {
+                            " PPG tidak digunakan."
+                        }
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     consentConfirmedForPendingStart = true
@@ -235,7 +265,10 @@ fun UnifiedSessionScreen(
             onDismissRequest = { showSessionNameDialog = false },
             title = { Text("Buat rekaman baru") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     OutlinedTextField(
                         value = sessionName,
                         onValueChange = { sessionName = it.take(80) },
@@ -244,13 +277,30 @@ fun UnifiedSessionScreen(
                     )
                     Text("Bahasa sesi", style = MaterialTheme.typography.labelMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { viewModel.setSessionLanguage("id") }) {
+                        TextButton(onClick = { viewModel.setSessionLanguage("id") }, modifier = Modifier.weight(1f)) {
                             Text(if (uiState.selectedLanguage == "id") "✓ Indonesia" else "Indonesia")
                         }
-                        TextButton(onClick = { viewModel.setSessionLanguage("en") }) {
+                        TextButton(onClick = { viewModel.setSessionLanguage("en") }, modifier = Modifier.weight(1f)) {
                             Text(if (uiState.selectedLanguage == "en") "✓ English" else "English")
                         }
                     }
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("PPG Galaxy Watch (opsional)", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Switch(
+                            checked = monitoringEnabled && pendingAudioUri == null,
+                            onCheckedChange = { monitoringEnabled = it },
+                            enabled = pendingAudioUri == null,
+                            modifier = Modifier.semantics { contentDescription = "Aktifkan analisis PPG Galaxy Watch untuk rekaman baru" }
+                        )
+                    }
+                    Text(
+                        if (pendingAudioUri != null) {
+                            "Audio impor dianalisis tanpa PPG live."
+                        } else {
+                            "Audio tetap berfungsi tanpa Watch. PPG memerlukan sinyal berkualitas dan model ONNX siap; bukan diagnosis."
+                        },
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             },
             confirmButton = {
@@ -334,15 +384,11 @@ fun UnifiedSessionScreen(
             SessionContent(
                 uiState = uiState,
                 modifier = Modifier,
-                windowWidthSizeClass = windowWidthSizeClass,
                 onOpenDrawer = ::openDrawer,
                 onStartOrStop = {
-                    when (uiState.sessionCommandState) {
-                        SessionCommandState.Recording,
-                        SessionCommandState.Paused
-                        -> viewModel.stopSession()
-                        SessionCommandState.Idle,
-                        is SessionCommandState.Error -> {
+                    when {
+                        VerbatimWorkspace(uiState).canStop -> viewModel.stopSession()
+                        uiState.canStartNewSession -> {
                             pendingAudioUri = null
                             viewModel.requestNewSession()
                         }
@@ -362,10 +408,8 @@ fun UnifiedSessionScreen(
                 onSeekAudio = viewModel::seekAudio,
                 onPlayFromMarker = viewModel::playFromMarker,
                 onRetryPlayback = viewModel::prepareAudioPlayback,
-                onExport = {
-                    val name = uiState.selectedSession?.summary?.sessionName ?: "verbatim-session"
-                    exportLauncher.launch("$name.zip")
-                },
+                onExport = { viewModel.prepareZipExport()?.let(exportLauncher::launch) },
+                onExportText = { viewModel.prepareTranscriptExport()?.let(textExportLauncher::launch) },
                 onDelete = {
                     uiState.selectedSessionId?.let { deleteTargetSessionId = it }
                 },
@@ -380,7 +424,16 @@ fun UnifiedSessionScreen(
                     manualAnnotationText = ""
                     showManualAnnotationDialog = true
                 },
-                onDeleteManualAnnotation = viewModel::deleteManualAnnotation
+                onDeleteManualAnnotation = viewModel::deleteManualAnnotation,
+                microphoneDenied = microphoneDenied,
+                onOpenMicrophoneSettings = {
+                    context.startActivity(
+                        Intent(
+                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            android.net.Uri.parse("package:${context.packageName}")
+                        )
+                    )
+                }
             )
         }
 
@@ -404,7 +457,7 @@ fun UnifiedSessionScreen(
             title = { Text("Hapus sesi?") },
             text = { Text("Audio, transcript, divergence events, dan summary sesi ini akan dihapus.") },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = VerbatimWorkspace(uiState).canManageStoredSessions, onClick = {
                     viewModel.deleteSession(sessionId)
                     deleteTargetSessionId = null
                 }) { Text("Hapus") }
@@ -419,7 +472,7 @@ fun UnifiedSessionScreen(
             title = { Text("Hapus semua sesi?") },
             text = { Text("Semua rekaman Verbatim+ dan artifact terenkripsi akan dihapus.") },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = VerbatimWorkspace(uiState).canManageStoredSessions, onClick = {
                     viewModel.deleteAllSessions()
                     showDeleteAllDialog = false
                 }) { Text("Hapus semua") }
@@ -453,7 +506,7 @@ private fun VerbatimPrimaryAction(
             contentDescription = description
         )
         Spacer(Modifier.size(6.dp))
-        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label)
     }
 }
 
@@ -539,8 +592,7 @@ internal fun SessionSidebar(
     onOpenProfile: () -> Unit,
     onRefreshReadiness: () -> Unit
 ) {
-    val sessionBusy = uiState.sessionCommandState !is SessionCommandState.Idle &&
-        uiState.sessionCommandState !is SessionCommandState.Error
+    val sessionBusy = !VerbatimWorkspace(uiState).canManageStoredSessions
     LazyColumn(
         modifier = Modifier
             .fillMaxHeight()
@@ -788,11 +840,11 @@ private fun SessionHistoryItem(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SessionContent(
+internal fun SessionContent(
     uiState: UnifiedSessionUiState,
     modifier: Modifier,
-    windowWidthSizeClass: WindowWidthSizeClass,
     onOpenDrawer: () -> Unit,
     onStartOrStop: () -> Unit,
     onPauseOrResume: () -> Unit,
@@ -803,376 +855,335 @@ private fun SessionContent(
     onPlayFromMarker: (Long) -> Unit,
     onRetryPlayback: () -> Unit,
     onExport: () -> Unit,
+    onExportText: () -> Unit,
     onDelete: () -> Unit,
     onOpenProfile: () -> Unit,
     onRefreshReadiness: () -> Unit,
     onCycleSpeaker: (String) -> Unit,
     onEditTranscript: (String, String) -> Unit,
     onRequestAddManualAnnotation: () -> Unit,
-    onDeleteManualAnnotation: (String) -> Unit
+    onDeleteManualAnnotation: (String) -> Unit,
+    microphoneDenied: Boolean = false,
+    onOpenMicrophoneSettings: () -> Unit = {}
 ) {
-    val sessionBusy = uiState.sessionCommandState !is SessionCommandState.Idle &&
-        uiState.sessionCommandState !is SessionCommandState.Error
-    val canStart = uiState.canStartNewSession
-    val canStop = uiState.sessionCommandState is SessionCommandState.Recording ||
-        uiState.sessionCommandState is SessionCommandState.Paused
-    val canPauseOrResume = canStop
-    val actionLabel = when {
-        canStop -> "Stop"
-        canStart -> "Mulai rekaman"
-        else -> "Menyiapkan…"
+    val workspace = remember(uiState) { VerbatimWorkspace(uiState) }
+    val counts = remember(uiState) { VerbatimMarkerCounts(uiState) }
+    var panel by rememberSaveable(uiState.selectedSessionId) { mutableStateOf("TRANSCRIPT") }
+    var filter by rememberSaveable(uiState.selectedSessionId) { mutableStateOf(VerbatimMarkerFilter.ALL) }
+    var technicalExpanded by rememberSaveable(uiState.selectedSessionId) { mutableStateOf(false) }
+    val transcriptItems = remember(uiState.transcriptSegments, workspace.capturing) {
+        val ordered = uiState.transcriptSegments.sortedWith(compareBy({ it.startOffsetMs }, { it.id })).distinctBy { it.id }
+        if (workspace.capturing) ordered.takeLast(LIVE_TRANSCRIPT_TAIL_LIMIT) else ordered
     }
-    val actionDescription = when {
-        canStop -> "Stop dan simpan sesi"
-        canStart -> "Mulai rekaman Verbatim+"
-        else -> "Menyiapkan Verbatim+"
-    }
-    var selectedLivePanel by rememberSaveable { mutableStateOf("TRANSCRIPT") }
-    var technicalEvidenceExpanded by rememberSaveable { mutableStateOf(false) }
-    val transcriptItems = remember(uiState.transcriptSegments) {
-        uiState.transcriptSegments
-            .sortedWith(compareBy({ it.startOffsetMs }, { it.id }))
-            .distinctBy { it.id }
-    }
-    val liveTranscriptItems = remember(transcriptItems) {
-        transcriptItems.takeLast(LIVE_TRANSCRIPT_TAIL_LIMIT)
-    }
-    val markerItems = remember(uiState.divergenceEvents) {
-        uiState.divergenceEvents
+    val markerItems = remember(uiState.divergenceEvents, filter) {
+        uiState.divergenceEvents.distinctBy { it.eventId }.filter(filter::includes)
             .sortedWith(compareBy({ it.episodeStartElapsedMillis }, { it.eventId }))
-            .distinctBy { it.eventId }
     }
-    val annotationItems = remember(uiState.annotations) {
-        uiState.annotations
-            .sortedWith(compareBy({ it.timestampMs }, { it.id }))
-            .distinctBy { it.id }
-    }
-    LazyColumn(
-        modifier = modifier.fillMaxSize().padding(horizontal = AppSpacing.Screen),
-        contentPadding = PaddingValues(top = AppSpacing.Small, bottom = AppSpacing.Large),
-        verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)
-    ) {
-        item {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(AppSpacing.Compact)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onOpenDrawer) {
-                        Icon(Icons.Default.Menu, contentDescription = "Buka daftar sesi")
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Verbatim+",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            "Transkripsi lokal dan monitoring sesi",
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            "${when {
-                                uiState.isSessionActive -> "Merekam"
-                                canStart -> "Siap"
-                                uiState.speechRuntimeState is SpeechRuntimeState.Checking -> "Menyiapkan"
-                                else -> "Belum siap"
-                            }} · ${formatElapsed(uiState.elapsedSeconds)}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (uiState.isSessionActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
-                        )
-                    }
-                }
-                if (canStart || canStop) {
-                    VerbatimPrimaryAction(
-                        label = actionLabel,
-                        description = actionDescription,
-                        enabled = canStart || canStop,
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = onStartOrStop
-                    )
-                }
-            }
+    val cueItems = if (filter == VerbatimMarkerFilter.ALL || filter == VerbatimMarkerFilter.TEXT) uiState.reviewCues else emptyList()
+    val annotationItems = remember(uiState.annotations, filter) {
+        if (filter == VerbatimMarkerFilter.ALL || filter == VerbatimMarkerFilter.MANUAL) {
+            uiState.annotations.distinctBy { it.id }.sortedWith(compareBy({ it.timestampMs }, { it.id }))
+        } else {
+            emptyList()
         }
-        if (uiState.storageState.needsVerbatimStorageRecovery() ||
-            uiState.speechRuntimeState !is SpeechRuntimeState.Ready
+    }
+    val transcriptScroll = rememberLazyListState()
+    val markerScroll = rememberLazyListState()
+    LaunchedEffect(uiState.selectedSessionId) {
+        transcriptScroll.scrollToItem(0)
+        markerScroll.scrollToItem(0)
+    }
+    Column(modifier.fillMaxSize().imePadding()) {
+        LazyColumn(
+            state = if (panel == "TRANSCRIPT") transcriptScroll else markerScroll,
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = AppSpacing.Screen),
+            contentPadding = PaddingValues(top = AppSpacing.Small, bottom = AppSpacing.Large),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)
         ) {
-            item {
-                VerbatimReadinessBanner(
-                    uiState = uiState,
-                    onOpenProfile = onOpenProfile,
-                    onRefreshReadiness = onRefreshReadiness
-                )
-            }
-        }
-        item {
-            if (uiState.isSessionActive || sessionBusy) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(onClick = onPauseOrResume, enabled = canPauseOrResume) {
-                            Icon(
-                                if (uiState.isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                                contentDescription = null
-                            )
-                            Spacer(Modifier.size(6.dp))
-                            Text(
-                                when (uiState.sessionCommandState) {
-                                    SessionCommandState.Paused -> "Lanjutkan"
-                                    SessionCommandState.Pausing -> "Menjeda…"
-                                    SessionCommandState.Resuming -> "Melanjutkan…"
-                                    else -> "Pause"
-                                }
-                            )
-                        }
+            item("header") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onOpenDrawer) { Icon(Icons.Default.Menu, contentDescription = "Buka daftar sesi") }
+                    Column(Modifier.weight(1f)) {
+                        Text("Verbatim+", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                         Text(
-                            "${sessionCommandStatus(uiState.sessionCommandState)} · ${uiState.watchStatus}",
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Text(
-                        "Monitor: ${uiState.monitorStatus}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    val hasTranscriptionBacklog = uiState.speechProcessingState.isDraining ||
-                        uiState.speechProcessingState.backlogFrames > 0
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(18.dp),
-                        contentAlignment = Alignment.CenterStart
-                    ) {
-                        Text(
-                            "Transkripsi tertinggal: ${uiState.speechProcessingState.backlogFrames} frame",
-                            modifier = Modifier.alpha(if (hasTranscriptionBacklog) 1f else 0f),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.tertiary
+                            if (workspace.capturing) sessionCommandStatus(uiState.sessionCommandState) else "Transkrip dan bukti wawancara",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.semantics {
+                                liveRegion = LiveRegionMode.Polite
+                            }
                         )
                     }
                 }
             }
-        }
-        uiState.selectedSession?.summary?.let { session ->
-            item {
-                PremiumCard {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (uiState.storageState.needsVerbatimStorageRecovery() || uiState.speechRuntimeState !is SpeechRuntimeState.Ready) {
+                item("readiness") { VerbatimReadinessBanner(uiState, onOpenProfile, onRefreshReadiness) }
+            }
+            if (microphoneDenied) {
+                item("microphone-permission") {
+                    Text(
+                        "Izin mikrofon belum diberikan. Impor WAV dan review arsip tetap tersedia.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    TextButton(onClick = onOpenMicrophoneSettings, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text("Buka setelan izin mikrofon")
+                    }
+                }
+            }
+            if (workspace.capturing) {
+                item("live-status") {
+                    Text(formatElapsed(uiState.elapsedSeconds), style = MaterialTheme.typography.headlineSmall)
+                    if (uiState.speechProcessingState.isDraining || uiState.speechProcessingState.backlogFrames > 0) {
+                        Text(
+                            "Transkripsi sedang diproses · ${uiState.speechProcessingState.backlogFrames} frame antrean",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                item("live-pitch") {
+                    VerbatimPitchPanel(uiState.livePitch, uiState.isPaused)
+                }
+            }
+            uiState.selectedSession?.summary?.let { session ->
+                item("archive") {
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Compact)) {
                         Text(session.sessionName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text(
                             "${formatSessionTime(session.startedAtMillis)} · ${formatDuration(session.durationSeconds)}",
                             style = MaterialTheme.typography.bodySmall
                         )
-                        Text(
-                            "${session.drawerStatusLabel()} · ${session.drawerStorageLabel()}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (!uiState.isSessionActive) {
+                        Text("${session.drawerStatusLabel()} · ${session.drawerStorageLabel()}", style = MaterialTheme.typography.bodySmall)
+                        if (workspace.archiveReady) {
                             SessionPlaybackControls(
-                                state = uiState.playbackState,
-                                positionMillis = uiState.playbackPositionMillis,
-                                durationMillis = uiState.playbackDurationMillis,
-                                onPlay = onPlay,
-                                onPause = onPausePlayback,
-                                onStop = onStopPlayback,
-                                onSeek = onSeekAudio,
-                                onRetry = onRetryPlayback
+                                uiState.playbackState,
+                                uiState.playbackPositionMillis,
+                                uiState.playbackDurationMillis,
+                                onPlay,
+                                onPausePlayback,
+                                onStopPlayback,
+                                onSeekAudio,
+                                onRetryPlayback,
+                                enabled = workspace.canPrepareAudio
                             )
-                            if (windowWidthSizeClass == WindowWidthSizeClass.Compact) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalArrangement = Arrangement.spacedBy(AppSpacing.Compact)
-                                ) {
-                                    OutlinedButton(
-                                        onClick = onExport,
-                                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                                    ) { Text("Export ZIP") }
-                                    OutlinedButton(
-                                        onClick = onDelete,
-                                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                                    ) {
-                                        Icon(Icons.Default.Delete, contentDescription = null)
-                                        Spacer(Modifier.size(4.dp))
-                                        Text("Hapus")
-                                    }
-                                }
-                            } else {
-                                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Compact)) {
-                                    OutlinedButton(onClick = onExport, modifier = Modifier.heightIn(min = 48.dp)) {
-                                        Text("Export ZIP")
-                                    }
-                                    OutlinedButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp)) {
-                                        Icon(Icons.Default.Delete, contentDescription = null)
-                                        Spacer(Modifier.size(4.dp))
-                                        Text("Hapus")
-                                    }
-                                }
-                            }
+                            VerbatimArchiveActions(workspace, onExportText, onExport, onDelete)
                         }
                     }
                 }
             }
-        }
-        if (uiState.isFinalizing ||
-            uiState.sessionCommandState is SessionCommandState.Starting ||
-            uiState.sessionCommandState is SessionCommandState.Pausing ||
-            uiState.sessionCommandState is SessionCommandState.Resuming ||
-            uiState.sessionCommandState is SessionCommandState.Stopping
-        ) {
-            item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth()) }
-        }
-        if (uiState.isFinalizing) {
-            item {
-                Text(
-                    finalizationStageLabel(uiState.finalizationStage),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            if (uiState.isSavingTranscript || uiState.isExporting || uiState.isDeletingSession) {
+                item("saving") {
+                    Text(
+                        when {
+                            uiState.isExporting -> "Mengekspor sesi…"
+                            uiState.isDeletingSession -> "Menghapus sesi…"
+                            else -> "Menyimpan koreksi…"
+                        },
+                        modifier = Modifier.semantics {
+                            liveRegion =
+                                LiveRegionMode.Polite
+                        }
+                    )
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
             }
-        }
-        if (uiState.sessionCommandState is SessionCommandState.Error &&
-            uiState.finalizationEvidencePersisted != null
-        ) {
-            item {
-                PremiumCard {
+            if (uiState.sessionCommandState is SessionCommandState.Error && uiState.finalizationEvidencePersisted != null) {
+                item("partial") {
                     Text(
                         if (uiState.finalizationEvidencePersisted == true) {
-                            "Finalisasi gagal sebagian; evidence yang tersedia sudah disimpan."
+                            "Sesi selesai sebagian; bukti yang tersedia sudah disimpan."
                         } else {
-                            "Finalisasi gagal sebelum evidence dapat disimpan."
+                            "Finalisasi gagal sebelum bukti dapat disimpan."
                         },
                         color = MaterialTheme.colorScheme.error
                     )
-                    uiState.finalizationWarnings.distinct().forEach { warning ->
-                        Text(warning, style = MaterialTheme.typography.labelSmall)
-                    }
+                    uiState.finalizationWarnings.distinct().forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
                 }
             }
-        }
-        uiState.error?.let { message ->
-            item {
-                PremiumCard(
-                    borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.45f),
-                    backgroundColor = MaterialTheme.colorScheme.error.copy(alpha = 0.08f)
-                ) { Text(message, color = MaterialTheme.colorScheme.error) }
-            }
-        }
-        uiState.lastMonitorSummary?.takeIf { !uiState.isSessionActive }?.let { summary ->
-            item {
-                PremiumCard {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Ringkasan monitor", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("Accepted windows: ${summary.acceptedWindowCount}", style = MaterialTheme.typography.bodySmall)
-                        Text("Rejected windows: ${summary.rejectedWindowCount}", style = MaterialTheme.typography.bodySmall)
-                        Text("Divergence events: ${summary.divergenceCount}", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-        }
-        if (uiState.isSessionActive || uiState.selectedSessionId != null) {
-            item {
-                TextButton(
-                    onClick = { technicalEvidenceExpanded = !technicalEvidenceExpanded },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .semantics { contentDescription = "Detail teknis signal dan audio" }
-                ) {
+            uiState.error?.let { message ->
+                item("error") {
                     Text(
-                        if (technicalEvidenceExpanded) {
-                            "Sembunyikan detail teknis"
-                        } else {
-                            "Lihat detail teknis signal dan audio"
+                        message,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                    )
+                }
+            }
+            if (uiState.selectedSessionId != null && !workspace.capturing && uiState.selectedSession == null) {
+                item("loading") {
+                    Text("Memuat sesi terpilih…")
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+            } else if (workspace.capturing || uiState.selectedSessionId != null) {
+                item("tabs") {
+                    TabRow(selectedTabIndex = if (panel == "TRANSCRIPT") 0 else 1) {
+                        Tab(
+                            selected = panel == "TRANSCRIPT",
+                            onClick = { panel = "TRANSCRIPT" },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            text = { Text("Transkrip") }
+                        )
+                        Tab(
+                            selected = panel == "MARKERS",
+                            onClick = { panel = "MARKERS" },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            text = {
+                                Text("Marker · ${counts.count(VerbatimMarkerFilter.ALL)}")
+                            }
+                        )
+                    }
+                }
+                item("technical") {
+                    VerbatimDisclosure("Detail teknis sesi", technicalExpanded, { technicalExpanded = it }) {
+                        if (workspace.capturing) {
+                            uiState.speechProcessingState.decoderDescription?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         }
-                    )
+                        Text(uiState.watchStatus, style = MaterialTheme.typography.bodySmall)
+                        Text(uiState.monitorStatus, style = MaterialTheme.typography.bodySmall)
+                        uiState.lastMonitorSummary?.takeIf { !workspace.capturing }?.let { summary ->
+                            Text(
+                                "Window diterima ${summary.acceptedWindowCount} · ditolak ${summary.rejectedWindowCount}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        LiveBiosignalCard(uiState.liveBiosignal)
+                        LiveAudioCard(uiState.acousticAnalysis)
+                    }
                 }
-            }
-            if (technicalEvidenceExpanded) {
-                item { LiveBiosignalCard(uiState.liveBiosignal) }
-                item { LiveAudioCard(uiState.acousticAnalysis) }
-            }
-            item {
-                val selectedTabIndex = if (selectedLivePanel == "TRANSCRIPT") 0 else 1
-                TabRow(selectedTabIndex = selectedTabIndex) {
-                    Tab(
-                        selected = selectedTabIndex == 0,
-                        onClick = { selectedLivePanel = "TRANSCRIPT" },
-                        modifier = Modifier.semantics {
-                            stateDescription = if (selectedTabIndex == 0) "Tab aktif" else "Tab tidak aktif"
-                        },
-                        text = { Text("Transcript") }
-                    )
-                    Tab(
-                        selected = selectedTabIndex == 1,
-                        onClick = { selectedLivePanel = "MARKERS" },
-                        modifier = Modifier.semantics {
-                            stateDescription = if (selectedTabIndex == 1) "Tab aktif" else "Tab tidak aktif"
-                        },
-                        text = { Text("Marker") }
-                    )
-                }
-            }
-            if (selectedLivePanel == "TRANSCRIPT") {
-                item { LiveSectionHeader("LIVE TRANSCRIPT") }
-                item {
-                    LiveTranscriptFeed(
-                        segments = liveTranscriptItems,
-                        totalSegmentCount = transcriptItems.size,
-                        onCycleSpeaker = onCycleSpeaker,
-                        onEditTranscript = onEditTranscript,
-                        onSeekAudio = onPlayFromMarker
-                    )
+                if (panel == "TRANSCRIPT") {
+                    item("explanation") {
+                        Text(
+                            if (workspace.capturing) {
+                                "Teks sementara dapat berubah. Cue muncul pada ujaran final; prosodi menunggu baseline."
+                            } else {
+                                "Sorotan menunjukkan ekspresi leksikal. Buka cue atau detail ujaran untuk memeriksa buktinya."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (workspace.capturing && transcriptItems.isNotEmpty()) {
+                        item("latest-utterance") {
+                            val scope = rememberCoroutineScope()
+                            val motion = LocalAppMotion.current
+                            TextButton(onClick = {
+                                scope.launch {
+                                    val last = (transcriptScroll.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                                    if (motion.enabled) transcriptScroll.animateScrollToItem(last) else transcriptScroll.scrollToItem(last)
+                                }
+                            }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Ke ujaran terbaru") }
+                        }
+                    }
+                    if (transcriptItems.isEmpty()) {
+                        item("empty") {
+                            EmptyLiveState("Belum ada ujaran yang dapat ditampilkan. Tidak ada transkrip pengganti.")
+                        }
+                    }
+                    if (uiState.transcriptSegments.size > transcriptItems.size) {
+                        item("tail") {
+                            Text(
+                                "Live menampilkan ${transcriptItems.size} ujaran terbaru; seluruh ujaran tersedia setelah disimpan.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                    items(transcriptItems, key = { "transcript:${it.id}" }, contentType = { "utterance" }) { segment ->
+                        VerbatimTranscriptCard(
+                            segment,
+                            uiState.cueAnalyses.getValue(segment.id),
+                            workspace.canReviewAudio,
+                            workspace.canEditTranscript,
+                            onCycleSpeaker,
+                            onEditTranscript,
+                            onPlayFromMarker
+                        )
+                    }
+                } else {
+                    item("filters") { VerbatimMarkerFilters(counts, filter, { filter = it }) }
+                    item("marker-explanation") {
+                        Text(
+                            "Marker adalah bukti untuk ditinjau bersama konteks, bukan diagnosis atau bukti desepsi.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        OutlinedButton(
+                            onClick = onRequestAddManualAnnotation,
+                            enabled = workspace.canAnnotate,
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        ) { Text("Tambah catatan") }
+                    }
+                    if (markerItems.isEmpty() && cueItems.isEmpty() && annotationItems.isEmpty()) {
+                        item("marker-empty") {
+                            EmptyLiveState(
+                                if (filter ==
+                                    VerbatimMarkerFilter.ALL
+                                ) {
+                                    "Belum ada marker. Ini tidak memastikan tidak adanya keraguan atau stres."
+                                } else {
+                                    "Belum ada marker ${filter.label.lowercase()}. Pilih Semua untuk melihat bukti lain."
+                                }
+                            )
+                        }
+                    }
+                    items(markerItems, key = { "event:${it.eventId}" }, contentType = { "event" }) { event ->
+                        VerbatimMarkerCard(
+                            event,
+                            uiState.markerPlaybackOffsets[event.eventId]?.takeIf {
+                                workspace.canReviewAudio
+                            },
+                            onPlayFromMarker
+                        )
+                    }
+                    items(cueItems, key = {
+                        "cue:${it.id}"
+                    }, contentType = { "cue" }) { cue -> VerbatimCueButton(cue, onPlayFromMarker, workspace.canReviewAudio) }
+                    items(annotationItems, key = { "note:${it.id}" }, contentType = { "note" }) { annotation ->
+                        ManualAnnotationRow(
+                            annotation,
+                            onPlayFromMarker,
+                            onDeleteManualAnnotation,
+                            workspace.canReviewAudio,
+                            workspace.canAnnotate
+                        )
+                    }
                 }
             } else {
-                item { LiveSectionHeader("MARKER UNTUK DITINJAU") }
-                item {
-                    OutlinedButton(
-                        onClick = onRequestAddManualAnnotation,
-                        enabled = uiState.selectedSessionId != null,
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Tambah marker manual") }
-                }
-                if (markerItems.isEmpty() && annotationItems.isEmpty()) {
-                    item { EmptyLiveState("Belum ada marker fisiologis atau akustik pada sesi ini.") }
-                } else if (markerItems.isNotEmpty()) {
-                    items(markerItems, key = { it.eventId }) { event ->
-                        DivergenceEventRow(event, onPlayFromMarker)
+                item("welcome") {
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
+                        Text("Rekam percakapan, tinjau cue dan unduh transkrip.", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Pilih Indonesia atau Inggris saat mulai. PPG Galaxy Watch bersifat opsional; proses inti tetap lokal.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (uiState.canStartNewSession) {
+                            VerbatimPrimaryAction(
+                                "Mulai rekaman",
+                                "Mulai rekaman Verbatim+",
+                                true,
+                                Modifier.fillMaxWidth(),
+                                onStartOrStop
+                            )
+                        }
+                        TextButton(onClick = onOpenDrawer, modifier = Modifier.heightIn(min = 48.dp)) { Text("Buka sesi atau impor audio") }
                     }
                 }
-                items(annotationItems, key = { it.id }) { annotation ->
-                    ManualAnnotationRow(
-                        annotation = annotation,
-                        onSeekAudio = onPlayFromMarker,
-                        onDelete = onDeleteManualAnnotation
+            }
+        }
+        if (workspace.capturing || uiState.isFinalizing) {
+            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.Screen)) {
+                    VerbatimCaptureControls(
+                        workspace,
+                        if (uiState.isFinalizing) {
+                            finalizationStageLabel(
+                                uiState.finalizationStage
+                            )
+                        } else {
+                            sessionCommandStatus(uiState.sessionCommandState)
+                        },
+                        onStartOrStop,
+                        onPauseOrResume,
+                        Modifier.fillMaxWidth()
                     )
                 }
-            }
-        } else {
-            item {
-                EmptyLiveState("Belum ada sesi Verbatim+ yang dipilih. Mulai rekaman atau buka daftar sesi.")
             }
         }
     }
@@ -1199,7 +1210,7 @@ private fun LiveBiosignalCard(snapshot: LiveBiosignalSnapshot) {
                 Text("LIVE PPG / AROUSAL", fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
                 Text(
-                    if (monitor.isMonitoring) "Aktif" else "Siap",
+                    if (monitor.isMonitoring) "Aktif" else "Tidak aktif",
                     style = MaterialTheme.typography.labelSmall,
                     color = if (monitor.isMonitoring) {
                         MaterialTheme.colorScheme.primary
@@ -1233,7 +1244,7 @@ private fun LiveBiosignalCard(snapshot: LiveBiosignalSnapshot) {
             }
             if (latestBpm == null && bpmSummary == null) {
                 Text(
-                    "Menunggu data PPG",
+                    if (monitor.isMonitoring) "Menunggu data PPG" else "Pemantauan PPG tidak aktif",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1411,18 +1422,6 @@ private fun liveAvailabilityLabel(availability: PredictionAvailability): String 
 }
 
 @Composable
-private fun LiveSectionHeader(text: String) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Divider(color = MaterialTheme.colorScheme.outlineVariant)
-    }
-}
-
-@Composable
 private fun EmptyLiveState(message: String) {
     Text(
         text = message,
@@ -1432,244 +1431,15 @@ private fun EmptyLiveState(message: String) {
     )
 }
 
-/** Keeps the outer session timeline stable while live transcript rows arrive. */
 @Composable
-private fun LiveTranscriptFeed(
-    segments: List<com.stressdetector.mobile.domain.engine.SpeechSegment>,
-    totalSegmentCount: Int,
-    onCycleSpeaker: (String) -> Unit,
-    onEditTranscript: (String, String) -> Unit,
-    onSeekAudio: (Long) -> Unit
+@OptIn(ExperimentalLayoutApi::class)
+private fun ManualAnnotationRow(
+    annotation: DomainAnnotation,
+    onSeekAudio: (Long) -> Unit,
+    onDelete: (String) -> Unit,
+    canPlay: Boolean,
+    canEdit: Boolean
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        if (segments.isEmpty()) {
-            EmptyLiveState("Belum ada transcript. Mulai rekaman untuk melihat hasilnya.")
-        } else {
-            if (totalSegmentCount > segments.size) {
-                Text(
-                    text = "Menampilkan ${segments.size} segmen terbaru dari $totalSegmentCount segmen tersimpan.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            segments.forEach { segment ->
-                TranscriptBubble(
-                    segment = segment,
-                    onCycleSpeaker = onCycleSpeaker,
-                    onEditTranscript = onEditTranscript,
-                    onSeekAudio = onSeekAudio
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TranscriptBubble(
-    segment: com.stressdetector.mobile.domain.engine.SpeechSegment,
-    onCycleSpeaker: (String) -> Unit,
-    onEditTranscript: (String, String) -> Unit,
-    onSeekAudio: (Long) -> Unit
-) {
-    var editing by remember(segment.id, segment.editedText, segment.rawText) { mutableStateOf(false) }
-    var draft by remember(segment.id, segment.editedText, segment.rawText) {
-        mutableStateOf(segment.displayText)
-    }
-    val tone = DefaultSpeakerBubbleToneResolver.resolve(segment.speakerId)
-    val speakerLabel = segment.displaySpeakerLabel
-    val colors = when (tone) {
-        SpeakerBubbleTone.FIRST -> MaterialTheme.colorScheme.primaryContainer
-        SpeakerBubbleTone.SECOND -> MaterialTheme.colorScheme.tertiaryContainer
-    }
-    PremiumCard(backgroundColor = colors.copy(alpha = 0.72f)) {
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            TextButton(
-                onClick = { onCycleSpeaker(segment.id) },
-                enabled = segment.isFinal,
-                contentPadding = PaddingValues(0.dp),
-                modifier = Modifier.semantics {
-                    contentDescription = if (segment.isFinal) {
-                        "Speaker $speakerLabel; ketuk untuk mengganti label"
-                    } else {
-                        "Speaker belum tersedia untuk transcript sementara"
-                    }
-                }
-            ) {
-                Text(
-                    text = speakerLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Text(
-                text = "${segment.startOffsetMs / 1_000L}s · UTC ${segment.startTimestampUtc} · ${segment.language} · " +
-                    if (segment.confidence > 0f) "quality ${(segment.confidence * 100).toInt()}%" else "quality unavailable",
-                modifier = Modifier.semantics {
-                    contentDescription =
-                        "Waktu ${segment.startOffsetMs / 1_000L} detik, UTC ${segment.startTimestampUtc}, bahasa ${segment.language}"
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            TextButton(
-                onClick = { onSeekAudio(segment.startOffsetMs.coerceAtLeast(0L)) },
-                enabled = segment.startOffsetMs >= 0L,
-                contentPadding = PaddingValues(0.dp)
-            ) { Text("Putar dari sini") }
-            if (editing) {
-                OutlinedTextField(
-                    value = draft,
-                    onValueChange = { draft = it },
-                    label = { Text("Edit transcript") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
-                        onEditTranscript(segment.id, draft)
-                        editing = false
-                    }) { Text("Simpan") }
-                    TextButton(onClick = {
-                        draft = segment.displayText
-                        editing = false
-                    }) { Text("Batal") }
-                }
-            } else {
-                Text(
-                    text = segment.displayText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (segment.isFinal) {
-                    TextButton(
-                        onClick = { editing = true },
-                        contentPadding = PaddingValues(0.dp)
-                    ) { Text("Edit teks") }
-                }
-            }
-            if (!segment.isFinal) {
-                Text(
-                    "Transkrip sementara. Speaker sedang dianalisis.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DivergenceEventRow(event: com.stressdetector.mobile.data.db.DivergenceEventEntity, onSeekAudio: (Long) -> Unit) {
-    val copyText = event.copyText.ifBlank { markerEvidenceCopy(event.markerType) }
-    PremiumCard(
-        modifier = Modifier.semantics {
-            contentDescription = "${event.markerType} pada ${event.episodeStartElapsedMillis / 1_000L} detik; $copyText"
-        },
-        borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.4f),
-        backgroundColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            val startSeconds = event.episodeStartElapsedMillis / 1_000L
-            val endSeconds = event.episodeEndElapsedMillis / 1_000L
-            val title = when (event.markerType) {
-                "BPM_TRAJECTORY" -> "Trajektori BPM"
-                "BPM_RISE" -> "Trajektori BPM · kenaikan"
-                "BPM_RECOVERY" -> "Trajektori BPM · pemulihan"
-                "TEMPORAL_BASELINE_AROUSAL" -> "Arousal terhadap baseline temporal"
-                "CHANNEL_AGREEMENT" -> "Perbedaan antar kanal PPG"
-                "ACOUSTIC_DIVERGENCE" -> "Divergensi akustik"
-                "LOW_AUDIO_QUALITY" -> "Indikator kualitas audio"
-                "MODEL_AROUSAL", "STRESS_ELEVATED" -> "Arousal fisiologis berbasis model"
-                "INCONSISTENCY_CUE" -> "Cue ketidaksesuaian"
-                "AUXILIARY_EVENT" -> "Event tambahan"
-                "MANUAL" -> "Marker manual"
-                else -> "Marker fisiologis untuk ditinjau"
-            }
-            val channels = event.sourceChannels.ifBlank { event.channel }
-            Text(
-                "$title · $channels · ${startSeconds}s–${endSeconds}s",
-                fontWeight = FontWeight.SemiBold
-            )
-            TextButton(
-                onClick = { onSeekAudio(event.episodeStartElapsedMillis.coerceAtLeast(0L)) },
-                contentPadding = PaddingValues(0.dp)
-            ) { Text("Putar marker") }
-            if (event.markerType == "ACOUSTIC_DIVERGENCE" || event.markerType == "LOW_AUDIO_QUALITY") {
-                Text(
-                    "RMS ${event.audioRmsDb?.let { "%.1f dBFS".format(it) } ?: "-"} · " +
-                        "Quality ${(event.signalQuality * 100).toInt()}%",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                if (event.markerType == "LOW_AUDIO_QUALITY") {
-                    Text(
-                        "Kualitas audio tidak memadai; ini bukan marker stres atau arousal.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            } else if (event.markerType == "MODEL_AROUSAL" ||
-                event.markerType == "STRESS_ELEVATED" ||
-                event.markerType == "TEMPORAL_BASELINE_AROUSAL"
-            ) {
-                Text(
-                    "Signal Quality: ${(event.signalQuality * 100).toInt()}% · " +
-                        "Probabilitas ${event.currentProbability?.let { "%.2f".format(it) } ?: "tidak tersedia"}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            } else if (event.markerType == "CHANNEL_AGREEMENT") {
-                Text(
-                    "Perbandingan model independen · " +
-                        "probabilitas ${event.currentProbability?.let { "%.2f".format(it) } ?: "tidak tersedia"}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            } else if (event.markerType == "BPM_TRAJECTORY" ||
-                event.markerType == "BPM_RISE" ||
-                event.markerType == "BPM_RECOVERY"
-            ) {
-                Text(
-                    "BPM ${event.bpm?.toInt() ?: "-"} (Puncak ${event.peakBpm?.toInt() ?: "-"}) · " +
-                        "Baseline ${event.baselineBpm?.toInt() ?: "-"} · " +
-                        "Quality: ${(event.signalQuality * 100).toInt()}%",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            } else {
-                Text(copyText, style = MaterialTheme.typography.bodySmall)
-            }
-            Text(
-                if (event.markerType == "LOW_AUDIO_QUALITY") {
-                    "Tinjau kualitas rekaman pada bagian ini sebelum melakukan interpretasi."
-                } else {
-                    copyText
-                },
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-    }
-}
-
-private fun markerEvidenceCopy(markerType: String): String = when (markerType) {
-    "BPM_TRAJECTORY", "BPM_RISE", "BPM_RECOVERY" ->
-        "Perubahan trajektori BPM dari baseline preceding; bukti fisiologis untuk ditinjau."
-    "TEMPORAL_BASELINE_AROUSAL", "MODEL_AROUSAL", "STRESS_ELEVATED" ->
-        "Perubahan probabilitas model terhadap baseline temporal; bukan diagnosis."
-    "CHANNEL_AGREEMENT" ->
-        "Perbedaan antar kanal PPG independen; tidak ada fusi kanal."
-    "ACOUSTIC_DIVERGENCE" ->
-        "Perubahan energi suara terhadap baseline akustik; bukan indikator kebohongan."
-    "LOW_AUDIO_QUALITY" ->
-        "Kualitas audio rendah; tinjau rekaman sebelum interpretasi."
-    "MANUAL" -> "Catatan manual pengguna untuk ditinjau bersama konteks sesi."
-    else -> "Evidence $markerType tersedia untuk ditinjau bersama konteks sesi."
-}
-
-@Composable
-private fun ManualAnnotationRow(annotation: DomainAnnotation, onSeekAudio: (Long) -> Unit, onDelete: (String) -> Unit) {
     PremiumCard {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
@@ -1677,13 +1447,17 @@ private fun ManualAnnotationRow(annotation: DomainAnnotation, onSeekAudio: (Long
                 fontWeight = FontWeight.SemiBold
             )
             Text(annotation.text, style = MaterialTheme.typography.bodySmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Compact)) {
                 TextButton(
                     onClick = { onSeekAudio(annotation.timestampMs.coerceAtLeast(0L)) },
+                    enabled = canPlay,
+                    modifier = Modifier.heightIn(min = 48.dp),
                     contentPadding = PaddingValues(0.dp)
                 ) { Text("Putar marker") }
                 TextButton(
                     onClick = { onDelete(annotation.id) },
+                    enabled = canEdit,
+                    modifier = Modifier.heightIn(min = 48.dp),
                     contentPadding = PaddingValues(0.dp)
                 ) { Text("Hapus") }
             }
@@ -1692,6 +1466,7 @@ private fun ManualAnnotationRow(annotation: DomainAnnotation, onSeekAudio: (Long
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun SessionPlaybackControls(
     state: PlaybackState,
     positionMillis: Long,
@@ -1700,18 +1475,25 @@ private fun SessionPlaybackControls(
     onPause: () -> Unit,
     onStop: () -> Unit,
     onSeek: (Long) -> Unit,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    enabled: Boolean = true
 ) {
-    val canPlay = state == PlaybackState.Ready || state == PlaybackState.Paused || state == PlaybackState.Stopped
-    val canPause = state == PlaybackState.Playing
-    val canStop = state == PlaybackState.Playing || state == PlaybackState.Paused || state == PlaybackState.Ready
-    val canSeek = durationMillis > 0L && state != PlaybackState.Idle && state !is PlaybackState.Error
+    val canPlay = enabled && (state == PlaybackState.Ready || state == PlaybackState.Paused || state == PlaybackState.Stopped)
+    val canPause = enabled && state == PlaybackState.Playing
+    val canStop = enabled && (state == PlaybackState.Playing || state == PlaybackState.Paused || state == PlaybackState.Ready)
+    val canSeek =
+        enabled && durationMillis > 0L && state != PlaybackState.Idle && state != PlaybackState.Preparing && state !is PlaybackState.Error
     var isScrubbing by remember { mutableStateOf(false) }
     var scrubPosition by remember { mutableFloatStateOf(0f) }
     val safeDuration = durationMillis.coerceAtLeast(1L)
     val displayedPosition = if (isScrubbing) scrubPosition.toLong() else positionMillis
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            playbackStatus(state),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.Compact)) {
             IconButton(onClick = onPlay, enabled = canPlay) {
                 Icon(Icons.Default.PlayArrow, contentDescription = "Putar audio")
             }
@@ -1721,9 +1503,8 @@ private fun SessionPlaybackControls(
             IconButton(onClick = onStop, enabled = canStop) {
                 Icon(Icons.Default.Stop, contentDescription = "Hentikan audio")
             }
-            Text(playbackStatus(state), style = MaterialTheme.typography.labelMedium)
             if (state is PlaybackState.Error) {
-                TextButton(onClick = onRetry) {
+                TextButton(onClick = onRetry, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.Default.Refresh, contentDescription = null)
                     Spacer(Modifier.size(4.dp))
                     Text("Coba lagi")
@@ -1745,7 +1526,7 @@ private fun SessionPlaybackControls(
                 },
                 valueRange = 0f..safeDuration.toFloat(),
                 enabled = canSeek,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Posisi audio rekaman" }
             )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(formatDurationMillis(displayedPosition.coerceIn(0L, safeDuration)), style = MaterialTheme.typography.labelSmall)

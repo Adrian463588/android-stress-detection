@@ -1,9 +1,20 @@
 package com.stressdetector.mobile.domain.engine
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class GenerationTextAssemblerTest {
+    @Test
+    fun runtimeDeltasPreserveWhitespaceAndParagraphBoundaries() {
+        val assembler = GenerationTextAssembler()
+        listOf("Latihan:", "\n\n", "Tulis", " ", "satu hal.", "\n", "Pertanyaan:").forEach { text ->
+            assembler.append(requireNotNull(counselorContentDelta(text)))
+        }
+        assertEquals("Latihan:\n\nTulis satu hal.\nPertanyaan:", assembler.currentText())
+        assertNull(counselorContentDelta(""))
+    }
+
     @Test
     fun deltaFragmentsAreAppendedBeforeApplyingOutputLimit() {
         val assembler = GenerationTextAssembler(maxChars = 10)

@@ -8,6 +8,19 @@ import org.junit.Test
 
 class SessionStopCutoffTest {
     @Test
+    fun pitchAndAcousticDiagnosticsRespectAudioStartCutoffAndGeneration() {
+        val timeline = SessionTimeline.start("session-1", utcNowMillis = { 0L }, monotonicNowMillis = { 0L })
+        timeline.markAudioStartedAt(100L)
+        val cutoff = SessionStopCutoff("session-1", timeline.generation, 1_100L)
+        assertTrue(cutoff.acceptsAudioOffset("session-1", 1_000L, timeline))
+        assertFalse(cutoff.acceptsAudioOffset("session-1", 1_001L, timeline))
+        assertFalse(cutoff.acceptsAudioOffset("session-2", 1_000L, timeline))
+        assertFalse(cutoff.acceptsAudioOffset("session-1", -1L, timeline))
+        val restarted = SessionTimeline.start("session-1", utcNowMillis = { 0L }, monotonicNowMillis = { 0L })
+        assertFalse(cutoff.acceptsAudioOffset("session-1", 10L, restarted))
+    }
+
+    @Test
     fun keepsOnlySameSessionDivergencesAtOrBeforeCutoff() {
         val cutoff = SessionStopCutoff("session-1", generation = 7L, elapsedMillis = 1_000L)
 

@@ -15,6 +15,25 @@ import org.junit.runner.RunWith
 class SherpaNativeRuntimeInstrumentedTest {
 
     @Test
+    fun successiveFinishedIndonesianStreamsCanAcceptMorePcm() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val runtime = AppLocator.speechRuntimeCoordinator(context).lease(SpeechRuntimeMode.VERBATIM)
+        try {
+            val readiness = runtime.preflight()
+            assumeTrue("Provision real speech models before this native lifecycle check: $readiness", readiness is SpeechRuntimeState.Ready)
+            runtime.beginSession(1_725_000_000_000L, "id", "device-sherpa-stream-boundary")
+            // Silence is a numeric native lifecycle fixture, not accuracy evidence.
+            repeat(2) { utterance ->
+                runtime.transcribe(FloatArray(SherpaOnnxSpeechRuntime.SAMPLE_RATE_HZ), utterance * 1_000L, vadAlreadyAccepted = true)
+                runtime.finishUtterance()
+            }
+            assertTrue(runtime.state.value is SpeechRuntimeState.Ready)
+        } finally {
+            runtime.endSession()
+        }
+    }
+
+    @Test
     fun indonesianRuntimePreflightAndRecognizerCreationOrUnavailableState() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val runtime = AppLocator.speechRuntimeCoordinator(context)

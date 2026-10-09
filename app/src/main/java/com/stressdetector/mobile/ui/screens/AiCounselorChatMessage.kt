@@ -120,20 +120,6 @@ private fun CrisisSupportButtons(actions: List<CrisisSupportAction>, onOpen: (Cr
 }
 
 @Composable
-private fun CitationList(citations: List<com.stressdetector.mobile.domain.engine.KnowledgeCitation>, onOpenCitation: (String) -> Unit) {
-    Spacer(modifier = Modifier.height(8.dp))
-    citations.forEachIndexed { index, citation ->
-        citationEvidence(
-            citation = citation,
-            webCitationNumber = citations.take(index + 1).count {
-                it.sourceType == com.stressdetector.mobile.domain.engine.CitationSource.WEB
-            },
-            onOpenCitation = onOpenCitation
-        )
-    }
-}
-
-@Composable
 private fun VoiceReplyButton(message: UiChatMessage, actions: ChatMessageActions) {
     val onVoiceClick = if (actions.isSpeaking) {
         actions.onStopSpeaking

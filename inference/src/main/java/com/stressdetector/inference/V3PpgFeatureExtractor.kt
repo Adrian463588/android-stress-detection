@@ -74,7 +74,7 @@ object V3PpgFeatureExtractor {
             morphologySupport = context.detection.morphologySupport,
             detectorMethod = context.detection.detectorMethod,
             detectorFingerprint = context.detection.detectorFingerprint,
-            qualityStatus = "good"
+            qualityStatus = "detector_gates_passed"
         )
     }
 

@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface SessionCommandState {
     data object Idle : SessionCommandState
@@ -78,6 +79,7 @@ data class UnifiedSessionUiState(
     val annotations: List<DomainAnnotation> = emptyList(),
     val liveBiosignal: LiveBiosignalSnapshot = LiveBiosignalSnapshot(),
     val acousticAnalysis: AcousticAnalysisSnapshot? = null,
+    val livePitch: List<com.stressdetector.mobile.domain.engine.LivePitchObservation> = emptyList(),
     val elapsedSeconds: Long = 0L,
     val isModelReady: Boolean = false,
     val speechRuntimeState: SpeechRuntimeState = SpeechRuntimeState.Checking,
@@ -104,10 +106,33 @@ data class UnifiedSessionUiState(
     val finalizationEvidencePersisted: Boolean? = null,
     val finalizationWarnings: List<String> = emptyList(),
     val speechProcessingState: SpeechProcessingState = SpeechProcessingState(),
+    val isExporting: Boolean = false,
+    val isDeletingSession: Boolean = false,
+    val isSavingTranscript: Boolean = false,
     val error: String? = null
 ) {
+    /** Pure review projection; business rules remain outside Composables. */
+    val cueAnalyses: Map<String, com.stressdetector.mobile.domain.engine.VerbatimCueAnalysis> by lazy {
+        val analyzer = com.stressdetector.mobile.domain.engine.VerbatimCueAnalyzer()
+        transcriptSegments.associate { it.id to analyzer.analyze(it) }
+    }
+    val markerPlaybackOffsets: Map<String, Long> by lazy {
+        divergenceEvents.mapNotNull { event ->
+            com.stressdetector.mobile.domain.engine.TranscriptTimelineLinker.playbackOffset(event, transcriptSegments)
+                ?.let { event.eventId to it }
+        }.toMap()
+    }
+    val reviewCues: List<com.stressdetector.mobile.domain.engine.VerbatimCue> by lazy {
+        cueAnalyses.values.flatMap { it.cues }
+            .sortedWith(compareBy({ it.startOffsetMs }, { it.startChar }, { it.id }))
+    }
     val canStartNewSession: Boolean
-        get() = sessionCommandState.acceptsNewSessionRequest() &&
+        get() = !isSessionActive &&
+            !isFinalizing &&
+            !isExporting &&
+            !isSavingTranscript &&
+            !isDeletingSession &&
+            sessionCommandState.acceptsNewSessionRequest() &&
             speechRuntimeState is SpeechRuntimeState.Ready
 
     val startBlockMessage: String?
@@ -116,6 +141,15 @@ data class UnifiedSessionUiState(
         } else {
             null
         }
+
+    /** Buffered live updates cannot overwrite saved review edits after finalization. */
+    internal fun acceptsLiveSnapshot(snapshot: UnifiedSessionLiveSnapshot): Boolean {
+        val liveReview = isSessionActive || isFinalizing || sessionCommandState.locksSessionSelection()
+        val ownsSnapshot = selectedSessionId != null &&
+            snapshot.sessionId == selectedSessionId &&
+            snapshot.transcript.sessionId == selectedSessionId
+        return liveReview && ownsSnapshot && isLiveSessionGenerationAccepted(sessionGeneration, snapshot)
+    }
 }
 
 internal fun SessionCommandState.acceptsNewSessionRequest(): Boolean = this is SessionCommandState.Idle || this is SessionCommandState.Error
@@ -211,6 +245,8 @@ class UnifiedSessionViewModel(
     private val sessionNameGenerator = UniqueSessionNameGenerator()
     private val reservedSessionNames = mutableSetOf<String>()
     private var pendingAudioInput: AudioInputSource = AudioInputSource.Microphone
+    private var pendingTextExport: Pair<VerbatimSessionDetail, List<DomainAnnotation>>? = null
+    private var pendingZipExport: VerbatimSessionSummary? = null
 
     init {
         checkModelState()
@@ -442,12 +478,7 @@ class UnifiedSessionViewModel(
 
     private fun applyLiveSessionSnapshot(live: UnifiedSessionLiveSnapshot) {
         _uiState.update { current ->
-            val selected = current.selectedSessionId
-            if (live.sessionId == null ||
-                selected == null ||
-                live.sessionId != selected ||
-                !isLiveSessionGenerationAccepted(current.sessionGeneration, live)
-            ) {
+            if (!current.acceptsLiveSnapshot(live)) {
                 current
             } else {
                 val safeBiosignal = live.biosignal.takeIf { it.sessionId == live.sessionId }
@@ -457,6 +488,7 @@ class UnifiedSessionViewModel(
                     speechProcessingState = live.transcript.processing,
                     liveBiosignal = safeBiosignal,
                     acousticAnalysis = live.acousticAnalysis,
+                    livePitch = live.livePitch,
                     sessionGeneration = live.generation,
                     divergenceEvents = safeBiosignal.divergenceEvents
                 )
@@ -498,13 +530,17 @@ class UnifiedSessionViewModel(
 
     /** Routes every new-recording entry point through one readiness decision. */
     fun requestNewSession(audioInput: AudioInputSource = AudioInputSource.Microphone) {
-        pendingAudioInput = audioInput
         viewModelScope.launch {
             actionGate.run(ACTION_SESSION_START_REQUEST) {
                 val current = _uiState.value
-                if (!current.sessionCommandState.acceptsNewSessionRequest()) return@run
+                if (!current.sessionCommandState.acceptsNewSessionRequest() ||
+                    !VerbatimWorkspace(current).canManageStoredSessions
+                ) {
+                    return@run
+                }
                 val blockedMessage = current.speechRuntimeState.verbatimStartBlockedMessage()
                 if (blockedMessage == null) {
+                    pendingAudioInput = audioInput
                     _effects.emit(UnifiedSessionEffect.OpenStartDialog)
                 } else {
                     _effects.emit(UnifiedSessionEffect.ShowToast(blockedMessage))
@@ -550,11 +586,11 @@ class UnifiedSessionViewModel(
         timerJob = null
     }
 
-    fun startSession(sessionName: String = "Session") {
+    fun startSession(sessionName: String = "Session", monitoringEnabled: Boolean = false) {
         viewModelScope.launch {
             actionGate.run(ACTION_SESSION_START) {
                 if (unifiedSessionEngine.isSessionActive.value ||
-                    !_uiState.value.sessionCommandState.acceptsNewSessionRequest()
+                    !VerbatimWorkspace(_uiState.value).canManageStoredSessions
                 ) {
                     return@run
                 }
@@ -572,94 +608,21 @@ class UnifiedSessionViewModel(
                         existingNames = _uiState.value.sessionHistory.map { it.sessionName } + reservedSessionNames
                     ).also(reservedSessionNames::add)
                 }
-                // A persisted History collector is allowed to update only the
-                // session it was created for. Cancel it before establishing a
-                // live session so old transcript rows cannot overwrite live
-                // partial transcript state during the new recording.
-                selectedSessionJob?.cancel()
-                selectedSessionJob = null
-                _uiState.update {
-                    it.copy(
-                        selectedSessionId = sessionId,
-                        sessionGeneration = 0L,
-                        selectedSession = null,
-                        transcriptSegments = emptyList(),
-                        divergenceEvents = emptyList(),
-                        annotations = emptyList(),
-                        liveBiosignal = LiveBiosignalSnapshot(sessionId = sessionId),
-                        finalizationEvidencePersisted = null,
-                        finalizationWarnings = emptyList(),
-                        savedFolderPath = null,
-                        playbackFilePath = null,
-                        playbackState = PlaybackState.Idle,
-                        speechProcessingState = SpeechProcessingState(sessionId = sessionId),
-                        elapsedSeconds = 0L,
-                        sessionCommandState = SessionCommandState.Starting,
-                        error = null
-                    )
-                }
-                val now = Instant.now()
+                initializeSessionSelection(sessionId)
                 val userId = PrivacyIdentity.LOCAL_PROFILE_ID
-                val actor = PrivacyIdentity.LOCAL_ACTOR
-                try {
-                    val recordingConsent = consentRepository.grant(
-                        ConsentRecord(
-                            consentId = UUID.randomUUID().toString(),
-                            userId = userId,
-                            sessionId = sessionId,
-                            scope = ConsentScope.VERBATIM_RECORDING,
-                            actor = actor,
-                            timestampUtc = now,
-                            appVersion = BuildConfig.VERSION_NAME,
-                            policyVersion = CONSENT_POLICY_VERSION,
-                            isMultiParty = true
-                        )
-                    )
-                    val monitoringConsent = consentRepository.grant(
-                        ConsentRecord(
-                            consentId = UUID.randomUUID().toString(),
-                            userId = userId,
-                            sessionId = sessionId,
-                            scope = ConsentScope.LIVE_MONITORING,
-                            actor = actor,
-                            timestampUtc = now,
-                            appVersion = BuildConfig.VERSION_NAME,
-                            policyVersion = CONSENT_POLICY_VERSION,
-                            isMultiParty = true
-                        )
-                    )
+                runCatching {
                     val audioInput = pendingAudioInput
-                    val intent = android.content.Intent(
-                        applicationContext,
-                        com.stressdetector.mobile.service.UnifiedSessionService::class.java
-                    ).apply {
-                        action = com.stressdetector.mobile.service.UnifiedSessionService.ACTION_START_SESSION
-                        putExtra(com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_COMMAND_ID, UUID.randomUUID().toString())
-                        putExtra(com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_SESSION_ID, sessionId)
-                        putExtra(com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_USER_ID, userId)
-                        com.stressdetector.mobile.service.UnifiedSessionService.putConsentToken(this, "recording", recordingConsent)
-                        com.stressdetector.mobile.service.UnifiedSessionService.putConsentToken(this, "monitoring", monitoringConsent)
-                        putExtra(com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_SESSION_NAME, uniqueSessionName)
-                        putExtra(
-                            com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_SESSION_LANGUAGE,
-                            _uiState.value.selectedLanguage
-                        )
-                        if (audioInput is AudioInputSource.Imported) {
-                            putExtra(
-                                com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_AUDIO_URI,
-                                audioInput.uriString
-                            )
-                        }
-                    }
-                    applicationContext.startForegroundService(intent)
+                    val usePpg = monitoringEnabled && audioInput is AudioInputSource.Microphone
+                    applicationContext.startForegroundService(createStartIntent(sessionId, uniqueSessionName, audioInput, usePpg))
                     pendingAudioInput = AudioInputSource.Microphone
-                } catch (e: Exception) {
+                }.onFailure { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
                     pendingAudioInput = AudioInputSource.Microphone
                     consentRepository.revokeSession(userId, sessionId)
                     _uiState.update {
                         it.copy(
-                            sessionCommandState = SessionCommandState.Error(e.message ?: "Sesi tidak dapat dimulai."),
-                            error = e.message ?: "Consent could not be persisted securely."
+                            sessionCommandState = SessionCommandState.Error(error.message ?: "Sesi tidak dapat dimulai."),
+                            error = error.message ?: "Consent could not be persisted securely."
                         )
                     }
                 }
@@ -667,11 +630,79 @@ class UnifiedSessionViewModel(
         }
     }
 
+    private fun initializeSessionSelection(sessionId: String) {
+        // Prevent a History collector from overwriting this live generation.
+        selectedSessionJob?.cancel()
+        selectedSessionJob = null
+        _uiState.update {
+            it.copy(
+                selectedSessionId = sessionId,
+                sessionGeneration = 0L,
+                selectedSession = null,
+                transcriptSegments = emptyList(),
+                divergenceEvents = emptyList(),
+                annotations = emptyList(),
+                liveBiosignal = LiveBiosignalSnapshot(sessionId = sessionId),
+                acousticAnalysis = null,
+                livePitch = emptyList(),
+                finalizationEvidencePersisted = null,
+                finalizationWarnings = emptyList(),
+                savedFolderPath = null,
+                playbackFilePath = null,
+                playbackState = PlaybackState.Idle,
+                speechProcessingState = SpeechProcessingState(sessionId = sessionId),
+                elapsedSeconds = 0L,
+                sessionCommandState = SessionCommandState.Starting,
+                error = null
+            )
+        }
+    }
+
+    private suspend fun createStartIntent(
+        sessionId: String,
+        name: String,
+        input: AudioInputSource,
+        usePpg: Boolean
+    ): android.content.Intent {
+        val recording = grantSessionConsent(sessionId, ConsentScope.VERBATIM_RECORDING)
+        val monitoring = if (usePpg) grantSessionConsent(sessionId, ConsentScope.LIVE_MONITORING) else null
+        return android.content.Intent(applicationContext, com.stressdetector.mobile.service.UnifiedSessionService::class.java).apply {
+            action = com.stressdetector.mobile.service.UnifiedSessionService.ACTION_START_SESSION
+            putExtra(com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_COMMAND_ID, UUID.randomUUID().toString())
+            putExtra(com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_SESSION_ID, sessionId)
+            putExtra(com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_USER_ID, PrivacyIdentity.LOCAL_PROFILE_ID)
+            com.stressdetector.mobile.service.UnifiedSessionService.putConsentToken(this, "recording", recording)
+            monitoring?.let { com.stressdetector.mobile.service.UnifiedSessionService.putConsentToken(this, "monitoring", it) }
+            putExtra(com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_MONITORING_ENABLED, usePpg)
+            putExtra(com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_SESSION_NAME, name)
+            putExtra(com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_SESSION_LANGUAGE, _uiState.value.selectedLanguage)
+            if (input is AudioInputSource.Imported) {
+                putExtra(
+                    com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_AUDIO_URI,
+                    input.uriString
+                )
+            }
+        }
+    }
+
+    private suspend fun grantSessionConsent(sessionId: String, scope: ConsentScope) = consentRepository.grant(
+        ConsentRecord(
+            consentId = UUID.randomUUID().toString(),
+            userId = PrivacyIdentity.LOCAL_PROFILE_ID,
+            sessionId = sessionId,
+            scope = scope,
+            actor = PrivacyIdentity.LOCAL_ACTOR,
+            timestampUtc = Instant.now(),
+            appVersion = BuildConfig.VERSION_NAME,
+            policyVersion = CONSENT_POLICY_VERSION,
+            isMultiParty = true
+        )
+    )
+
     fun stopSession() {
         viewModelScope.launch {
             actionGate.run(ACTION_SESSION_STOP) {
-                val commandState = _uiState.value.sessionCommandState
-                if (commandState !is SessionCommandState.Recording && commandState !is SessionCommandState.Paused) return@run
+                if (!VerbatimWorkspace(_uiState.value).canStop) return@run
                 _uiState.update {
                     it.copy(isFinalizing = true, sessionCommandState = SessionCommandState.Stopping)
                 }
@@ -707,6 +738,7 @@ class UnifiedSessionViewModel(
     }
 
     fun cycleSpeakerLabel(segmentId: String) {
+        if (!VerbatimWorkspace(_uiState.value).canEditTranscript) return
         val segment = _uiState.value.transcriptSegments.firstOrNull { it.id == segmentId } ?: return
         val label = when (segment.speakerId) {
             "Speaker_0" -> "Psychologist"
@@ -717,36 +749,63 @@ class UnifiedSessionViewModel(
         if (unifiedSessionEngine.isSessionActive.value) {
             unifiedSessionEngine.updateSpeakerLabel(segmentId, label)
         } else {
-            val sessionId = _uiState.value.selectedSessionId ?: return
-            viewModelScope.launch(Dispatchers.IO) {
-                sessionRepository.updateSpeakerLabel(sessionId, segmentId, label)
-                    .onFailure { error ->
-                        _uiState.update { it.copy(error = error.message ?: "Label speaker gagal disimpan.") }
-                    }
-            }
+            saveTranscriptReview(
+                segmentId,
+                save = { sessionId -> sessionRepository.updateSpeakerLabel(sessionId, segmentId, label) },
+                applyEdit = { it.copy(speakerId = label) }
+            )
         }
     }
 
     fun updateTranscriptText(segmentId: String, text: String) {
-        if (text.isBlank()) return
+        if (text.isBlank() || !VerbatimWorkspace(_uiState.value).canEditTranscript) return
         if (unifiedSessionEngine.isSessionActive.value) {
             unifiedSessionEngine.updateTranscriptText(segmentId, text)
         } else {
-            val sessionId = _uiState.value.selectedSessionId ?: return
-            viewModelScope.launch(Dispatchers.IO) {
-                sessionRepository.updateTranscriptText(sessionId, segmentId, text)
-                    .onFailure { error ->
-                        _uiState.update { it.copy(error = error.message ?: "Edit transcript gagal disimpan.") }
+            saveTranscriptReview(
+                segmentId,
+                save = { sessionId -> sessionRepository.updateTranscriptText(sessionId, segmentId, text) },
+                applyEdit = { it.copy(editedText = text) }
+            )
+        }
+    }
+
+    private fun saveTranscriptReview(
+        segmentId: String,
+        save: suspend (String) -> Result<Unit>,
+        applyEdit: (SpeechSegment) -> SpeechSegment
+    ) {
+        val sessionId = _uiState.value.selectedSessionId ?: return
+        if (_uiState.value.isSavingTranscript) return
+        _uiState.update { it.copy(isSavingTranscript = true) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                save(sessionId).onSuccess {
+                    _uiState.update { state ->
+                        if (state.selectedSessionId != sessionId) {
+                            state
+                        } else {
+                            val updated = state.transcriptSegments.map { segment ->
+                                if (segment.id == segmentId) applyEdit(segment) else segment
+                            }
+                            state.copy(transcriptSegments = updated, selectedSession = state.selectedSession?.copy(transcript = updated))
+                        }
                     }
+                }.onFailure { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    _uiState.update { it.copy(error = error.message ?: "Edit transcript gagal disimpan.") }
+                }
+            } finally {
+                _uiState.update { it.copy(isSavingTranscript = false) }
             }
         }
     }
 
     fun addManualAnnotation(text: String) {
         val state = _uiState.value
-        val sessionId = state.selectedSessionId ?: return
         val normalized = text.trim()
-        if (normalized.isBlank()) return
+        if (!VerbatimWorkspace(state).canAnnotate || normalized.isBlank()) return
+        val sessionId = state.selectedSessionId ?: return
         val timestampMs = if (state.isSessionActive) {
             unifiedSessionEngine.currentElapsedMillis()
         } else {
@@ -773,6 +832,7 @@ class UnifiedSessionViewModel(
     }
 
     fun deleteManualAnnotation(annotationId: String) {
+        if (!VerbatimWorkspace(_uiState.value).canAnnotate) return
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { annotationRepository.deleteAnnotation(annotationId) }
                 .onSuccess {
@@ -788,6 +848,7 @@ class UnifiedSessionViewModel(
 
     fun prepareAudioPlayback() {
         val state = _uiState.value
+        if (!VerbatimWorkspace(state).canPrepareAudio) return
         val summary = state.selectedSession?.summary
             ?: state.sessionHistory.firstOrNull { it.sessionId == state.selectedSessionId }
         if (summary == null) {
@@ -798,7 +859,7 @@ class UnifiedSessionViewModel(
     }
 
     fun selectSession(sessionId: String) {
-        if (_uiState.value.isSessionActive || _uiState.value.sessionCommandState.locksSessionSelection()) {
+        if (!VerbatimWorkspace(_uiState.value).canManageStoredSessions) {
             _uiState.update { it.copy(error = "Selesaikan rekaman aktif sebelum membuka sesi lain.") }
             return
         }
@@ -812,6 +873,8 @@ class UnifiedSessionViewModel(
                 divergenceEvents = emptyList(),
                 annotations = emptyList(),
                 liveBiosignal = LiveBiosignalSnapshot(sessionId = sessionId),
+                acousticAnalysis = null,
+                livePitch = emptyList(),
                 savedFolderPath = null,
                 playbackFilePath = null,
                 playbackState = PlaybackState.Preparing,
@@ -825,6 +888,8 @@ class UnifiedSessionViewModel(
         preparedSessionKey = null
         loadingSessionKey = null
         selectedSessionJob = viewModelScope.launch {
+            var evidenceKey: String? = null
+            var prosodyBySegment = emptyMap<String, com.stressdetector.mobile.domain.engine.VerbatimProsodyEvidence>()
             sessionRepository.observeSession(sessionId).collect { detail ->
                 if (_uiState.value.selectedSessionId != sessionId || _uiState.value.isSessionActive) {
                     return@collect
@@ -847,22 +912,29 @@ class UnifiedSessionViewModel(
                     }
                     return@collect
                 }
+                val archiveKey = "${detail.summary.artifactFolderPath}|${detail.summary.finalizationStatus}"
+                if (evidenceKey != archiveKey) {
+                    val restored = withContext(Dispatchers.IO) {
+                        artifactService.restoreProsody(PrivacyIdentity.LOCAL_PROFILE_ID, detail)
+                    }
+                    prosodyBySegment = restored.transcript.mapNotNull { segment -> segment.prosody?.let { segment.id to it } }.toMap()
+                    evidenceKey = archiveKey
+                }
+                val reviewed = detail.copy(transcript = detail.transcript.map { it.copy(prosody = prosodyBySegment[it.id]) })
                 _uiState.update {
                     it.copy(
                         selectedSessionId = sessionId,
-                        selectedSession = detail,
-                        transcriptSegments = detail.transcript,
+                        selectedSession = reviewed,
+                        transcriptSegments = reviewed.transcript,
                         divergenceEvents = detail.divergenceEvents,
                         annotations = annotationRepository.getAnnotationsForSession(sessionId),
                         savedFolderPath = detail.summary.artifactFolderPath.ifBlank { detail.summary.audioFilePath }
                     )
                 }
                 val audioKey = "${detail.summary.sessionId}|${detail.summary.audioFilePath}|${detail.summary.artifactFolderPath}"
-                if (audioKey != preparedSessionKey &&
-                    audioKey != loadingSessionKey &&
-                    detail.summary.finalizationStatus == "COMPLETED" &&
-                    (detail.summary.audioFilePath.isNotBlank() || detail.summary.artifactFolderPath.isNotBlank())
-                ) {
+                // Failed-with-evidence archives may still contain usable audio. The loader verifies it;
+                // missing/corrupt artifacts become an explicit playback error rather than endless Preparing.
+                if (audioKey != preparedSessionKey && audioKey != loadingSessionKey) {
                     loadPlayback(detail.summary)
                 }
             }
@@ -949,6 +1021,7 @@ class UnifiedSessionViewModel(
     private fun runPlaybackCommand(commandName: String, command: suspend () -> Result<Unit>) {
         viewModelScope.launch(Dispatchers.Main.immediate) {
             actionGate.run("playback:$commandName") {
+                if (!VerbatimWorkspace(_uiState.value).canReviewAudio) return@run
                 command().onFailure { error ->
                     _uiState.update { it.copy(error = error.message ?: "Operasi playback gagal.") }
                 }
@@ -956,24 +1029,90 @@ class UnifiedSessionViewModel(
         }
     }
 
-    fun exportLastSession(destination: android.net.Uri) {
-        val folder = _uiState.value.selectedSession?.summary?.artifactFolderPath
-            ?: _uiState.value.savedFolderPath
-        if (folder.isNullOrBlank()) {
+    fun prepareZipExport(): String? {
+        val state = _uiState.value
+        if (!VerbatimWorkspace(state).canExportZip) return null
+        pendingZipExport = state.selectedSession?.summary
+        return pendingZipExport?.sessionName?.let { exportFileName(it, "zip") }
+    }
+
+    fun exportLastSession(destination: android.net.Uri?) {
+        val frozen = pendingZipExport
+        pendingZipExport = null
+        if (destination == null || frozen == null) return
+        val state = _uiState.value
+        val folder = frozen.artifactFolderPath
+        if (!VerbatimWorkspace(state).canManageStoredSessions || folder.isBlank()) {
             _uiState.update { it.copy(error = "Pilih sesi dengan artifact yang sudah tersimpan.") }
             return
         }
+        _uiState.update { it.copy(isExporting = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             actionGate.run(ACTION_SESSION_EXPORT) {
-                runCatching {
-                    artifactService.exportSessionBundle(
-                        PrivacyIdentity.LOCAL_PROFILE_ID,
-                        folder,
-                        destination,
-                        applicationContext
-                    )
-                }.onSuccess { _uiState.update { it.copy(error = null) } }
-                    .onFailure { error -> _uiState.update { it.copy(error = error.message ?: "Session export failed.") } }
+                try {
+                    runCatching {
+                        artifactService.exportSessionBundle(
+                            PrivacyIdentity.LOCAL_PROFILE_ID,
+                            folder,
+                            destination,
+                            applicationContext
+                        )
+                    }.onSuccess {
+                        _effects.emit(UnifiedSessionEffect.ShowToast("Arsip ZIP berhasil diekspor."))
+                    }.onFailure { error ->
+                        if (error is kotlinx.coroutines.CancellationException) throw error
+                        _uiState.update { it.copy(error = error.message ?: "Ekspor ZIP gagal.") }
+                    }
+                } finally {
+                    _uiState.update { it.copy(isExporting = false) }
+                }
+            }
+        }
+    }
+
+    /** Freeze the selected review before SAF opens; a later selection cannot change its contents. */
+    fun prepareTranscriptExport(): String? {
+        val state = _uiState.value
+        val detail = state.selectedSession
+        val hasFinalTranscript = detail?.transcript?.any { it.isFinal && it.displayText.isNotBlank() } == true
+        val blocked = when {
+            state.isSavingTranscript -> "Tunggu sampai edit transkrip selesai disimpan sebelum ekspor TXT."
+            !VerbatimWorkspace(state).canExportText || !hasFinalTranscript -> "Pilih sesi dengan transkrip final untuk ekspor TXT."
+            else -> null
+        }
+        if (blocked != null) {
+            _uiState.update { it.copy(error = blocked) }
+            return null
+        }
+        pendingTextExport = checkNotNull(detail) to state.annotations.toList()
+        return exportFileName(detail.summary.sessionName, "txt")
+    }
+
+    private fun exportFileName(name: String, extension: String): String = name.replace(Regex("[^\\p{L}\\p{N}._-]+"), "_")
+        .take(MAX_EXPORT_NAME_LENGTH).ifBlank { "verbatim" } + ".$extension"
+
+    fun exportTranscript(destination: android.net.Uri?) {
+        val frozen = pendingTextExport
+        pendingTextExport = null
+        if (destination == null || frozen == null) return
+        if (!VerbatimWorkspace(_uiState.value).canManageStoredSessions) {
+            _uiState.update { it.copy(error = "Selesaikan operasi sesi aktif sebelum ekspor TXT.") }
+            return
+        }
+        _uiState.update { it.copy(isExporting = true, error = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            actionGate.run(ACTION_SESSION_EXPORT) {
+                try {
+                    runCatching {
+                        artifactService.exportTranscript(frozen.first, frozen.second, destination, applicationContext)
+                        _effects.emit(UnifiedSessionEffect.ShowToast("Transkrip TXT dan keterangan marker berhasil diekspor."))
+                    }.onFailure { error ->
+                        if (error is kotlinx.coroutines.CancellationException) throw error
+                        _uiState.update { it.copy(error = error.message ?: "Ekspor TXT gagal.") }
+                    }
+                } finally {
+                    _uiState.update { it.copy(isExporting = false) }
+                }
             }
         }
     }
@@ -986,111 +1125,122 @@ class UnifiedSessionViewModel(
     }
 
     fun deleteSession(sessionId: String?) {
-        if (sessionId.isNullOrBlank()) return
+        if (sessionId.isNullOrBlank() || !VerbatimWorkspace(_uiState.value).canManageStoredSessions) return
         val session = _uiState.value.sessionHistory.firstOrNull { it.sessionId == sessionId }
         val folder = session?.artifactFolderPath.orEmpty()
         if (session == null) return
-        viewModelScope.launch(Dispatchers.IO) {
-            actionGate.run("session:delete:$sessionId") {
-                playbackCoordinator.stop()
-                val deleted = runCatching {
-                    when {
-                        folder.isNotBlank() -> artifactService.deleteSession(PrivacyIdentity.LOCAL_PROFILE_ID, folder)
-                        session.audioFilePath.isNotBlank() -> artifactService.deleteArtifact(
-                            PrivacyIdentity.LOCAL_PROFILE_ID,
-                            session.audioFilePath
-                        )
-                        else -> true
-                    }
-                }.getOrDefault(false)
-                val repositoryDeleted = deleted && sessionRepository.deleteSession(sessionId).isSuccess
-                val annotationsDeleted = repositoryDeleted &&
-                    runCatching {
-                        annotationRepository.deleteAnnotationsForSession(sessionId)
-                    }.isSuccess
-                val sessionFullyDeleted = repositoryDeleted && annotationsDeleted
-                if (sessionFullyDeleted) {
-                    playbackCoordinator.clearCache(sessionId)
-                }
-                _uiState.update {
-                    it.copy(
-                        savedFolderPath = if (sessionFullyDeleted) null else folder,
-                        selectedSessionId = if (sessionFullyDeleted && it.selectedSessionId == sessionId) null else it.selectedSessionId,
-                        selectedSession = if (sessionFullyDeleted && it.selectedSessionId == sessionId) null else it.selectedSession,
-                        transcriptSegments = if (sessionFullyDeleted &&
-                            it.selectedSessionId == sessionId
-                        ) {
-                            emptyList()
-                        } else {
-                            it.transcriptSegments
-                        },
-                        divergenceEvents = if (sessionFullyDeleted &&
-                            it.selectedSessionId == sessionId
-                        ) {
-                            emptyList()
-                        } else {
-                            it.divergenceEvents
-                        },
-                        annotations = if (sessionFullyDeleted && it.selectedSessionId == sessionId) emptyList() else it.annotations,
-                        playbackFilePath = null,
-                        playbackState = if (sessionFullyDeleted) PlaybackState.Idle else it.playbackState,
-                        playbackPositionMillis = if (sessionFullyDeleted) 0L else it.playbackPositionMillis,
-                        playbackDurationMillis = if (sessionFullyDeleted) 0L else it.playbackDurationMillis,
-                        error = if (sessionFullyDeleted) null else "Artifact atau marker sesi tidak dapat dihapus."
+        runArchiveDeletion("session:delete:$sessionId") {
+            playbackCoordinator.stop()
+            val deleted = runCatching {
+                when {
+                    folder.isNotBlank() -> artifactService.deleteSession(PrivacyIdentity.LOCAL_PROFILE_ID, folder)
+                    session.audioFilePath.isNotBlank() -> artifactService.deleteArtifact(
+                        PrivacyIdentity.LOCAL_PROFILE_ID,
+                        session.audioFilePath
                     )
+                    else -> true
                 }
+            }.getOrDefault(false)
+            val repositoryDeleted = deleted && sessionRepository.deleteSession(sessionId).isSuccess
+            val annotationsDeleted = repositoryDeleted &&
+                runCatching {
+                    annotationRepository.deleteAnnotationsForSession(sessionId)
+                }.isSuccess
+            val sessionFullyDeleted = repositoryDeleted && annotationsDeleted
+            if (sessionFullyDeleted) {
+                playbackCoordinator.clearCache(sessionId)
+            }
+            _uiState.update {
+                it.copy(
+                    savedFolderPath = if (sessionFullyDeleted) null else folder,
+                    selectedSessionId = if (sessionFullyDeleted && it.selectedSessionId == sessionId) null else it.selectedSessionId,
+                    selectedSession = if (sessionFullyDeleted && it.selectedSessionId == sessionId) null else it.selectedSession,
+                    transcriptSegments = if (sessionFullyDeleted &&
+                        it.selectedSessionId == sessionId
+                    ) {
+                        emptyList()
+                    } else {
+                        it.transcriptSegments
+                    },
+                    divergenceEvents = if (sessionFullyDeleted &&
+                        it.selectedSessionId == sessionId
+                    ) {
+                        emptyList()
+                    } else {
+                        it.divergenceEvents
+                    },
+                    annotations = if (sessionFullyDeleted && it.selectedSessionId == sessionId) emptyList() else it.annotations,
+                    playbackFilePath = null,
+                    playbackState = if (sessionFullyDeleted) PlaybackState.Idle else it.playbackState,
+                    playbackPositionMillis = if (sessionFullyDeleted) 0L else it.playbackPositionMillis,
+                    playbackDurationMillis = if (sessionFullyDeleted) 0L else it.playbackDurationMillis,
+                    error = if (sessionFullyDeleted) null else "Artifact atau marker sesi tidak dapat dihapus."
+                )
             }
         }
     }
 
     fun deleteAllSessions() {
+        if (!VerbatimWorkspace(_uiState.value).canManageStoredSessions) return
         val sessions = _uiState.value.sessionHistory
-        viewModelScope.launch(Dispatchers.IO) {
-            actionGate.run(ACTION_SESSION_DELETE_ALL) {
-                playbackCoordinator.stop()
-                val artifactsDeleted = sessions.all { session ->
-                    runCatching {
-                        if (session.artifactFolderPath.isNotBlank()) {
-                            artifactService.deleteSession(
-                                PrivacyIdentity.LOCAL_PROFILE_ID,
-                                session.artifactFolderPath
-                            )
-                        } else if (session.audioFilePath.isNotBlank()) {
-                            artifactService.deleteArtifact(
-                                PrivacyIdentity.LOCAL_PROFILE_ID,
-                                session.audioFilePath
-                            )
-                        } else {
-                            true
-                        }
-                    }.getOrDefault(false)
-                }
-                val annotationsDeleted = artifactsDeleted &&
-                    sessions.all { session ->
-                        runCatching { annotationRepository.deleteAnnotationsForSession(session.sessionId) }.isSuccess
+        runArchiveDeletion(ACTION_SESSION_DELETE_ALL) {
+            playbackCoordinator.stop()
+            val artifactsDeleted = sessions.all { session ->
+                runCatching {
+                    if (session.artifactFolderPath.isNotBlank()) {
+                        artifactService.deleteSession(
+                            PrivacyIdentity.LOCAL_PROFILE_ID,
+                            session.artifactFolderPath
+                        )
+                    } else if (session.audioFilePath.isNotBlank()) {
+                        artifactService.deleteArtifact(
+                            PrivacyIdentity.LOCAL_PROFILE_ID,
+                            session.audioFilePath
+                        )
+                    } else {
+                        true
                     }
-                val deleted = annotationsDeleted && sessionRepository.deleteAllSessions().isSuccess
-                if (deleted) playbackCoordinator.clearCache()
-                _uiState.update {
-                    it.copy(
-                        selectedSessionId = if (deleted) null else it.selectedSessionId,
-                        selectedSession = if (deleted) null else it.selectedSession,
-                        transcriptSegments = if (deleted) emptyList() else it.transcriptSegments,
-                        divergenceEvents = if (deleted) emptyList() else it.divergenceEvents,
-                        annotations = if (deleted) emptyList() else it.annotations,
-                        playbackFilePath = if (deleted) null else it.playbackFilePath,
-                        playbackState = if (deleted) PlaybackState.Idle else it.playbackState,
-                        playbackPositionMillis = if (deleted) 0L else it.playbackPositionMillis,
-                        playbackDurationMillis = if (deleted) 0L else it.playbackDurationMillis,
-                        error = if (deleted) null else "Sebagian sesi tidak dapat dihapus."
-                    )
+                }.getOrDefault(false)
+            }
+            val annotationsDeleted = artifactsDeleted &&
+                sessions.all { session ->
+                    runCatching { annotationRepository.deleteAnnotationsForSession(session.sessionId) }.isSuccess
                 }
+            val deleted = annotationsDeleted && sessionRepository.deleteAllSessions().isSuccess
+            if (deleted) playbackCoordinator.clearCache()
+            _uiState.update {
+                it.copy(
+                    selectedSessionId = if (deleted) null else it.selectedSessionId,
+                    selectedSession = if (deleted) null else it.selectedSession,
+                    transcriptSegments = if (deleted) emptyList() else it.transcriptSegments,
+                    divergenceEvents = if (deleted) emptyList() else it.divergenceEvents,
+                    annotations = if (deleted) emptyList() else it.annotations,
+                    playbackFilePath = if (deleted) null else it.playbackFilePath,
+                    playbackState = if (deleted) PlaybackState.Idle else it.playbackState,
+                    playbackPositionMillis = if (deleted) 0L else it.playbackPositionMillis,
+                    playbackDurationMillis = if (deleted) 0L else it.playbackDurationMillis,
+                    error = if (deleted) null else "Sebagian sesi tidak dapat dihapus."
+                )
             }
         }
     }
 
     fun reportError(message: String) {
         _uiState.update { it.copy(error = message) }
+    }
+
+    private fun runArchiveDeletion(key: String, delete: suspend () -> Unit) {
+        _uiState.update { it.copy(isDeletingSession = true, error = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                runCatching { actionGate.run(key) { delete() } }.onFailure { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    _uiState.update { it.copy(error = error.message ?: "Penghapusan sesi gagal; tinjau artefak yang tersisa.") }
+                }
+            } finally {
+                _uiState.update { it.copy(isDeletingSession = false) }
+            }
+        }
     }
 
     private fun sendSessionAction(action: String) {
@@ -1157,6 +1307,7 @@ class UnifiedSessionViewModel(
         const val PLAYBACK_LOAD_ATTEMPTS = 3
         val PLAYBACK_RETRY_DELAYS_MILLIS = longArrayOf(150L, 350L, 750L)
         const val LIVE_SESSION_UI_SAMPLE_MILLIS = 200L
+        const val MAX_EXPORT_NAME_LENGTH = 80
     }
 }
 

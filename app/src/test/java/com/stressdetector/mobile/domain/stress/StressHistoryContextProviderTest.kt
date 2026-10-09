@@ -52,7 +52,7 @@ class StressHistoryContextProviderTest {
     fun `valid history is newest first and complete lines fit prompt budget`() = runTest {
         val dao = Mockito.mock(StressSessionDao::class.java)
         Mockito.`when`(dao.latest(7)).thenReturn(
-            flowOf((0 until 7).map { index -> session("session-$index", endedAt = 1_000L + index) })
+            flowOf((0 until 7).map { index -> session("session-$index", endedAt = 1_000_000L + index) })
         )
         val provider = RoomStressHistoryContextProvider(
             dao = dao,
@@ -65,6 +65,8 @@ class StressHistoryContextProviderTest {
         assertEquals(7, snapshot.sourceSessionIds.size)
         assertTrue(prompt.lines().none { it.contains("session=") && !it.contains("; quality=") })
         assertTrue(prompt.length <= 300)
+        assertTrue(prompt.contains("label=Stres"))
+        assertTrue(prompt.contains("stressProbability=0.700"))
     }
 
     @Test
@@ -91,11 +93,29 @@ class StressHistoryContextProviderTest {
         assertEquals(listOf("transport-warning"), snapshot.sourceSessionIds)
     }
 
-    private fun session(id: String, probability: Float = 0.7f, confidence: Float = 0.8f, endedAt: Long = 2_000L) = StressSessionEntity(
+    @Test
+    fun `unknown label quality or incomplete session never becomes advice context`() = runTest {
+        val dao = Mockito.mock(StressSessionDao::class.java)
+        listOf(
+            session("unknown").copy(finalLabel = "unknown"),
+            session("quality").copy(qualityTier = ""),
+            session("unknown-quality").copy(qualityTier = "unrated"),
+            session("incomplete").copy(durationMillis = 299_000L),
+            session("time").copy(endedAtMillis = 0L)
+        ).forEach { invalid ->
+            Mockito.`when`(dao.latest(7)).thenReturn(flowOf(listOf(invalid)))
+            val snapshot = RoomStressHistoryContextProvider(dao, InMemoryStressHistoryContextSettings(true)).snapshot()
+            assertFalse(snapshot.entries.single().valid)
+            assertTrue(snapshot.entries.single().rejectionReason != null)
+            assertTrue(snapshot.sourceSessionIds.isEmpty())
+        }
+    }
+
+    private fun session(id: String, probability: Float = 0.7f, confidence: Float = 0.8f, endedAt: Long = 1_000_000L) = StressSessionEntity(
         sessionId = id,
-        startedAtMillis = endedAt - 1_000L,
+        startedAtMillis = endedAt - 300_000L,
         endedAtMillis = endedAt,
-        durationMillis = 1_000L,
+        durationMillis = 300_000L,
         primarySensor = "ppg_green",
         finalLabel = "stress",
         confidence = confidence,

@@ -10,7 +10,8 @@ import java.security.MessageDigest
  */
 class PreparedPpgWindowSlicer(
     private val config: PredictionWindowConfig = PredictionWindowConfig(),
-    private val coverageToleranceMillis: Long = 1_000L
+    private val coverageToleranceMillis: Long = 1_000L,
+    private val motionAnnotator: MotionArtifactAnnotator = MotionArtifactAnnotator()
 ) {
     fun modelWindows(session: PreparedPpgWindow): List<PreparedPpgWindow> {
         val elapsed = elapsedTimes(session)
@@ -57,6 +58,9 @@ class PreparedPpgWindowSlicer(
         val batchIds = source.timestampBatchIds.takeIf { it.size == source.size }
             ?.let { ids -> Array(indices.size) { ids[indices[it]] } }
             ?: emptyArray()
+        val startMillis = elapsed[indices.first()]
+        val endMillis = elapsed[indices.last()]
+        val motionSamples = source.accelerometerSamples.filter { it.elapsedMillis in startMillis..endMillis }
         return source.copy(
             timestampsMillis = LongArray(indices.size) { source.timestampsMillis[indices[it]] },
             filteredValues = filtered,
@@ -67,9 +71,11 @@ class PreparedPpgWindowSlicer(
             sourceBatchIds = batchIds.asList().distinct(),
             rawSampleCount = indices.size,
             interpolatedSampleCount = indices.count { source.interpolatedMask[it] },
-            sessionElapsedStartMillis = elapsed[indices.first()],
-            sessionElapsedEndMillis = elapsed[indices.last()],
+            sessionElapsedStartMillis = startMillis,
+            sessionElapsedEndMillis = endMillis,
             elapsedTimestampsMillis = LongArray(indices.size) { elapsed[indices[it]] },
+            accelerometerSamples = motionSamples,
+            motionAnnotation = motionAnnotator.annotate(motionSamples, startMillis, endMillis),
             interpolatedMask = BooleanArray(indices.size) { source.interpolatedMask[indices[it]] },
             sourceGapInterpolatedSampleCount = indices.count { source.sourceGapInterpolatedMask[it] },
             sourceGapInterpolatedMask = BooleanArray(indices.size) {

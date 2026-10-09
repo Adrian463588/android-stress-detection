@@ -111,6 +111,9 @@ interface AiReminderRepository {
     suspend fun markStatus(reminderId: String, status: String, errorCode: String? = null)
     suspend fun markGenerated(reminderId: String, generatedAt: Instant, modelVersion: String?)
     suspend fun markDelivered(reminderId: String, deliveredAt: Instant)
+
+    /** Serializes the final active-record check, synchronous publication and delivery receipt with mutations. */
+    suspend fun publishIfActive(reminderId: String, publish: () -> ReminderPublishResult): ReminderPublishResult
     suspend fun deletePendingForSource(sourceSessionId: String)
     suspend fun deletePending()
     suspend fun deleteAll()
@@ -157,6 +160,7 @@ interface ReminderNotificationPublisher {
 sealed interface ReminderPublishResult {
     data object Published : ReminderPublishResult
     data object PermissionDenied : ReminderPublishResult
+    data class Rejected(val code: String) : ReminderPublishResult
     data class Failed(val reason: String, val retryable: Boolean) : ReminderPublishResult
 }
 

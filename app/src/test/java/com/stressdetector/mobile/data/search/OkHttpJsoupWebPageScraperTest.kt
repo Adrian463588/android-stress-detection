@@ -32,9 +32,23 @@ class OkHttpKsoupWebPageScraperTest {
         assertEquals(1, result.getOrThrow().size)
         val page = result.getOrThrow().single()
         assertEquals("Article", page.title)
-        assertEquals("Title Useful content.", page.text)
+        assertEquals("Useful content.", page.text)
         assertEquals(7L, page.retrievedAtMillis)
         assertFalse(page.text.contains("bad"))
+    }
+
+    @Test
+    fun tableOfContentsIsExcludedAndParagraphsRemainSeparate() = runTest {
+        val html = """
+            <html><head><title>Coping</title></head><body><article>
+            <h1>Coping</h1><div class="gt-table-of-contents"><p>Table of Contents</p><ol><li><a>Menu only</a></li></ol></div>
+            <p>Artikel menjelaskan langkah kecil.</p><p>Catat pengalaman hari ini.</p>
+            </article></body></html>
+        """.trimIndent()
+        val page = OkHttpKsoupWebPageScraper(scriptedClient(html))
+            .scrapePages(listOf("https://example.com/article")).getOrThrow().single()
+        assertEquals("Artikel menjelaskan langkah kecil.\n\nCatat pengalaman hari ini.", page.text)
+        assertFalse(page.text.contains("Contents"))
     }
 
     @Test

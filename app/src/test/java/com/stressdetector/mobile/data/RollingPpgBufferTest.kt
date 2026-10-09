@@ -8,6 +8,26 @@ import org.junit.Test
 
 class RollingPpgBufferTest {
     @Test
+    fun irregularIrTimestampsKeepActualElapsedGaps() {
+        val buffer = RollingPpgBuffer(PpgType.IR)
+        buffer.append(
+            PpgBatch(
+                type = PpgType.IR,
+                timestampsMillis = longArrayOf(1_000L, 1_010L, 1_060L, 1_070L),
+                rawValues = intArrayOf(1, 2, 3, 4),
+                sessionId = "session",
+                elapsedStartMillis = 2_000L,
+                elapsedEndMillis = 2_070L
+            )
+        )
+
+        assertEquals(
+            longArrayOf(2_000L, 2_010L, 2_060L, 2_070L).toList(),
+            buffer.snapshot().elapsedTimestampsMillis.toList()
+        )
+    }
+
+    @Test
     fun timestampRegressionIsRejectedInsteadOfSilentlyDroppingTheBatch() {
         val buffer = RollingPpgBuffer(PpgType.GREEN)
         buffer.append(

@@ -52,7 +52,7 @@ class RollingPpgBuffer(private val type: PpgType, private val windowSeconds: Int
             ) {
                 "${type.name} batch timestamp regresses from $previousLastTimestamp"
             }
-            val sampleCount = batch.size.coerceAtLeast(1)
+            val firstTimestamp = batch.timestampsMillis.firstOrNull()
             var accepted = 0
             batch.timestampsMillis.forEachIndexed { index, timestamp ->
                 // Samsung Health Tracking callbacks may legitimately contain
@@ -61,11 +61,10 @@ class RollingPpgBuffer(private val type: PpgType, private val windowSeconds: Int
                 // is rejected above so it cannot be ACKed as if samples arrived.
                 timestamps.addLast(timestamp)
                 elapsedTimestamps.addLast(
-                    if (sampleCount == 1) {
+                    if (firstTimestamp == null || batch.size == 1) {
                         batch.elapsedEndMillis
                     } else {
-                        batch.elapsedStartMillis +
-                            ((batch.elapsedEndMillis - batch.elapsedStartMillis) * index / (sampleCount - 1))
+                        batch.elapsedStartMillis + (timestamp - firstTimestamp)
                     }.coerceAtLeast(0L)
                 )
                 values.addLast(batch.rawValues[index])
@@ -241,7 +240,9 @@ data class WindowSnapshot(
     val sessionId: String? = null,
     val windowId: String? = null,
     /** Transport evidence is observational and never changes model samples. */
-    val transportDiagnostics: PpgTransportDiagnostics? = null
+    val transportDiagnostics: PpgTransportDiagnostics? = null,
+    /** Actual Watch motion evidence, attached only to lease-scoped Home snapshots. */
+    val accelerometerSamples: List<com.stressdetector.shared.AccelerometerSample> = emptyList()
 ) {
     val size: Int get() = rawValues.size
 }

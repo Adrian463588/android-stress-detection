@@ -16,7 +16,7 @@ data class StressHistoryItem(
     val finalLabel: String,
     val confidence: Float,
     val qualityTier: String,
-    val stressProbability: Float
+    val stressProbability: Float?
 )
 
 interface StressHistoryReader {
@@ -55,7 +55,7 @@ object StressHistoryFormatter {
         else -> rawLabel.trim().ifBlank { "Tidak tersedia" }
     }
 
-    fun formatProbability(probability: Float): String = if (probability.isFinite() && probability in 0f..1f) {
+    fun formatProbability(probability: Float?): String = if (probability != null && probability.isFinite() && probability in 0f..1f) {
         "${(probability * 100f).toInt()}%"
     } else {
         "Tidak tersedia"
@@ -80,7 +80,11 @@ object StressHistoryFormatter {
         }
     }
 
-    private fun formatPromptNumber(value: Float): String = if (value.isFinite()) "%.3f".format(Locale.US, value) else "unavailable"
+    private fun formatPromptNumber(value: Float?): String = if (value != null && value.isFinite()) {
+        "%.3f".format(Locale.US, value)
+    } else {
+        "unavailable"
+    }
 }
 
 private fun com.stressdetector.mobile.data.db.StressSessionEntity.toHistoryItem(): StressHistoryItem = StressHistoryItem(

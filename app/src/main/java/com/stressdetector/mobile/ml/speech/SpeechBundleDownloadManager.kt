@@ -18,7 +18,6 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.stressdetector.mobile.audio.SherpaOnnxSpeechRuntime
 import com.stressdetector.mobile.di.AppLocator
 import com.stressdetector.mobile.domain.engine.SpeechRuntimeState
 import com.stressdetector.mobile.ml.artifacts.VerifiedArtifactDownloadManager
@@ -253,13 +252,6 @@ class SpeechBundleDownloadManager(
         operationMutex.withLock {
             reconcileLocked()
             bundleManager.clearDeletionRequest()
-            if (isComplete(bundleManager.readiness.value)) {
-                stateStore.set(SpeechBundleDownloadState.Ready)
-                stateStore.clearWorkId()
-                storageBudget.release(DownloadLane.SHARED_SPEECH)
-                return@withLock false
-            }
-
             val existing = findCurrentWorkInfo()
             if (existing != null && !existing.state.isFinished) {
                 stateStore.setWorkId(existing.id.toString())
@@ -269,6 +261,12 @@ class SpeechBundleDownloadManager(
                 ) {
                     publishQueuedStateIfNeeded()
                 }
+                return@withLock false
+            }
+            if (isComplete(bundleManager.readiness.value)) {
+                stateStore.set(SpeechBundleDownloadState.Ready)
+                stateStore.clearWorkId()
+                storageBudget.release(DownloadLane.SHARED_SPEECH)
                 return@withLock false
             }
 
@@ -378,59 +376,37 @@ class SpeechBundleDownloadManager(
 
     private suspend fun reconcileLocked() {
         stateStore.refreshFromDisk()
+        val work = findCurrentWorkInfo()
+        val activeWork = work?.takeUnless { it.state.isFinished }
         var readiness = bundleManager.readiness.value
-        if (stateStore.state.value is SpeechBundleDownloadState.Ready &&
-            readiness !is SpeechBundleReadiness.Ready
-        ) {
+        if (shouldRevalidateIdleSpeechBundle(readiness, hasActiveWork = activeWork != null)) {
             readiness = bundleManager.refreshReadiness()
         }
 
-        val work = findCurrentWorkInfo()
         when {
+            activeWork != null -> {
+                stateStore.setWorkId(activeWork.id.toString())
+                adoptActiveReservation(activeWork.id.toString())
+                if (stateStore.state.value is SpeechBundleDownloadState.Ready ||
+                    stateStore.state.value is SpeechBundleDownloadState.Idle
+                ) {
+                    publishQueuedStateIfNeeded()
+                }
+            }
             isComplete(readiness) -> {
                 stateStore.set(SpeechBundleDownloadState.Ready)
                 stateStore.clearWorkId()
                 storageBudget.release(DownloadLane.SHARED_SPEECH)
             }
-            work == null -> {
-                val diskReadiness = bundleManager.refreshReadiness()
-                if (isComplete(diskReadiness)) {
-                    stateStore.set(SpeechBundleDownloadState.Ready)
-                } else if (stateStore.state.value is SpeechBundleDownloadState.Downloading ||
-                    stateStore.state.value is SpeechBundleDownloadState.Verifying ||
-                    stateStore.state.value is SpeechBundleDownloadState.Assembling ||
-                    stateStore.state.value is SpeechBundleDownloadState.Installing ||
-                    stateStore.state.value is SpeechBundleDownloadState.Cancelling ||
-                    stateStore.state.value is SpeechBundleDownloadState.Deleting
-                ) {
-                    stateStore.set(
-                        SpeechBundleDownloadState.Failed(
-                            "Sherpa download state was orphaned after restart. Tap Retry to continue safely.",
-                            retryable = true
-                        )
-                    )
-                }
-                storageBudget.release(DownloadLane.SHARED_SPEECH)
-            }
-            !work.state.isFinished -> {
-                stateStore.setWorkId(work.id.toString())
-                adoptActiveReservation(work.id.toString())
-            }
+            work == null -> reconcileWithoutWork(readiness)
             work.state == WorkInfo.State.SUCCEEDED -> {
-                readiness = bundleManager.refreshReadiness()
-                if (isComplete(readiness)) {
-                    stateStore.set(SpeechBundleDownloadState.Ready)
-                    stateStore.clearWorkId()
-                    storageBudget.release(DownloadLane.SHARED_SPEECH, work.id.toString())
-                } else {
-                    stateStore.set(
-                        SpeechBundleDownloadState.Failed(
-                            "Sherpa download selesai tetapi bundle aktif belum lolos validasi lengkap.",
-                            retryable = false
-                        )
+                stateStore.set(
+                    SpeechBundleDownloadState.Failed(
+                        "Sherpa download selesai tetapi bundle aktif belum lolos validasi lengkap.",
+                        retryable = false
                     )
-                    storageBudget.release(DownloadLane.SHARED_SPEECH, work.id.toString())
-                }
+                )
+                storageBudget.release(DownloadLane.SHARED_SPEECH, work.id.toString())
             }
             work.state == WorkInfo.State.CANCELLED -> {
                 stateStore.set(SpeechBundleDownloadState.Cancelled)
@@ -450,6 +426,28 @@ class SpeechBundleDownloadManager(
                 storageBudget.release(DownloadLane.SHARED_SPEECH, work.id.toString())
             }
         }
+    }
+
+    private fun reconcileWithoutWork(readiness: SpeechBundleReadiness) {
+        when (stateStore.state.value) {
+            is SpeechBundleDownloadState.Downloading,
+            is SpeechBundleDownloadState.Verifying,
+            is SpeechBundleDownloadState.Assembling,
+            is SpeechBundleDownloadState.Installing,
+            SpeechBundleDownloadState.Cancelling,
+            SpeechBundleDownloadState.Deleting -> stateStore.set(
+                SpeechBundleDownloadState.Failed(
+                    "Sherpa download state was orphaned after restart. Tap Retry to continue safely.",
+                    retryable = true
+                )
+            )
+            SpeechBundleDownloadState.Idle,
+            SpeechBundleDownloadState.Ready -> if (readiness is SpeechBundleReadiness.Ready) {
+                stateStore.set(SpeechBundleDownloadState.Ready)
+            }
+            else -> Unit
+        }
+        storageBudget.release(DownloadLane.SHARED_SPEECH)
     }
 
     fun cancel() {
@@ -489,13 +487,7 @@ class SpeechBundleDownloadManager(
         }
     }
 
-    private fun isComplete(readiness: SpeechBundleReadiness): Boolean = readiness is SpeechBundleReadiness.Ready &&
-        readiness.manifest.indonesianStt != null &&
-        descriptor.languages.all { language ->
-            readiness.manifest.ttsProfiles.values.any { profile ->
-                profile.language.equals(language, ignoreCase = true)
-            }
-        }
+    private fun isComplete(readiness: SpeechBundleReadiness): Boolean = isCurrentSpeechBundleComplete(readiness, descriptor)
 
     companion object {
         const val WORK_TAG = "speech-bundle"
@@ -514,7 +506,7 @@ class SpeechBundleDownloadWorker(appContext: Context, workerParams: WorkerParame
     private val downloader = VerifiedArtifactDownloadManager()
     private val assembler = SpeechBundleArchiveAssembler()
     private val storageBudget = DownloadStorageBudget(applicationContext)
-    private val runtime = SherpaOnnxSpeechRuntime(bundleManager)
+    private val runtime = AppLocator.speechRuntime(applicationContext)
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val workId = id.toString()
@@ -601,8 +593,6 @@ class SpeechBundleDownloadWorker(appContext: Context, workerParams: WorkerParame
             stateStore.set(SpeechBundleDownloadState.Failed(error.message ?: "Speech bundle installation failed.", false))
             storageBudget.release(DownloadLane.SHARED_SPEECH, workId)
             Result.failure()
-        } finally {
-            runtime.closeAndWait()
         }
     }
 

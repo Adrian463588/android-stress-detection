@@ -313,7 +313,9 @@ class VerbatimSessionFinalizer(
                         "endTimestampUtc" to segment.endTimestampUtc,
                         "language" to segment.language,
                         "confidence" to segment.confidence,
-                        "isDisfluent" to segment.isDisfluent
+                        "isDisfluent" to segment.isDisfluent,
+                        "reviewCueAnalysis" to VerbatimCueAnalyzer().analyze(segment),
+                        "prosodyEvidence" to segment.prosody
                     )
                 )
             )

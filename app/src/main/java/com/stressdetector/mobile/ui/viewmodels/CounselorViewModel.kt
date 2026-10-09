@@ -12,17 +12,18 @@ import com.stressdetector.mobile.data.db.ChatSessionEntity
 import com.stressdetector.mobile.data.repository.RoomCrisisTurnRepository
 import com.stressdetector.mobile.data.repository.SharedPreferencesCounselorSessionSelectionStore
 import com.stressdetector.mobile.di.AppLocator
+import com.stressdetector.mobile.domain.counselor.CounselorPersonaProfile
 import com.stressdetector.mobile.domain.counselor.CounselorPersonaRepository
 import com.stressdetector.mobile.domain.counselor.CounselorSessionSelectionStore
 import com.stressdetector.mobile.domain.counselor.CrisisTurn
 import com.stressdetector.mobile.domain.counselor.CrisisTurnRepository
 import com.stressdetector.mobile.domain.engine.AssetPromptAssetProvider
-import com.stressdetector.mobile.domain.engine.CitationRegistry
 import com.stressdetector.mobile.domain.engine.CitationSource
 import com.stressdetector.mobile.domain.engine.ClinicalSafetyInterceptor
 import com.stressdetector.mobile.domain.engine.ConversationTurn
 import com.stressdetector.mobile.domain.engine.CounselorGenerationRequest
 import com.stressdetector.mobile.domain.engine.CounselorOutputGuard
+import com.stressdetector.mobile.domain.engine.CounselorPromptBuilder
 import com.stressdetector.mobile.domain.engine.CrisisInterceptionResult
 import com.stressdetector.mobile.domain.engine.CrisisResponseTemplateProvider
 import com.stressdetector.mobile.domain.engine.CrisisSupportAction
@@ -35,6 +36,7 @@ import com.stressdetector.mobile.domain.engine.KnowledgeCitation
 import com.stressdetector.mobile.domain.engine.LlmGenerationState
 import com.stressdetector.mobile.domain.engine.LlmRuntimeReadiness
 import com.stressdetector.mobile.domain.engine.OnDeviceLlmEngine
+import com.stressdetector.mobile.domain.engine.PreparedCounselorPrompt
 import com.stressdetector.mobile.domain.engine.PromptAsset
 import com.stressdetector.mobile.domain.engine.PromptAssetProvider
 import com.stressdetector.mobile.domain.engine.RagMode
@@ -42,9 +44,11 @@ import com.stressdetector.mobile.domain.engine.RagRetrievalResult
 import com.stressdetector.mobile.domain.engine.RagRetriever
 import com.stressdetector.mobile.domain.engine.SafetyInterceptor
 import com.stressdetector.mobile.domain.interaction.IdempotentActionGate
+import com.stressdetector.mobile.domain.search.PublicCounselorQuery
 import com.stressdetector.mobile.domain.search.WebConsentStore
 import com.stressdetector.mobile.domain.search.WebGroundingGateway
 import com.stressdetector.mobile.domain.search.WebGroundingResult
+import com.stressdetector.mobile.domain.search.WebQuerySanitizer
 import com.stressdetector.mobile.domain.search.WebSearchMode
 import com.stressdetector.mobile.domain.stress.StressHistoryContextProvider
 import com.stressdetector.mobile.domain.stress.StressHistoryContextState
@@ -69,6 +73,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -76,6 +82,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 enum class CounselorPhase {
@@ -118,6 +126,7 @@ data class CounselorUiState(
     val chatSessions: List<UiChatSession> = emptyList(),
     val messages: List<UiChatMessage> = emptyList(),
     val isGenerating: Boolean = false,
+    val isRetrieving: Boolean = false,
     val statusMessage: String? = null,
     val isModelReady: Boolean = false,
     val modelMetadata: String? = null,
@@ -139,13 +148,14 @@ data class CounselorUiState(
     val voiceLanguage: VoiceLanguage = VoiceLanguage.INDONESIAN,
     val webSearchMode: WebSearchMode = WebSearchMode.Disabled,
     val webConsentGranted: Boolean = false,
+    val automaticWebAllowed: Boolean = false,
     val webConsentRequired: Boolean = false,
     val pendingWebQuery: String? = null,
     val useStressHistory: Boolean = false,
     val stressHistoryStatus: String? = null,
     val crisisPersistenceState: CrisisPersistenceState = CrisisPersistenceState.Idle
 ) {
-    val canCancel: Boolean get() = isGenerating
+    val canCancel: Boolean get() = isGenerating || isRetrieving || webConsentRequired
 }
 
 class CounselorViewModel(
@@ -177,11 +187,18 @@ class CounselorViewModel(
     private val _uiState = MutableStateFlow(CounselorUiState())
     val uiState: StateFlow<CounselorUiState> = _uiState.asStateFlow()
     private var generationJob: Job? = null
+    private var webFlowJob: Job? = null
+
+    @Volatile private var turnEpoch = 0L
+    private val promptBuilder = CounselorPromptBuilder()
     private var messageObservationJob: Job? = null
     private var voiceInputJob: Job? = null
     private var autoSentVoiceTranscript: String? = null
     private val actionGate = IdempotentActionGate<String>()
     private val sendMutex = Mutex()
+    private val webPermissionMutex = Mutex()
+
+    @Volatile private var requestedAutomaticWeb: Boolean? = null
     private val voicePlaybackCoordinator = voiceOutputEngine?.let { engine ->
         VoicePlaybackCoordinator(engine, viewModelScope)
     }
@@ -198,12 +215,60 @@ class CounselorViewModel(
         observeVoiceState()
         observeStressHistoryContext()
         observeWebConsent()
+        observeAutomaticWebPermission()
+    }
+
+    private fun observeAutomaticWebPermission() {
+        viewModelScope.launch {
+            webConsentStore.automaticAllowed.collect { allowed ->
+                val effectiveAllowed = allowed && requestedAutomaticWeb != false
+                val revoked = _uiState.value.automaticWebAllowed && !effectiveAllowed
+                _uiState.update {
+                    it.copy(
+                        automaticWebAllowed = effectiveAllowed,
+                        webSearchMode = if (effectiveAllowed) WebSearchMode.Persistent else it.webSearchMode
+                    )
+                }
+                if (revoked) {
+                    if (_uiState.value.canCancel) cancelGeneration()
+                    _uiState.update {
+                        val mode = if (it.webSearchMode == WebSearchMode.Persistent) WebSearchMode.Disabled else it.webSearchMode
+                        it.copy(webSearchMode = mode)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Called only by the explicitly labelled automatic-public-search setting. */
+    fun setAutomaticWebSearchEnabled(enabled: Boolean) {
+        requestedAutomaticWeb = enabled
+        if (!enabled) {
+            if (_uiState.value.canCancel) cancelGeneration()
+            _uiState.update {
+                it.copy(
+                    automaticWebAllowed = false,
+                    webSearchMode = if (it.webSearchMode == WebSearchMode.Persistent) WebSearchMode.Disabled else it.webSearchMode
+                )
+            }
+        }
+        viewModelScope.launch(ioDispatcher) {
+            webPermissionMutex.withLock {
+                runCatching { webConsentStore.setAutomaticAllowed(enabled) }.onFailure { error ->
+                    _uiState.update { it.copy(statusMessage = "Izin web belum tersimpan.", runtimeTechnicalMessage = error.message) }
+                }
+            }
+        }
     }
 
     private fun observeWebConsent() {
         viewModelScope.launch {
             webConsentStore.granted.collect { granted ->
+                val revoked = _uiState.value.webConsentGranted && !granted
                 _uiState.update { it.copy(webConsentGranted = granted) }
+                if (revoked && (_uiState.value.isRetrieving || _uiState.value.retrievalMode == RagMode.WEB_GROUNDED)) {
+                    cancelGeneration()
+                }
             }
         }
     }
@@ -257,22 +322,44 @@ class CounselorViewModel(
     }
 
     fun setWebSearchMode(mode: WebSearchMode) {
+        if (mode == WebSearchMode.Disabled && _uiState.value.canCancel) cancelGeneration()
         _uiState.update { it.copy(webSearchMode = mode) }
     }
 
-    fun confirmWebConsent() {
-        webConsentStore.setGranted(true)
-        _uiState.update {
-            it.copy(
-                webConsentGranted = true,
-                webConsentRequired = false,
-                pendingWebQuery = null
+    fun confirmWebConsent(publicQuery: String = _uiState.value.pendingWebQuery.orEmpty()) {
+        if (!_uiState.value.webConsentRequired) return
+        val request = pendingWebRequest ?: return
+        if (isCurrentTurn(request.turnEpoch, request.sessionId)) {
+            WebQuerySanitizer.sanitize(publicQuery).fold(
+                onFailure = { error ->
+                    _uiState.update { it.copy(statusMessage = error.message ?: "Masukkan pertanyaan publik terpisah.") }
+                },
+                onSuccess = { query -> confirmPublicQuery(request, publicQuery, query) }
             )
         }
-        pendingWebRequest?.let(::beginWebFlow)
+    }
+
+    private fun confirmPublicQuery(request: PendingWebRequest, original: String, query: String) {
+        if (query != original.trim()) {
+            _uiState.update { it.copy(pendingWebQuery = query, statusMessage = "Periksa query yang diringkas, lalu konfirmasi lagi.") }
+        } else {
+            val saved = runCatching {
+                webConsentStore.setGranted(true)
+                webConsentStore.granted.value
+            }.getOrDefault(false)
+            if (saved) {
+                _uiState.update { it.copy(webConsentGranted = true, webConsentRequired = false, pendingWebQuery = null) }
+                beginWebFlow(request, query)
+            } else {
+                _uiState.update { it.copy(statusMessage = "Persetujuan web belum tersimpan. Pencarian tidak dijalankan.") }
+            }
+        }
     }
 
     fun dismissWebConsent() {
+        turnEpoch++
+        webFlowJob?.cancel()
+        webFlowJob = null
         _uiState.update {
             it.copy(
                 webSearchMode = if (it.webSearchMode == WebSearchMode.NextMessage) {
@@ -281,7 +368,12 @@ class CounselorViewModel(
                     it.webSearchMode
                 },
                 webConsentRequired = false,
-                pendingWebQuery = null
+                pendingWebQuery = null,
+                isRetrieving = false,
+                phase = CounselorPhase.RETRIEVAL_UNAVAILABLE,
+                retrievalMode = RagMode.UNAVAILABLE,
+                lastFailedUserMessage = pendingWebRequest?.rawText,
+                statusMessage = "Pencarian web dibatalkan; tidak ada jawaban berbasis sumber yang dibuat."
             )
         }
         pendingWebRequest = null
@@ -289,25 +381,21 @@ class CounselorViewModel(
 
     private fun initializeChatSessionAndLoadMessages() {
         viewModelScope.launch {
+            val initialEpoch = turnEpoch
             val sessions = chatDao.getAllChatSessions().first()
             val selectedSessionId = runCatching { sessionSelectionStore.read() }.getOrNull()
             val existing = sessions.firstOrNull { it.chatSessionId == selectedSessionId }
                 ?: sessions.firstOrNull()
+            if (turnEpoch != initialEpoch) {
+                showSession(_uiState.value.activeChatSessionId)
+                return@launch
+            }
             // Keep the eagerly-created UI id when there is no history. A user
             // may send the first message before this Room read finishes.
             val sessionId = existing?.chatSessionId ?: _uiState.value.activeChatSessionId
             sessionSelectionStore.save(sessionId)
-            if (existing == null) {
-                val now = System.currentTimeMillis()
-                chatDao.insertChatSession(
-                    ChatSessionEntity(
-                        chatSessionId = sessionId,
-                        title = "Chat baru",
-                        startedAtMillis = now,
-                        lastMessageAtMillis = now
-                    )
-                )
-            }
+            // Opening the shell must not occupy an otherwise empty recovery destination.
+            // Persist this draft only when the user sends a message (or explicitly creates a chat).
             showSession(sessionId)
         }
     }
@@ -334,19 +422,19 @@ class CounselorViewModel(
 
     private fun showSession(sessionId: String) {
         messageObservationJob?.cancel()
-        pendingWebRequest = null
         sessionSelectionStore.save(sessionId)
         val switchingSession = _uiState.value.activeChatSessionId != sessionId
+        if (switchingSession) pendingWebRequest = null
         _uiState.update {
             it.copy(
                 activeChatSessionId = sessionId,
-                messages = emptyList(),
+                messages = if (switchingSession) emptyList() else it.messages,
                 // Keep a model/runtime readiness message visible during the
                 // asynchronous first-session load; otherwise opening AI+ can
                 // erase the actionable missing-model state.
-                statusMessage = if (it.isModelReady) null else it.statusMessage,
-                lastFailedUserMessage = null,
-                webSearchMode = if (switchingSession) WebSearchMode.Disabled else it.webSearchMode,
+                statusMessage = if (switchingSession && it.isModelReady) null else it.statusMessage,
+                lastFailedUserMessage = if (switchingSession) null else it.lastFailedUserMessage,
+                webSearchMode = if (switchingSession && !it.automaticWebAllowed) WebSearchMode.Disabled else it.webSearchMode,
                 webConsentRequired = if (switchingSession) false else it.webConsentRequired,
                 pendingWebQuery = if (switchingSession) null else it.pendingWebQuery
             )
@@ -619,7 +707,7 @@ class CounselorViewModel(
             }
             CrisisInterceptionResult.NoCrisis -> crisisEscalationActive = false
         }
-        if (generationJob?.isActive == true) {
+        if (generationJob?.isActive == true || webFlowJob?.isActive == true) {
             _uiState.update {
                 it.copy(statusMessage = "Respons sebelumnya masih diproses. Tunggu atau tekan batal sebelum mengirim pesan baru.")
             }
@@ -637,8 +725,13 @@ class CounselorViewModel(
             timestampMs = System.currentTimeMillis(),
             inputMode = inputMode
         )
-        if (!aiConsentGranted()) {
-            persist(userMessage, _uiState.value.activeChatSessionId)
+        val dispatchSessionId = _uiState.value.activeChatSessionId
+        val dispatchEpoch = turnEpoch
+        val consentGranted = aiConsentGranted()
+        requireCurrentTurn(dispatchEpoch, dispatchSessionId)
+        if (!consentGranted) {
+            persist(userMessage, dispatchSessionId)
+            requireCurrentTurn(dispatchEpoch, dispatchSessionId)
             _uiState.update {
                 it.copy(
                     messages = ChatMessageListReducer.append(it.messages, userMessage),
@@ -651,8 +744,16 @@ class CounselorViewModel(
         }
 
         val webMode = _uiState.value.webSearchMode
+        turnEpoch++
         if (webMode != WebSearchMode.Disabled) {
-            val request = PendingWebRequest(rawText, inputMode, userMessage, webMode)
+            val request = PendingWebRequest(
+                rawText,
+                inputMode,
+                userMessage,
+                webMode,
+                sessionId = _uiState.value.activeChatSessionId,
+                turnEpoch = turnEpoch
+            )
             pendingWebRequest = request
             // Local RAG and the approved bundled corpus always get the first chance. Web consent
             // is requested only after both local sources abstain for an evidence-required query.
@@ -713,6 +814,7 @@ class CounselorViewModel(
                 messages = ChatMessageListReducer.replace(state.messages, userMessage, crisisMessage),
                 isGenerating = false,
                 phase = CounselorPhase.CRISIS_ESCALATION,
+                isRetrieving = false,
                 retrievalMode = null,
                 statusMessage = CRISIS_STATUS_MESSAGE,
                 runtimeTechnicalMessage = null,
@@ -730,6 +832,9 @@ class CounselorViewModel(
     }
 
     private fun preemptGenerationForCrisis() {
+        turnEpoch++
+        webFlowJob?.cancel()
+        webFlowJob = null
         pendingWebRequest = null
         generationJob?.cancel(CancellationException("Crisis escalation preempted counselor generation"))
         generationJob = null
@@ -783,128 +888,146 @@ class CounselorViewModel(
         }
     }
 
-    private fun beginWebFlow(request: PendingWebRequest) {
+    private fun beginWebFlow(request: PendingWebRequest, confirmedQuery: String? = null) {
+        if (!isCurrentTurn(request.turnEpoch, request.sessionId)) return
         pendingWebRequest = request
         _uiState.update {
             it.copy(
-                pendingWebQuery = request.rawText,
+                isRetrieving = true,
+                pendingWebQuery = null,
                 webConsentRequired = false,
-                statusMessage = "Memeriksa sumber lokal…"
+                messages = ChatMessageListReducer.append(it.messages, request.userMessage),
+                statusMessage = if (confirmedQuery == null) "Memeriksa sumber lokal…" else "Mencari sumber web…"
             )
         }
-        viewModelScope.launch(ioDispatcher) {
-            if (!aiConsentGranted()) {
-                pendingWebRequest = null
-                _uiState.update {
-                    it.copy(
-                        webConsentRequired = false,
-                        pendingWebQuery = null,
-                        statusMessage = "Consent AI Counselor belum diberikan. Aktifkan consent di Profile.",
-                        lastFailedUserMessage = request.rawText
-                    )
-                }
-                return@launch
+        webFlowJob = viewModelScope.launch(ioDispatcher) {
+            runCatching {
+                if (request.persistUserMessage) persist(request.userMessage, request.sessionId)
+                requireCurrentTurn(request.turnEpoch, request.sessionId)
+                processWebFlow(request.copy(persistUserMessage = false), confirmedQuery)
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                reportWebFailure(request, error)
             }
-            if (!_uiState.value.isModelReady) {
-                pendingWebRequest = null
-                startGeneration(
-                    promptText = request.rawText,
-                    rawUserText = request.rawText,
-                    userMessage = request.userMessage,
-                    persistUserMessage = request.persistUserMessage,
-                    inputMode = request.inputMode
-                )
-                return@launch
-            }
-            val retrieval = runCatching { ragRetriever.retrieveRelevantPassages(request.rawText) }
-                .getOrElse { error -> RagRetrievalResult.Unavailable(error.message ?: "Local retrieval failed") }
-            val localDecision = retrieval.toDecision(request.rawText)
-            val nextMode = if (request.mode == WebSearchMode.NextMessage) {
-                WebSearchMode.Disabled
-            } else {
-                request.mode
-            }
+        }
+    }
 
-            if (localDecision.mode != RagMode.UNAVAILABLE) {
-                pendingWebRequest = null
-                _uiState.update {
-                    it.copy(
-                        webSearchMode = nextMode,
-                        pendingWebQuery = null,
-                        webConsentRequired = false,
-                        statusMessage = localDecision.statusMessage
-                    )
+    private suspend fun processWebFlow(request: PendingWebRequest, confirmedQuery: String?) {
+        if (!aiConsentGranted() || !_uiState.value.isModelReady) {
+            handOffWebTurn(request)
+            return
+        }
+        val retrieval = request.localRetrieval ?: retrieveLocal(request.rawText)
+        requireCurrentTurn(request.turnEpoch, request.sessionId)
+        when {
+            retrieval.toDecision(request.rawText).mode != RagMode.UNAVAILABLE -> handOffWebTurn(request, retrieval)
+            confirmedQuery == null && request.mode == WebSearchMode.Persistent && _uiState.value.automaticWebAllowed -> {
+                val publicQuery = PublicCounselorQuery.fromMessage(request.rawText)
+                if (publicQuery == null) {
+                    handOffWebTurn(request, retrieval, webError = "public_topic_unavailable")
+                } else {
+                    _uiState.update { it.copy(statusMessage = "Mencari sumber web…") }
+                    fetchWebEvidence(request, retrieval, publicQuery, automatic = true)
                 }
-                startGeneration(
-                    promptText = request.rawText,
-                    rawUserText = request.rawText,
-                    userMessage = request.userMessage,
-                    persistUserMessage = request.persistUserMessage,
-                    inputMode = request.inputMode,
-                    localRetrievalOverride = retrieval
-                )
-                return@launch
             }
-
-            if (!_uiState.value.webConsentGranted) {
-                _uiState.update {
-                    it.copy(
-                        webConsentRequired = true,
-                        pendingWebQuery = request.rawText,
-                        statusMessage = "Sumber lokal belum cukup. Konfirmasi pencarian web untuk pertanyaan ini."
-                    )
-                }
-                return@launch
+            confirmedQuery == null -> offerPublicQuery(request, retrieval)
+            else -> {
+                fetchWebEvidence(request, retrieval, confirmedQuery, automatic = false)
             }
+        }
+    }
 
+    private suspend fun fetchWebEvidence(request: PendingWebRequest, retrieval: RagRetrievalResult, query: String, automatic: Boolean) {
+        check(webConsentStore.granted.value && (!automatic || _uiState.value.automaticWebAllowed)) { "web_consent_required" }
+        val grounding = withTimeoutOrNull(WEB_SEARCH_TIMEOUT_MILLIS) { webGroundingGateway.retrieveAutomatically(query) }
+            ?: Result.failure(IllegalStateException("web_search_timeout"))
+        requireCurrentTurn(request.turnEpoch, request.sessionId)
+        check(webConsentStore.granted.value && aiConsentGranted() && (!automatic || _uiState.value.automaticWebAllowed)) {
+            "consent_revoked"
+        }
+        grounding.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        handOffWebTurn(request, retrieval, grounding.getOrNull(), grounding.exceptionOrNull()?.message)
+    }
+
+    private suspend fun offerPublicQuery(request: PendingWebRequest, retrieval: RagRetrievalResult) {
+        if (request.persistUserMessage) persist(request.userMessage, request.sessionId)
+        withContext(Dispatchers.Main.immediate) {
+            requireCurrentTurn(request.turnEpoch, request.sessionId)
+            pendingWebRequest = request.copy(localRetrieval = retrieval, persistUserMessage = false)
             _uiState.update {
                 it.copy(
-                    webConsentRequired = false,
-                    pendingWebQuery = request.rawText,
-                    statusMessage = "Sumber lokal belum cukup. Mencari sumber web HTTPS…"
-                )
-            }
-            val grounding = webGroundingGateway.retrieveAutomatically(request.rawText)
-            pendingWebRequest = null
-            grounding.onSuccess { result ->
-                _uiState.update {
-                    it.copy(
-                        webSearchMode = nextMode,
-                        pendingWebQuery = null,
-                        webConsentRequired = false,
-                        statusMessage = "Sumber web ditemukan. AI sedang menyusun jawaban."
-                    )
-                }
-                startGeneration(
-                    promptText = request.rawText,
-                    rawUserText = request.rawText,
-                    userMessage = request.userMessage,
-                    persistUserMessage = request.persistUserMessage,
-                    inputMode = request.inputMode,
-                    localRetrievalOverride = retrieval,
-                    webGroundingOverride = result
-                )
-            }.onFailure { error ->
-                _uiState.update {
-                    it.copy(
-                        webSearchMode = nextMode,
-                        pendingWebQuery = null,
-                        webConsentRequired = false,
-                        statusMessage = "Sumber web tidak tersedia. Pertanyaan berbasis evidence belum dapat dijawab.",
-                        runtimeTechnicalMessage = error.message
-                    )
-                }
-                startGeneration(
-                    promptText = request.rawText,
-                    rawUserText = request.rawText,
-                    userMessage = request.userMessage,
-                    persistUserMessage = request.persistUserMessage,
-                    inputMode = request.inputMode,
-                    localRetrievalOverride = retrieval,
-                    webStatusMessage = "Sumber web tidak tersedia; tidak ada evidence yang dapat diverifikasi."
+                    messages = ChatMessageListReducer.append(it.messages, request.userMessage),
+                    isRetrieving = false,
+                    webConsentRequired = true,
+                    pendingWebQuery = WebQuerySanitizer.sanitize(request.rawText).getOrNull().orEmpty(),
+                    statusMessage = "Sumber lokal belum cukup. Periksa pertanyaan publik sebelum mencari web."
                 )
             }
         }
+    }
+
+    private fun reportWebFailure(request: PendingWebRequest, error: Throwable) {
+        viewModelScope.launch {
+            if (!isCurrentTurn(request.turnEpoch, request.sessionId)) return@launch
+            pendingWebRequest = null
+            _uiState.update {
+                it.copy(
+                    isRetrieving = false,
+                    webConsentRequired = false,
+                    pendingWebQuery = null,
+                    phase = CounselorPhase.RETRIEVAL_UNAVAILABLE,
+                    statusMessage = "Pencarian sumber belum tersedia. Coba lagi atau pilih dokumen lokal.",
+                    runtimeTechnicalMessage = error.message,
+                    lastFailedUserMessage = request.rawText
+                )
+            }
+        }
+    }
+
+    private fun handOffWebTurn(
+        request: PendingWebRequest,
+        retrieval: RagRetrievalResult? = null,
+        grounding: WebGroundingResult? = null,
+        webError: String? = null
+    ) {
+        // Ownership and generation setup run together on Main, serialized with cancel/chat navigation.
+        viewModelScope.launch {
+            if (!isCurrentTurn(request.turnEpoch, request.sessionId)) return@launch
+            pendingWebRequest = null
+            _uiState.update {
+                it.copy(
+                    isRetrieving = false,
+                    webConsentRequired = false,
+                    pendingWebQuery = null,
+                    webSearchMode = if (request.mode == WebSearchMode.NextMessage) WebSearchMode.Disabled else request.mode
+                )
+            }
+            startGeneration(
+                promptText = request.rawText,
+                rawUserText = request.rawText,
+                userMessage = request.userMessage,
+                persistUserMessage = request.persistUserMessage,
+                inputMode = request.inputMode,
+                localRetrievalOverride = if (webError == null) retrieval else RagRetrievalResult.Unavailable("web: $webError"),
+                webGroundingOverride = grounding,
+                webStatusMessage = webError?.let { "Sumber belum dapat dibaca. Kamu tetap bisa bercerita, atau mencoba lagi." }
+            )
+        }
+    }
+
+    private suspend fun retrieveLocal(text: String): RagRetrievalResult = runCatching {
+        ragRetriever.retrieveRelevantPassages(text)
+    }.getOrElse { error ->
+        if (error is CancellationException) throw error
+        RagRetrievalResult.Unavailable(error.message ?: "Local retrieval failed")
+    }
+
+    private fun isCurrentTurn(epoch: Long, sessionId: String): Boolean =
+        turnEpoch == epoch && _uiState.value.activeChatSessionId == sessionId
+
+    private suspend fun requireCurrentTurn(epoch: Long, sessionId: String) {
+        currentCoroutineContext().ensureActive()
+        if (!isCurrentTurn(epoch, sessionId)) throw CancellationException("Counselor turn no longer owns this session")
     }
 
     fun sendVoiceMessage(transcript: String) {
@@ -914,30 +1037,42 @@ class CounselorViewModel(
 
     fun retryLastMessage() {
         val rawText = _uiState.value.lastFailedUserMessage ?: return
-        if (generationJob?.isActive == true) return
+        if (_uiState.value.canCancel) return
         val webMode = _uiState.value.webSearchMode
         val existingUserMessage = _uiState.value.messages
             .asReversed()
             .firstOrNull { it.sender == USER_SENDER && it.content == rawText }
-        if (webMode != WebSearchMode.Disabled && existingUserMessage != null) {
+        if (existingUserMessage == null) {
+            sendMessage(rawText)
+        } else if (webMode != WebSearchMode.Disabled) {
+            turnEpoch++
             val request = PendingWebRequest(
                 rawText = rawText,
                 inputMode = existingUserMessage.inputMode,
                 userMessage = existingUserMessage,
                 mode = webMode,
-                persistUserMessage = false
+                persistUserMessage = true,
+                sessionId = _uiState.value.activeChatSessionId,
+                turnEpoch = turnEpoch
             )
             pendingWebRequest = request
             beginWebFlow(request)
         } else {
+            turnEpoch++
             startGeneration(
                 promptText = rawText,
                 rawUserText = rawText,
-                userMessage = null,
-                persistUserMessage = false,
+                userMessage = existingUserMessage,
+                persistUserMessage = true,
                 inputMode = "TEXT"
             )
         }
+    }
+
+    fun requestWebFallback() {
+        if (_uiState.value.canCancel) return
+        setWebSearchMode(WebSearchMode.NextMessage)
+        retryLastMessage()
     }
 
     private fun startGeneration(
@@ -952,6 +1087,7 @@ class CounselorViewModel(
     ) {
         crisisEscalationActive = false
         val sessionId = _uiState.value.activeChatSessionId
+        val epoch = turnEpoch
         val counselorMessageId = UUID.randomUUID().toString()
         val typingMessage = UiChatMessage(
             id = counselorMessageId,
@@ -967,6 +1103,7 @@ class CounselorViewModel(
                     typingMessage
                 ),
                 isGenerating = true,
+                isRetrieving = false,
                 phase = CounselorPhase.LOADING_MODEL,
                 statusMessage = null,
                 runtimeTechnicalMessage = null
@@ -1000,6 +1137,7 @@ class CounselorViewModel(
                     _uiState.update {
                         it.copy(
                             isGenerating = false,
+                            isRetrieving = false,
                             phase = CounselorPhase.ERROR,
                             statusMessage = "Consent AI Counselor belum diberikan. Aktifkan consent di Profile.",
                             lastFailedUserMessage = rawUserText
@@ -1022,7 +1160,10 @@ class CounselorViewModel(
                     return@launch
                 }
 
-                val runtimeStatus = runCatching { llmEngine.preflight() }.getOrElse { error ->
+                val runtimeStatus = runCatching {
+                    llmEngine.preflight()
+                }.getOrElse { error ->
+                    if (error is CancellationException) throw error
                     LlmRuntimeReadiness.Unavailable(
                         userMessage = "AI lokal belum dapat menjalankan model pada perangkat ini.",
                         technicalMessage = error.message
@@ -1046,9 +1187,8 @@ class CounselorViewModel(
                     return@launch
                 }
 
-                val retrieval = localRetrievalOverride ?: runCatching {
-                    ragRetriever.retrieveRelevantPassages(promptText)
-                }.getOrElse { error -> RagRetrievalResult.Unavailable(error.message ?: "Local retrieval failed") }
+                val retrieval = localRetrievalOverride ?: retrieveLocal(promptText)
+                requireCurrentTurn(epoch, sessionId)
                 val retrievalDecision = resolveWebGrounding(
                     rawUserText = rawUserText,
                     retrieval = retrieval,
@@ -1067,6 +1207,7 @@ class CounselorViewModel(
                             retrievalMode = RagMode.UNAVAILABLE,
                             statusMessage = retrievalDecision.statusMessage
                                 ?: "Evidence yang dibutuhkan belum tersedia; jawaban tidak dibuat.",
+                            runtimeTechnicalMessage = (retrieval as? RagRetrievalResult.Unavailable)?.reason,
                             lastFailedUserMessage = rawUserText
                         )
                     }
@@ -1075,33 +1216,33 @@ class CounselorViewModel(
                 val stressContext = readStressContext()
                 val promptAsset = promptAssetProvider.getCounselorPrompt()
                 val persona = personaRepository.get()
-                val receiptRetrieval = if (retrievalDecision.citations.isNotEmpty()) {
-                    RagRetrievalResult.Retrieved(
-                        citations = retrievalDecision.citations,
-                        sourceTier = retrievalDecision.sourceTier
-                    )
-                } else {
-                    retrieval
-                }
-                val contextReceipt = CounselorContextReceiptFactory.create(
-                    retrieval = receiptRetrieval,
-                    policyBinding = retrievalPolicyBinding,
-                    personaVersion = persona.version.toString(),
-                    stressHistorySessionIds = stressContext.sourceSessionIds,
-                    excludedHistoryReasons = stressContext.excludedHistoryReasons,
-                    llmModelVersion = (runtimeStatus as? LlmRuntimeReadiness.Ready)?.runtimeVersion
-                )
                 val recentHistory = recentHistory(
                     text = promptText,
                     currentUserMessageId = userMessage?.id
                 )
-                val citationRegistry = CitationRegistry.fromIncludedEvidence(
-                    local = retrievalDecision.citations
-                        .filter { it.sourceType == CitationSource.LOCAL_DOCUMENT }
-                        .take(MAX_PROMPT_EVIDENCE),
-                    web = retrievalDecision.webCitations
-                        .filter { it.sourceType == CitationSource.WEB }
-                        .take(MAX_PROMPT_EVIDENCE)
+                val rawRequest = CounselorGenerationRequest(
+                    promptAsset = promptAsset,
+                    userMessage = promptText,
+                    ragMode = retrievalDecision.mode,
+                    retrievedCitations = retrievalDecision.citations,
+                    stressHistoryContext = stressContext.promptText,
+                    personaProfile = persona.profile,
+                    personaVersion = persona.version.toInt(),
+                    recentHistory = recentHistory,
+                    webCitations = retrievalDecision.webCitations
+                )
+                val prepared = promptBuilder.prepare(rawRequest)
+                val citationRegistry = prepared.citationRegistry
+                val request = rawRequest.copy(
+                    citationRegistry = citationRegistry,
+                    retrievedCitations = citationRegistry.bindings.map { it.citation },
+                    stressHistoryContext = prepared.admittedStressContext,
+                    personaProfile = if (prepared.personaIncluded) {
+                        rawRequest.personaProfile
+                    } else {
+                        CounselorPersonaProfile()
+                    },
+                    webCitations = citationRegistry.webBindings().map { it.citation }
                 )
                 _uiState.update {
                     it.copy(
@@ -1119,20 +1260,8 @@ class CounselorViewModel(
                 var generationFailed = false
                 var receivedContent = false
                 try {
-                    llmEngine.generate(
-                        CounselorGenerationRequest(
-                            promptAsset = promptAsset,
-                            userMessage = promptText,
-                            ragMode = retrievalDecision.mode,
-                            retrievedCitations = retrievalDecision.citations,
-                            stressHistoryContext = stressContext.promptText,
-                            personaProfile = persona.profile,
-                            citationRegistry = citationRegistry,
-                            personaVersion = persona.version.toInt(),
-                            recentHistory = recentHistory,
-                            webCitations = retrievalDecision.webCitations
-                        )
-                    ).collect { generation ->
+                    llmEngine.generate(request).collect { generation ->
+                        requireCurrentTurn(epoch, sessionId)
                         when (generation) {
                             is LlmGenerationState.Content -> {
                                 val assembledText = responseAssembler.append(generation)
@@ -1186,15 +1315,44 @@ class CounselorViewModel(
                         }
                     }
                     val bufferedText = responseAssembler.currentText()
+                    requireCurrentTurn(epoch, sessionId)
+                    check(aiConsentGranted()) { "ai_consent_revoked" }
+                    check(retrievalDecision.mode != RagMode.WEB_GROUNDED || webConsentStore.granted.value) { "web_consent_revoked" }
+                    check(stressContext.sourceSessionIds.isEmpty() || _uiState.value.useStressHistory) { "stress_history_consent_revoked" }
                     if (!generationFailed && bufferedText.isNotBlank() && _uiState.value.phase != CounselorPhase.ERROR) {
-                        val guarded = outputGuard.validate(
+                        val initialGuard = outputGuard.validate(
                             text = bufferedText,
                             mode = retrievalDecision.mode,
-                            citations = retrievalDecision.citations,
+                            citations = request.retrievedCitations,
                             registry = citationRegistry
                         )
+                        var finalPrepared = prepared
+                        val guarded = if (initialGuard is GuardedCounselorOutput.Rejected &&
+                            initialGuard.reasonCode.startsWith("citation_") &&
+                            retrievalDecision.mode.isGrounded()
+                        ) {
+                            val repaired = repairCitationOutput(request, epoch, sessionId, initialGuard)
+                            finalPrepared = repaired.prompt
+                            repaired.output
+                        } else {
+                            initialGuard
+                        }
                         when (guarded) {
                             is GuardedCounselorOutput.Accepted -> {
+                                val admittedStressContext = stressContext.forPrompt(finalPrepared)
+                                val finalEvidence = finalPrepared.citationRegistry.bindings.map { it.citation }
+                                val contextReceipt = CounselorContextReceiptFactory.create(
+                                    retrieval = if (finalEvidence.isNotEmpty()) {
+                                        RagRetrievalResult.Retrieved(finalEvidence, sourceTier = retrievalDecision.sourceTier)
+                                    } else {
+                                        retrieval
+                                    },
+                                    policyBinding = retrievalPolicyBinding,
+                                    personaVersion = if (finalPrepared.personaIncluded) persona.version.toString() else null,
+                                    stressHistorySessionIds = admittedStressContext.sourceSessionIds,
+                                    excludedHistoryReasons = admittedStressContext.excludedHistoryReasons,
+                                    llmModelVersion = runtimeStatus.runtimeVersion
+                                )
                                 val finalContent = withDisclaimer(guarded.text)
                                 val finalCitations = guarded.citations
                                 val persistedMessage = UiChatMessage(
@@ -1205,14 +1363,30 @@ class CounselorViewModel(
                                     citations = finalCitations,
                                     retrievalMode = retrievalDecision.mode
                                 )
+                                chatDao.persistAssistantTurn(
+                                    persistedMessage.toEntity(
+                                        sessionId = sessionId,
+                                        stressContext = admittedStressContext.persistedJson(contextReceipt),
+                                        promptVersion = if (finalPrepared.personaIncluded) {
+                                            "${promptAsset.version}+persona-${persona.version}-${persona.profileHash.take(12)}"
+                                        } else {
+                                            promptAsset.version
+                                        },
+                                        retrievalMode = retrievalDecision.mode
+                                    )
+                                ) {
+                                    requireCurrentTurn(epoch, sessionId)
+                                    check(aiConsentGranted()) { "ai_consent_revoked" }
+                                    check(retrievalDecision.mode != RagMode.WEB_GROUNDED || webConsentStore.granted.value) {
+                                        "web_consent_revoked"
+                                    }
+                                    check(stressContext.sourceSessionIds.isEmpty() || _uiState.value.useStressHistory) {
+                                        "stress_history_consent_revoked"
+                                    }
+                                    requireCurrentTurn(epoch, sessionId)
+                                }
+                                requireCurrentTurn(epoch, sessionId)
                                 renderFinalAssistant(finalContent, finalCitations, retrievalDecision.mode)
-                                persist(
-                                    persistedMessage,
-                                    sessionId = sessionId,
-                                    stressContext = stressContext.persistedJson(contextReceipt),
-                                    promptVersion = "${promptAsset.version}+persona-${persona.version}-${persona.profileHash.take(12)}",
-                                    retrievalMode = retrievalDecision.mode
-                                )
                                 speakIfEnabled(finalContent, inputMode, counselorMessageId)
                                 _uiState.update {
                                     it.copy(
@@ -1233,6 +1407,7 @@ class CounselorViewModel(
                                             CounselorPhase.ERROR
                                         },
                                         statusMessage = guarded.text,
+                                        runtimeTechnicalMessage = guarded.reasonCode,
                                         lastFailedUserMessage = rawUserText
                                     )
                                 }
@@ -1240,7 +1415,7 @@ class CounselorViewModel(
                         }
                     }
                 } catch (_: CancellationException) {
-                    if (!crisisEscalationActive) {
+                    if (!crisisEscalationActive && isCurrentTurn(epoch, sessionId)) {
                         removeTransientAssistant()
                         _uiState.update {
                             it.copy(
@@ -1251,7 +1426,7 @@ class CounselorViewModel(
                     }
                 } catch (error: Throwable) {
                     generationFailed = true
-                    if (!crisisEscalationActive) {
+                    if (!crisisEscalationActive && isCurrentTurn(epoch, sessionId)) {
                         removeTransientAssistant()
                         _uiState.update {
                             it.copy(
@@ -1263,10 +1438,10 @@ class CounselorViewModel(
                         }
                     }
                 } finally {
-                    _uiState.update { it.copy(isGenerating = false) }
+                    if (isCurrentTurn(epoch, sessionId)) _uiState.update { it.copy(isGenerating = false) }
                 }
             } catch (_: CancellationException) {
-                if (!crisisEscalationActive) {
+                if (!crisisEscalationActive && isCurrentTurn(epoch, sessionId)) {
                     removeTransientAssistant()
                     _uiState.update {
                         it.copy(
@@ -1277,7 +1452,7 @@ class CounselorViewModel(
                     }
                 }
             } catch (error: Throwable) {
-                if (!crisisEscalationActive) {
+                if (!crisisEscalationActive && isCurrentTurn(epoch, sessionId)) {
                     removeTransientAssistant()
                     _uiState.update {
                         it.copy(
@@ -1291,13 +1466,28 @@ class CounselorViewModel(
                 }
             } finally {
                 _uiState.update { state ->
-                    if (state.isGenerating) state.copy(isGenerating = false) else state
+                    if (isCurrentTurn(epoch, sessionId) && state.isGenerating) state.copy(isGenerating = false) else state
                 }
             }
         }
     }
 
     fun cancelGeneration() {
+        turnEpoch++
+        webFlowJob?.cancel(CancellationException("User cancelled evidence retrieval"))
+        webFlowJob = null
+        pendingWebRequest = null
+        _uiState.update {
+            it.copy(
+                isRetrieving = false,
+                webConsentRequired = false,
+                pendingWebQuery = null,
+                isGenerating = false,
+                phase = CounselorPhase.CANCELLED,
+                statusMessage = "Respons dibatalkan.",
+                messages = it.messages.filterNot { message -> message.sender == "counselor" && message.content.isBlank() }
+            )
+        }
         if (generationJob?.isActive == true) {
             llmEngine.cancelGeneration()
             generationJob?.cancel(CancellationException("User cancelled counselor generation"))
@@ -1307,6 +1497,30 @@ class CounselorViewModel(
 
     private suspend fun stopGenerationAndWait(): Boolean {
         voicePlaybackCoordinator?.stopAndWait()
+        turnEpoch++
+        val retrievalJob = webFlowJob
+        webFlowJob = null
+        pendingWebRequest = null
+        retrievalJob?.cancel(CancellationException("Counselor session changed"))
+        if (retrievalJob != null &&
+            withTimeoutOrNull(GENERATION_STOP_TIMEOUT_MS) {
+                retrievalJob.join()
+                true
+            } != true
+        ) {
+            _uiState.update { it.copy(statusMessage = "Pencarian sebelumnya masih dihentikan. Coba lagi sebentar.") }
+            return false
+        }
+        _uiState.update {
+            it.copy(
+                phase = if (it.canCancel) CounselorPhase.CANCELLED else it.phase,
+                messages = it.messages.filterNot { message -> message.sender == "counselor" && message.content.isBlank() },
+                isRetrieving = false,
+                isGenerating = false,
+                webConsentRequired = false,
+                pendingWebQuery = null
+            )
+        }
         val job = generationJob
         if (job?.isActive != true) {
             generationJob = null
@@ -1457,8 +1671,60 @@ class CounselorViewModel(
     ) {
         content
     } else {
-        "$content\n\nCatatan: respons ini adalah dukungan umum dan bukan diagnosis medis."
+        "$content\n\nDukungan umum, bukan diagnosis medis."
     }
+
+    /** One real regeneration; no marker insertion, URL invention, or guard bypass. */
+    private suspend fun repairCitationOutput(
+        request: CounselorGenerationRequest,
+        epoch: Long,
+        sessionId: String,
+        rejected: GuardedCounselorOutput.Rejected
+    ): CitationRepairResult {
+        requireCurrentTurn(epoch, sessionId)
+        check(aiConsentGranted()) { "ai_consent_revoked" }
+        check(request.ragMode != RagMode.WEB_GROUNDED || webConsentStore.granted.value) { "web_consent_revoked" }
+        _uiState.update { it.copy(statusMessage = "Memeriksa rujukan jawaban…") }
+        val markers = request.citationRegistry.bindings.joinToString("\n") { it.marker }
+        val repair = request.copy(
+            userMessage = "Jawab pertanyaan dalam 1–2 kalimat dari TEKS evidence, bukan judul/daftar sumber. " +
+                "Tambahkan marker lengkap PERSIS pada klaim yang didukungnya. Jangan menambah fakta:\n$markers\n\n" +
+                "PERTANYAAN:\n${request.userMessage}",
+            recentHistory = emptyList()
+        )
+        val prompt = promptBuilder.prepare(repair)
+        val admittedRequest = repair.copy(
+            citationRegistry = prompt.citationRegistry,
+            retrievedCitations = prompt.citationRegistry.bindings.map { it.citation },
+            stressHistoryContext = prompt.admittedStressContext,
+            personaProfile = if (prompt.personaIncluded) repair.personaProfile else CounselorPersonaProfile(),
+            webCitations = prompt.citationRegistry.webBindings().map { it.citation }
+        )
+        val assembler = GenerationTextAssembler()
+        var failed = false
+        llmEngine.generate(admittedRequest).collect { state ->
+            requireCurrentTurn(epoch, sessionId)
+            when (state) {
+                is LlmGenerationState.Content -> assembler.append(state)
+                LlmGenerationState.Cancelled -> throw CancellationException("Citation regeneration cancelled")
+                is LlmGenerationState.Failed, is LlmGenerationState.Unavailable -> failed = true
+            }
+        }
+        requireCurrentTurn(epoch, sessionId)
+        val output = if (failed || assembler.currentText().isBlank()) {
+            rejected
+        } else {
+            outputGuard.validate(
+                assembler.currentText(),
+                admittedRequest.ragMode,
+                admittedRequest.retrievedCitations,
+                prompt.citationRegistry
+            )
+        }
+        return CitationRepairResult(output, prompt)
+    }
+
+    private data class CitationRepairResult(val output: GuardedCounselorOutput, val prompt: PreparedCounselorPrompt)
 
     private suspend fun persist(
         message: UiChatMessage,
@@ -1468,20 +1734,6 @@ class CounselorViewModel(
         retrievalMode: RagMode? = null
     ) {
         val timestamp = message.timestampMs
-        chatDao.insertMessage(
-            ChatMessageEntity(
-                messageId = message.id,
-                chatSessionId = sessionId,
-                sender = message.sender,
-                content = message.content,
-                timestampMs = timestamp,
-                citationsJson = gson.toJson(message.citations),
-                stressContextJson = stressContext,
-                promptVersion = promptVersion,
-                retrievalMode = retrievalMode?.name,
-                inputMode = message.inputMode
-            )
-        )
         if (message.sender == "user") {
             val session = _uiState.value.chatSessions.firstOrNull {
                 it.id == sessionId
@@ -1500,8 +1752,27 @@ class CounselorViewModel(
                 )
             )
         }
+        chatDao.insertMessage(message.toEntity(sessionId, stressContext, promptVersion, retrievalMode))
         chatDao.touchChatSession(sessionId, timestamp)
     }
+
+    private fun UiChatMessage.toEntity(
+        sessionId: String,
+        stressContext: String? = null,
+        promptVersion: String? = null,
+        retrievalMode: RagMode? = null
+    ) = ChatMessageEntity(
+        messageId = id,
+        chatSessionId = sessionId,
+        sender = sender,
+        content = content,
+        timestampMs = timestampMs,
+        citationsJson = gson.toJson(citations),
+        stressContextJson = stressContext,
+        promptVersion = promptVersion,
+        retrievalMode = retrievalMode?.name,
+        inputMode = inputMode
+    )
 
     private fun recentHistory(text: String, currentUserMessageId: String?): List<ConversationTurn> {
         val messages = _uiState.value.messages
@@ -1522,7 +1793,8 @@ class CounselorViewModel(
         return messages.map { message ->
             ConversationTurn(
                 role = if (message.sender == "user") "user" else "assistant",
-                content = message.content
+                content = message.content,
+                sourceId = message.id
             )
         }
     }
@@ -1603,6 +1875,8 @@ class CounselorViewModel(
     }.getOrNull()?.takeIf { it.version.isNotBlank() }
 
     override fun onCleared() {
+        turnEpoch++
+        webFlowJob?.cancel()
         voiceInputJob?.cancel()
         generationJob?.cancel()
         messageObservationJob?.cancel()
@@ -1657,6 +1931,17 @@ class CounselorViewModel(
         val sourceSessionIds: List<String>,
         val excludedHistoryReasons: List<String>
     ) {
+        fun forPrompt(prompt: PreparedCounselorPrompt): StressContextPayload = if (prompt.admittedStressContext == promptText) {
+            this
+        } else {
+            copy(
+                promptText = prompt.admittedStressContext,
+                snapshotJson = Gson().toJson(mapOf("admittedPromptText" to prompt.admittedStressContext)),
+                sourceSessionIds = emptyList(),
+                excludedHistoryReasons = excludedHistoryReasons + "stress_history_prompt_budget_limited"
+            )
+        }
+
         fun persistedJson(receipt: CounselorContextReceipt): String = Gson().toJson(
             PersistedCounselorContext(
                 version = "counselor-context-envelope-v1",
@@ -1718,7 +2003,7 @@ class CounselorViewModel(
         return RetrievalDecision(
             mode = RagMode.WEB_GROUNDED,
             citations = (localDecision.citations + webCitations).distinctBy(KnowledgeCitation::citationId),
-            statusMessage = "Jawaban menggunakan sumber web terverifikasi secara lokal.",
+            statusMessage = "Jawaban menggunakan sumber web yang berhasil dibaca.",
             webCitations = webCitations,
             sourceTier = EvidenceSourceTier.WEB
         )
@@ -1759,7 +2044,8 @@ class CounselorViewModel(
         statusMessage = if (requiresEvidence) {
             "Evidence yang dibutuhkan belum tersedia; jawaban tidak dibuat."
         } else {
-            "Tidak ada evidence lokal yang cukup relevan; AI menggunakan mode dukungan umum."
+            // The saved answer already carries the disclaimer; do not repeat it as a status banner.
+            null
         },
         sourceTier = EvidenceSourceTier.NONE
     )
@@ -1795,8 +2081,8 @@ class CounselorViewModel(
     }
 
     companion object {
-        private const val MAX_HISTORY_MESSAGES = 6
-        private const val MAX_PROMPT_EVIDENCE = 4
+        private const val MAX_HISTORY_MESSAGES = 64
+        private const val WEB_SEARCH_TIMEOUT_MILLIS = 30_000L
         private const val GENERATION_STOP_TIMEOUT_MS = 5_000L
         private const val ACTION_NEW_CHAT = "chat:new"
         private const val ACTION_DELETE_ALL_CHATS = "chat:delete-all"
@@ -1822,7 +2108,10 @@ private data class PendingWebRequest(
     val inputMode: String,
     val userMessage: UiChatMessage,
     val mode: WebSearchMode,
-    val persistUserMessage: Boolean = true
+    val sessionId: String,
+    val turnEpoch: Long,
+    val persistUserMessage: Boolean = true,
+    val localRetrieval: RagRetrievalResult? = null
 )
 
 private fun Throwable.toSafeMessage(default: String): String = message?.takeIf { it.isNotBlank() && it.length <= 160 } ?: default

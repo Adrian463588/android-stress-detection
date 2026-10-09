@@ -2,7 +2,9 @@ package com.stressdetector.mobile.domain.engine
 
 import android.content.Context
 import android.net.Uri
+import com.google.gson.JsonParseException
 import com.stressdetector.mobile.security.EncryptedStorageService
+import com.stressdetector.mobile.security.SecureStorageException
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -64,6 +66,40 @@ class VerbatimArtifactService(
         } ?: error("The selected export destination could not be opened.")
     }
 
+    /** SAF export is explicit and intentionally plaintext at the user-selected destination. */
+    fun exportTranscript(session: VerbatimSessionDetail, annotations: List<DomainAnnotation>, destination: Uri, context: Context) {
+        val report = VerbatimTextReportRenderer().render(session, annotations)
+        context.contentResolver.openOutputStream(destination, "wt")?.use { output ->
+            output.writer(StandardCharsets.UTF_8).use { it.write(report) }
+        } ?: error("Tujuan ekspor TXT tidak dapat dibuka.")
+    }
+
+    /** One existing encrypted snapshot; no database migration or reconstructed acoustic evidence. */
+    fun restoreProsody(userId: String, session: VerbatimSessionDetail): VerbatimSessionDetail {
+        val folder = session.summary.artifactFolderPath
+        if (folder.isBlank()) return session
+        val result = try {
+            requireSafeFolder(folder)
+            encryptedStorage.readEncryptedFile(userId, "$folder/live_transcript.jsonl.enc").bufferedReader().use { input ->
+                Result.success(VerbatimProsodyArchive.parse(session.summary.sessionId, input.lineSequence()))
+            }
+        } catch (error: SecureStorageException) {
+            Result.failure(error)
+        } catch (error: JsonParseException) {
+            Result.failure(error)
+        } catch (error: IllegalArgumentException) {
+            Result.failure(error)
+        } catch (error: IllegalStateException) {
+            Result.failure(error)
+        }
+        val evidence = result.getOrElse { error ->
+            session.transcript.associate { segment ->
+                segment.id to VerbatimProsodyEvidence(unavailableReason = "Arsip openSMILE unavailable: ${error.message}")
+            }
+        }
+        return session.copy(transcript = session.transcript.map { it.copy(prosody = evidence[it.id]) })
+    }
+
     fun deleteSession(userId: String, folderPath: String): Boolean {
         requireSafeFolder(folderPath)
         val files = encryptedStorage.listEncryptedFiles(userId)
@@ -91,13 +127,13 @@ class VerbatimArtifactService(
     }
 
     private fun requireSafeFolder(folderPath: String) {
-        require(isCanonicalArtifactFolder(folderPath)) { "Invalid session artifact folder." }
+        require(
+            folderPath.startsWith("verbatim_sessions/") &&
+                !folderPath.contains("..") &&
+                !folderPath.endsWith("/") &&
+                folderPath.substringAfter("verbatim_sessions/").isNotBlank()
+        ) { "Invalid session artifact folder." }
     }
-
-    private fun isCanonicalArtifactFolder(folderPath: String): Boolean = folderPath.startsWith("verbatim_sessions/") &&
-        !folderPath.contains("..") &&
-        !folderPath.endsWith("/") &&
-        folderPath.substringAfter("verbatim_sessions/").isNotBlank()
 
     private fun cacheKey(path: String): String = MessageDigest.getInstance("SHA-256")
         .digest(path.toByteArray(StandardCharsets.UTF_8))

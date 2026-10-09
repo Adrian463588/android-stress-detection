@@ -41,6 +41,7 @@ internal class LiveTranscriptReducer {
 
         val effective = applyUserOverrides(normalized)
         val index = state.segments.indexOfFirst { it.id == effective.id }
+        if (index >= 0 && state.segments[index].isFinal && !effective.isFinal) return state
         val segments = if (index >= 0) {
             state.segments.toMutableList().also { it[index] = effective }
         } else {

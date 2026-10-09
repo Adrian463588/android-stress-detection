@@ -55,6 +55,15 @@ data class IndonesianStreamingSttSpec(
     val componentId: String
 )
 
+data class WhisperSttSpec(
+    val revision: String,
+    val encoderPath: String,
+    val decoderPath: String,
+    val tokensPath: String,
+    val languages: List<String> = listOf("id", "en"),
+    val task: String = "transcribe"
+)
+
 data class SpeechBundleDescriptor(
     val bundleVersion: String,
     val runtimeVersion: String,
@@ -64,26 +73,48 @@ data class SpeechBundleDescriptor(
     val components: List<SpeechBundleComponentSpec>,
     val runtimeSource: String,
     val ttsProfiles: List<SpeechTtsProfileSpec> = emptyList(),
-    val indonesianStt: IndonesianStreamingSttSpec? = null
+    val indonesianStt: IndonesianStreamingSttSpec? = null,
+    val whisperStt: WhisperSttSpec? = null
 ) {
     val totalDownloadBytes: Long
         get() = components.sumOf(SpeechBundleComponentSpec::expectedDownloadBytes)
 
-    /** Includes download files, extracted model files, and a bounded installation margin. */
+    /** Conservative same-volume peak: downloads, candidate ZIP, active ZIP, runtime and SAF mirror. */
     val requiredFreeStorageBytes: Long
-        get() = totalDownloadBytes + extractedBytes() + INSTALLATION_MARGIN_BYTES
+        get() = totalDownloadBytes + extractedBytes() * PEAK_RUNTIME_COPIES + INSTALLATION_MARGIN_BYTES
 
     private fun extractedBytes(): Long = components.flatMap { it.extractedFiles }
         .mapNotNull(SpeechBundleFileSpec::expectedBytes)
         .sum()
 
     private companion object {
+        const val PEAK_RUNTIME_COPIES = 4
         const val INSTALLATION_MARGIN_BYTES = 64L * 1024L * 1024L
     }
 }
 
 /** Builds the speech runtime descriptor exclusively from the APK-owned artifact catalog. */
 object SpeechBundleCatalog {
+    internal const val LEGACY_BUNDLE_VERSION = "sherpa-onnx-1.13.4-omnilingual-ctc-v3-supertonic3"
+    internal val LEGACY_COMPONENT_IDS = setOf(
+        "asr-omnilingual-ctc-v2-int8",
+        "vad-silero",
+        "diarization-pyannote-segmentation",
+        "diarization-3dspeaker-embedding",
+        "tts-id-id_ID-news_tts-medium",
+        "tts-en-en_US-lessac-medium",
+        "tts-supertonic3-int8",
+        "asr-indonesian-zipformer2-int8",
+        "asr-indonesian-zipformer2-int8-decoder",
+        "asr-indonesian-zipformer2-int8-joiner",
+        "asr-indonesian-zipformer2-int8-tokens"
+    )
+    internal val WHISPER_COMPONENT_IDS = listOf(
+        "asr-whisper-tiny-int8-encoder",
+        "asr-whisper-tiny-int8-decoder",
+        "asr-whisper-tiny-int8-tokens"
+    )
+
     fun load(context: Context): SpeechBundleDescriptor = from(LocalArtifactCatalog.load(context))
 
     fun from(catalog: LocalArtifactCatalog): SpeechBundleDescriptor {
@@ -126,7 +157,32 @@ object SpeechBundleCatalog {
                 joinerPath = "asr/id/joiner.int8.onnx",
                 tokensPath = "asr/id/tokens.txt",
                 componentId = "asr-indonesian-zipformer2-int8"
+            ),
+            whisperStt = whisperProfile(catalog, components)
+        )
+    }
+
+    private fun whisperProfile(catalog: LocalArtifactCatalog, components: List<SpeechBundleComponentSpec>): WhisperSttSpec {
+        val entries = WHISPER_COMPONENT_IDS.map(catalog::requireById)
+        require(components.map(SpeechBundleComponentSpec::id).containsAll(WHISPER_COMPONENT_IDS)) {
+            "Speech bundle must include every pinned Whisper component."
+        }
+        require(entries.map { it.revision }.distinct().size == 1) {
+            "Whisper components must share one immutable revision."
+        }
+        val paths = entries.map { entry -> entry.files.single { it.role == "runtime" }.bundlePath }
+        require(
+            paths == listOf(
+                "asr/whisper/tiny-encoder.int8.onnx",
+                "asr/whisper/tiny-decoder.int8.onnx",
+                "asr/whisper/tiny-tokens.txt"
             )
+        ) { "Whisper component roles do not match the canonical paths." }
+        return WhisperSttSpec(
+            revision = entries.first().revision,
+            encoderPath = requireNotNull(paths[0]),
+            decoderPath = requireNotNull(paths[1]),
+            tokensPath = requireNotNull(paths[2])
         )
     }
 

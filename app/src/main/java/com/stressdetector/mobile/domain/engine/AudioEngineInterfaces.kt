@@ -33,7 +33,9 @@ data class SpeechSegment(
     /** False is a replaceable live partial; true is persisted final transcript. */
     val isFinal: Boolean = true,
     /** Optional user-edited text; rawText remains the immutable STT output. */
-    val editedText: String? = null
+    val editedText: String? = null,
+    /** Actual eGeMAPS LLD observations; null for older sessions/partials. */
+    val prosody: VerbatimProsodyEvidence? = null
 ) {
     /** Never present an inferred speaker identity before endpoint diarization. */
     val displaySpeakerLabel: String

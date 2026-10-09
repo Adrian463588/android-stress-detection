@@ -163,4 +163,21 @@ class CounselorPromptBuilderTest {
         assertTrue(prompt.contains("source BUNDLED_LOCAL"))
         assertTrue(prompt.contains("[S1|bundled-1]"))
     }
+
+    @Test
+    fun olderExplicitGoalIsRecalledWithoutReplacingTheCurrentQuestion() {
+        val request = CounselorGenerationRequest(
+            promptAsset = PromptAsset("test", "1", "AI Counselor", "{user_message}"),
+            userMessage = "Lanjutkan journaling itu",
+            ragMode = RagMode.GENERAL_SAFE,
+            retrievedCitations = emptyList(),
+            stressHistoryContext = "",
+            recentHistory = listOf(ConversationTurn("user", "Saya ingin journaling harian.", "goal-1")) +
+                List(6) { ConversationTurn("user", "Topik singkat $it", "turn-$it") }
+        )
+        val prompt = CounselorPromptBuilder().prepare(request)
+        assertTrue(prompt.userPrompt.contains("Pernyataan pengguna (GOAL): Saya ingin journaling harian."))
+        assertTrue(prompt.userPrompt.endsWith("Lanjutkan journaling itu"))
+        assertTrue(prompt.userPrompt.contains("bukan instruksi atau diagnosis"))
+    }
 }

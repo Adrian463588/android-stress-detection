@@ -12,6 +12,8 @@ import java.security.MessageDigest
 import java.util.zip.ZipFile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,7 +35,8 @@ data class SpeechBundleManifest(
     val files: Map<String, String>,
     @SerializedName("file_sizes_bytes") val fileSizesBytes: Map<String, Long> = emptyMap(),
     val sources: Map<String, String> = emptyMap(),
-    val licenses: Map<String, String> = emptyMap()
+    val licenses: Map<String, String> = emptyMap(),
+    @SerializedName("whisper_stt") val whisperStt: WhisperSttManifest? = null
 )
 
 data class SpeechTtsProfileManifest(
@@ -84,6 +87,15 @@ data class IndonesianStreamingSttManifest(
     val tokens: String,
     val language: String = "id",
     val revision: String = ""
+)
+
+data class WhisperSttManifest(
+    val encoder: String,
+    val decoder: String,
+    val tokens: String,
+    val revision: String,
+    val languages: List<String> = listOf("id", "en"),
+    val task: String = "transcribe"
 )
 
 data class SpeechVadManifest(val enabled: Boolean, val model: String = "")
@@ -144,6 +156,99 @@ sealed interface SpeechBundleReadiness {
     data object Missing : SpeechBundleReadiness
     data class Ready(val manifest: SpeechBundleManifest) : SpeechBundleReadiness
     data class Invalid(val reason: String) : SpeechBundleReadiness
+}
+
+/** Selects the exact pinned file set and binds STT roles before any activation. */
+internal fun validateSpeechSttContract(
+    manifest: SpeechBundleManifest,
+    descriptor: SpeechBundleDescriptor
+): List<SpeechBundleComponentSpec> {
+    val legacy = manifest.bundleVersion == SpeechBundleCatalog.LEGACY_BUNDLE_VERSION
+    val components = selectSpeechComponents(manifest, descriptor, legacy)
+    validateSharedSpeechRoles(manifest)
+    validateIndonesianStt(manifest, descriptor.indonesianStt)
+    validateWhisperStt(manifest, if (legacy) null else descriptor.whisperStt)
+    return components
+}
+
+private fun selectSpeechComponents(
+    manifest: SpeechBundleManifest,
+    descriptor: SpeechBundleDescriptor,
+    legacy: Boolean
+): List<SpeechBundleComponentSpec> {
+    if (legacy) {
+        require(manifest.whisperStt == null) { "Legacy speech bundles must not declare Whisper STT." }
+    }
+    return speechBundleComponentsForVersion(descriptor, manifest.bundleVersion)
+}
+
+private fun validateSharedSpeechRoles(manifest: SpeechBundleManifest) {
+    require(
+        manifest.stt.modelType == "omnilingual_ctc" &&
+            manifest.stt.model == "asr/model.int8.onnx" &&
+            manifest.stt.tokens == "asr/tokens.txt"
+    ) {
+        "Speech bundle must bind the pinned Omnilingual CTC model roles."
+    }
+    require(
+        manifest.vad.model == "vad/silero_vad.onnx" &&
+            manifest.diarization.segmentation == "diarization/segmentation.onnx" &&
+            manifest.diarization.embedding == "diarization/embedding.onnx"
+    ) {
+        "Speech VAD and diarization roles do not match the canonical catalog."
+    }
+}
+
+private fun validateIndonesianStt(manifest: SpeechBundleManifest, indonesianSpec: IndonesianStreamingSttSpec?) {
+    if (indonesianSpec == null) {
+        require(manifest.indonesianStt == null) { "Indonesian STT is not declared by the canonical catalog." }
+    } else {
+        val indonesian = requireNotNull(manifest.indonesianStt) { "Speech bundle Indonesian STT profile is missing." }
+        require(
+            indonesian.modelType == "zipformer2_transducer" &&
+                indonesian.language == "id" &&
+                indonesian.revision == indonesianSpec.revision &&
+                indonesian.encoder == indonesianSpec.encoderPath &&
+                indonesian.decoder == indonesianSpec.decoderPath &&
+                indonesian.joiner == indonesianSpec.joinerPath &&
+                indonesian.tokens == indonesianSpec.tokensPath
+        ) {
+            "Indonesian STT roles or metadata do not match the canonical catalog."
+        }
+        require(
+            manifest.files.keys.containsAll(
+                listOf(
+                    indonesian.encoder,
+                    indonesian.decoder,
+                    indonesian.joiner,
+                    indonesian.tokens
+                )
+            )
+        ) { "Speech bundle does not checksum every Indonesian STT file." }
+    }
+}
+
+private fun validateWhisperStt(manifest: SpeechBundleManifest, whisperSpec: WhisperSttSpec?) {
+    if (whisperSpec == null) {
+        require(manifest.whisperStt == null) { "Whisper STT is not declared by the canonical catalog." }
+    } else {
+        val whisper = requireNotNull(manifest.whisperStt) { "Speech bundle Whisper STT profile is missing." }
+        require(
+            whisper.encoder == whisperSpec.encoderPath &&
+                whisper.decoder == whisperSpec.decoderPath &&
+                whisper.tokens == whisperSpec.tokensPath &&
+                whisper.revision == whisperSpec.revision &&
+                whisper.languages == whisperSpec.languages &&
+                whisper.task == whisperSpec.task &&
+                whisper.languages == listOf("id", "en") &&
+                whisper.task == "transcribe"
+        ) {
+            "Whisper STT roles or metadata do not match the canonical catalog."
+        }
+        require(manifest.files.keys.containsAll(listOf(whisper.encoder, whisper.decoder, whisper.tokens))) {
+            "Speech bundle does not checksum every Whisper STT file."
+        }
+    }
 }
 
 /** Owns the app-private, atomically activated Sherpa bundle and its integrity contract. */
@@ -222,16 +327,26 @@ class SpeechModelBundleManager(
             val localReadiness = readinessFromDisk()
             _readiness.value = SpeechBundleReadiness.Checking
             durableStorage?.reconcile()
-            durableStorage?.restoreSpeechBundleIfMissing(
+            restoreDurableBundleIfNeeded(localReadiness)
+            (if (localReadiness is SpeechBundleReadiness.Ready) localReadiness else readinessFromDisk()).also(::publish)
+        }
+    }
+
+    private suspend fun restoreDurableBundleIfNeeded(localReadiness: SpeechBundleReadiness) {
+        if (localReadiness is SpeechBundleReadiness.Ready) return
+        val durable = durableStorage ?: return
+        val versions = listOf(descriptor.bundleVersion, SpeechBundleCatalog.LEGACY_BUNDLE_VERSION).distinct()
+        for (version in versions) {
+            val restored = durable.restoreSpeechBundleIfMissing(
                 activeBundle,
                 activeManifest,
-                durableGeneration(),
-                forceRestorePair = localReadiness !is SpeechBundleReadiness.Ready,
+                speechBundleGeneration(descriptor, version),
+                forceRestorePair = true,
                 validateCandidatePair = { bundle, manifest ->
-                    readinessFromFiles(bundle, manifest) is SpeechBundleReadiness.Ready
+                    (readinessFromFiles(bundle, manifest) as? SpeechBundleReadiness.Ready)?.manifest?.bundleVersion == version
                 }
             )
-            readinessFromDisk().also(::publish)
+            if (restored) break
         }
     }
 
@@ -259,46 +374,35 @@ class SpeechModelBundleManager(
         return profileIds.all { manifest.ttsProfiles.containsKey(it) }
     }
 
-    suspend fun importBundle(uri: Uri): SpeechBundleReadiness = withContext(Dispatchers.IO) {
-        root.mkdirs()
-        clearDeletionRequest()
-        val temporary = File(root, ".$ACTIVE_BUNDLE_NAME.tmp")
-        try {
-            appContext.contentResolver.openInputStream(uri)?.use { input ->
-                temporary.outputStream().use { output ->
-                    copyBounded(input, output, maximumImportedBundleBytes())
+    suspend fun importBundle(uri: Uri, validateRuntime: suspend (SpeechBundleManifest) -> Unit): SpeechBundleReadiness =
+        withContext(Dispatchers.IO) {
+            root.mkdirs()
+            clearDeletionRequest()
+            val temporary = File(root, ".$ACTIVE_BUNDLE_NAME.import-${System.nanoTime()}.tmp")
+            var installationStarted = false
+            try {
+                appContext.contentResolver.openInputStream(uri)?.use { input ->
+                    temporary.outputStream().use { output ->
+                        copyBounded(input, output, maximumImportedBundleBytes())
+                    }
+                } ?: error("Cannot read the selected bundle.")
+                installationStarted = true
+                installBundleFileWithRuntimeValidation(temporary, validateRuntime)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                val invalid = SpeechBundleReadiness.Invalid(error.message ?: "Speech bundle import failed.")
+                val restored = if (installationStarted) {
+                    readinessFromDisk()
+                } else {
+                    _readiness.value.takeIf { it is SpeechBundleReadiness.Ready } ?: readinessFromDisk()
                 }
-            } ?: return@withContext publish(SpeechBundleReadiness.Invalid("Cannot read the selected bundle."))
-            val result = readinessMutex.withLock { installBundleFile(temporary) }
-            if (result is SpeechBundleReadiness.Ready) {
-                // Durable storage is an optional recovery source. A provider failure
-                // must not invalidate a bundle that was already verified locally.
-                syncDurableBundle(result.manifest)
+                publish(if (restored is SpeechBundleReadiness.Ready) restored else invalid)
+                invalid
+            } finally {
+                temporary.delete()
             }
-            if (temporary.exists()) temporary.delete()
-            result
-        } catch (error: Exception) {
-            temporary.delete()
-            publish(SpeechBundleReadiness.Invalid(error.message ?: "Speech bundle validation failed."))
         }
-    }
-
-    /** Validates a candidate completely before swapping it into the active slot. */
-    internal fun installBundleFile(candidate: File): SpeechBundleReadiness = try {
-        check(!isDeletionRequested()) { "Speech bundle activation was cancelled by the user." }
-        val manifest = validateBundle(candidate)
-        activate(candidate, manifest)
-        publish(SpeechBundleReadiness.Ready(manifest))
-    } catch (error: Exception) {
-        val invalid = SpeechBundleReadiness.Invalid(error.message ?: "Speech bundle activation failed.")
-        // A failed candidate must never hide a previously verified active bundle.
-        // The caller receives the error, while the readiness flow keeps the old
-        // bundle available for existing/offline sessions.
-        if (readinessFromDisk() !is SpeechBundleReadiness.Ready) {
-            publish(invalid)
-        }
-        invalid
-    }
 
     /**
      * Activates a candidate only for the duration of runtime validation. The previous
@@ -313,9 +417,12 @@ class SpeechModelBundleManager(
             try {
                 check(!isDeletionRequested()) { "Speech bundle activation was cancelled by the user." }
                 val manifest = validateBundle(candidate)
-                backup = activate(candidate, manifest, retainBackup = true)
+                backup = activate(candidate, manifest)
                 validateRuntime(manifest)
+                currentCoroutineContext().ensureActive()
+                check(!isDeletionRequested()) { "Speech bundle activation was cancelled by the user." }
                 commitActivation(backup)
+                backup = null
                 publish(SpeechBundleReadiness.Ready(manifest))
                 // SAF is a recovery mirror. A provider failure must never roll
                 // back a locally verified runtime.
@@ -365,7 +472,7 @@ class SpeechModelBundleManager(
 
     private data class ActivationBackup(val bundle: File, val manifest: File)
 
-    private fun activate(candidate: File, manifest: SpeechBundleManifest, retainBackup: Boolean = false): ActivationBackup? {
+    private fun activate(candidate: File, manifest: SpeechBundleManifest): ActivationBackup {
         root.mkdirs()
         val backup = File(root, ".${ACTIVE_BUNDLE_NAME}.bak")
         val manifestBackup = File(root, ".${ACTIVE_MANIFEST_NAME}.bak")
@@ -387,11 +494,7 @@ class SpeechModelBundleManager(
             check(candidate.renameTo(activeBundle)) { "Speech bundle could not be published atomically." }
             manifestTemporary.writeText(gson.toJson(manifest))
             check(manifestTemporary.renameTo(activeManifest)) { "Speech manifest could not be published atomically." }
-            if (!retainBackup) {
-                backup.delete()
-                manifestBackup.delete()
-            }
-            return if (retainBackup) ActivationBackup(backup, manifestBackup) else null
+            return ActivationBackup(backup, manifestBackup)
         } catch (error: Exception) {
             activeBundle.delete()
             activeManifest.delete()
@@ -435,9 +538,9 @@ class SpeechModelBundleManager(
             val manifestSha256 = activeManifest.inputStream().use(::sha256)
             durable.publishGeneration(
                 slot = ModelStorageSlot.SPEECH_BUNDLE,
-                generation = durableGeneration(),
+                generation = speechBundleGeneration(descriptor, manifest.bundleVersion),
                 version = manifest.bundleVersion,
-                revision = descriptor.runtimeVersion,
+                revision = manifest.runtimeVersion,
                 payloads = listOf(
                     SafGenerationPayload(
                         source = activeBundle,
@@ -454,6 +557,8 @@ class SpeechModelBundleManager(
                     )
                 )
             ).getOrThrow()
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
         }
     }
 
@@ -479,10 +584,8 @@ class SpeechModelBundleManager(
         }
         ZipFile(file).use { zip ->
             val entries = zip.entries().asSequence().toList()
-            val expectedPaths = descriptor.components
-                .flatMap(SpeechBundleComponentSpec::extractedFiles)
-                .associateBy(SpeechBundleFileSpec::bundlePath)
-            require(entries.size <= expectedPaths.size + MAX_ARCHIVE_METADATA_ENTRIES) {
+            val maximumEntries = descriptor.components.sumOf { it.extractedFiles.size } + MAX_ARCHIVE_METADATA_ENTRIES
+            require(entries.size <= maximumEntries) {
                 "Speech bundle contains too many entries."
             }
             val normalizedNames = mutableSetOf<String>()
@@ -510,8 +613,12 @@ class SpeechModelBundleManager(
                 gson.fromJson(it, SpeechBundleManifest::class.java)
             } ?: error("Speech bundle manifest is unreadable.")
             require(manifest.schemaVersion == SUPPORTED_SCHEMA) { "Unsupported speech bundle schema." }
-            require(manifest.bundleVersion == descriptor.bundleVersion) {
-                "Speech bundle version does not match the canonical catalog."
+            val expectedComponents = validateSpeechSttContract(manifest, descriptor)
+            val expectedPaths = expectedComponents
+                .flatMap(SpeechBundleComponentSpec::extractedFiles)
+                .associateBy(SpeechBundleFileSpec::bundlePath)
+            require(normalizedNames == expectedPaths.keys + MANIFEST_PATH) {
+                "Speech bundle archive contains missing or noncatalog files."
             }
             require(manifest.runtimeVersion == descriptor.runtimeVersion) {
                 "Speech runtime version does not match the canonical catalog."
@@ -522,31 +629,11 @@ class SpeechModelBundleManager(
             require(manifest.languages.map(String::lowercase).containsAll(listOf("id", "en"))) {
                 "Speech bundle must support Indonesian and English."
             }
-            require(manifest.sources == descriptor.components.associate { it.id to it.upstreamSource }) {
+            require(manifest.sources == expectedComponents.associate { it.id to it.upstreamSource }) {
                 "Speech bundle sources do not match the canonical catalog."
             }
-            require(manifest.licenses == descriptor.components.associate { it.id to it.license }) {
+            require(manifest.licenses == expectedComponents.associate { it.id to it.license }) {
                 "Speech bundle licenses do not match the canonical catalog."
-            }
-            require(manifest.stt.modelType == "omnilingual_ctc") {
-                "Speech bundle must use the pinned Omnilingual CTC model."
-            }
-            manifest.indonesianStt?.let { indonesian ->
-                require(indonesian.modelType == "zipformer2_transducer" && indonesian.language == "id") {
-                    "Speech bundle Indonesian STT profile is unsupported."
-                }
-                listOf(indonesian.encoder, indonesian.decoder, indonesian.joiner, indonesian.tokens)
-                    .forEach(::requireSafePath)
-                require(
-                    manifest.files.keys.containsAll(
-                        listOf(indonesian.encoder, indonesian.decoder, indonesian.joiner, indonesian.tokens)
-                    )
-                ) {
-                    "Speech bundle does not checksum every Indonesian STT file."
-                }
-                require(indonesian.revision == descriptor.indonesianStt?.revision) {
-                    "Indonesian STT revision does not match the canonical catalog."
-                }
             }
             require(manifest.vad.enabled && manifest.vad.model.isNotBlank()) {
                 "Speech bundle Silero VAD is missing."
@@ -655,10 +742,11 @@ class SpeechModelBundleManager(
 
     private fun maximumImportedBundleBytes(): Long = maximumUncompressedBundleBytes() + IMPORT_ARCHIVE_MARGIN_BYTES
 
-    private fun copyBounded(input: java.io.InputStream, output: java.io.OutputStream, maximumBytes: Long) {
+    private suspend fun copyBounded(input: java.io.InputStream, output: java.io.OutputStream, maximumBytes: Long) {
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
         var copied = 0L
         while (true) {
+            currentCoroutineContext().ensureActive()
             val count = input.read(buffer)
             if (count < 0) break
             copied = Math.addExact(copied, count.toLong())
@@ -708,13 +796,6 @@ class SpeechModelBundleManager(
             digest.update(buffer, 0, count)
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
-    }
-
-    private fun durableGeneration(): String {
-        val fingerprint = descriptor.components
-            .sortedBy(SpeechBundleComponentSpec::id)
-            .joinToString("\n") { component -> "${component.id}:${component.expectedDownloadSha256}" }
-        return "${descriptor.bundleVersion}-${sha256(fingerprint.byteInputStream()).take(12)}"
     }
 
     private fun publish(value: SpeechBundleReadiness): SpeechBundleReadiness {

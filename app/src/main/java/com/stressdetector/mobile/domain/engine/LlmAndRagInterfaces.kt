@@ -66,7 +66,7 @@ data class PromptAsset(
 )
 
 /** A persisted turn supplied to a fresh LiteRT-LM conversation. */
-data class ConversationTurn(val role: String, val content: String)
+data class ConversationTurn(val role: String, val content: String, val sourceId: String? = null)
 
 enum class RagMode {
     GROUNDED,

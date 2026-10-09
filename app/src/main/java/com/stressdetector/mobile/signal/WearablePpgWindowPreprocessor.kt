@@ -1,6 +1,7 @@
 package com.stressdetector.mobile.signal
 
 import com.stressdetector.mobile.data.WindowSnapshot
+import com.stressdetector.shared.AccelerometerSample
 import com.stressdetector.shared.PpgFilterContract
 import com.stressdetector.shared.PpgTransportDiagnostics
 import com.stressdetector.shared.PpgType
@@ -29,6 +30,7 @@ data class PreparedPpgWindow(
     val elapsedTimestampsMillis: LongArray = LongArray(0),
     val interpolatedMask: BooleanArray = BooleanArray(filteredValues.size),
     val motionAnnotation: MotionAnnotation = MotionAnnotation(),
+    val accelerometerSamples: List<AccelerometerSample> = emptyList(),
     val processingStatus: String = "ready",
     val rejectionReason: String? = null,
     /** Target samples interpolated across a true source-rate gap. */
@@ -279,6 +281,10 @@ class WearablePpgWindowPreprocessor(
             return PpgPreprocessResult.Rejected("ppg_filter_output_non_finite")
         }
         val elapsedObservedTimes = observed.elapsedTimestamps
+        val motionSamples = snapshot.accelerometerSamples.filter { sample ->
+            sample.elapsedMillis >= (elapsedObservedTimes.firstOrNull() ?: Long.MAX_VALUE) &&
+                sample.elapsedMillis <= (elapsedObservedTimes.lastOrNull() ?: Long.MIN_VALUE)
+        }
         return PpgPreprocessResult.Ready(
             PreparedPpgWindow(
                 type = snapshot.type,
@@ -296,7 +302,12 @@ class WearablePpgWindowPreprocessor(
                     ?: snapshot.sessionElapsedEndMillis,
                 elapsedTimestampsMillis = elapsedObservedTimes,
                 interpolatedMask = BooleanArray(observed.timestamps.size),
-                motionAnnotation = motionAnnotator.annotate(filtered),
+                motionAnnotation = motionAnnotator.annotate(
+                    motionSamples,
+                    elapsedObservedTimes.first(),
+                    elapsedObservedTimes.last()
+                ),
+                accelerometerSamples = motionSamples,
                 sourceGapInterpolatedSampleCount = 0,
                 sourceGapInterpolatedMask = BooleanArray(observed.timestamps.size),
                 observedSampleCount = observed.timestamps.size,

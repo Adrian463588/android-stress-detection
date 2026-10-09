@@ -58,5 +58,12 @@ class AiReminderEligibility(
         )
     }
 
+    /** Non-suspending opt-in check for the notification boundary, after all database/history checks. */
+    fun publicationSettingsRejection(): String? = when {
+        !reminderSettings.enabled.value -> "REMINDER_DISABLED"
+        !historySettings.enabled.value -> "STRESS_HISTORY_CONSENT_REQUIRED"
+        else -> null
+    }
+
     fun currentZone(): ZoneId = ZoneId.systemDefault()
 }

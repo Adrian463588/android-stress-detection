@@ -9,6 +9,27 @@ import org.junit.Test
 
 class CounselorOutputGuardTest {
     @Test
+    fun sourceTitleOnlyIsNotAnAnswerEvenWithExactCitation() {
+        val evidence = citation(chunkId = null, citationId = "web-1", sourceType = CitationSource.WEB)
+        val registry = CitationRegistry.fromIncludedEvidence(emptyList(), listOf(evidence))
+        val result = CounselorOutputGuard.Default.validate(
+            "[W1|web-1]${evidence.sourceTitle}; ${evidence.section}",
+            RagMode.WEB_GROUNDED,
+            listOf(evidence),
+            registry
+        )
+        assertEquals("citation_answer_empty", (result as GuardedCounselorOutput.Rejected).reasonCode)
+        assertTrue(
+            CounselorOutputGuard.Default.validate(
+                "Mulai dari langkah kecil yang dijelaskan sumber. [W1|web-1]",
+                RagMode.WEB_GROUNDED,
+                listOf(evidence),
+                registry
+            ) is GuardedCounselorOutput.Accepted
+        )
+    }
+
+    @Test
     fun groundedAnswerMustBindExactChunkId() {
         val evidence = citation(chunkId = "chunk-1")
         val registry = CitationRegistry.fromIncludedEvidence(listOf(evidence), emptyList())
@@ -89,7 +110,7 @@ class CounselorOutputGuardTest {
         )
 
         assertEquals(
-            GuardedCounselorOutput.Rejected(DOCUMENT_ABSTENTION_RESPONSE),
+            GuardedCounselorOutput.Rejected(DOCUMENT_ABSTENTION_RESPONSE, "citation_missing_local"),
             result
         )
     }
@@ -105,6 +126,66 @@ class CounselorOutputGuardTest {
         )
 
         assertTrue(result is GuardedCounselorOutput.Rejected)
+    }
+
+    @Test
+    fun validCitationCannotHideMalformedCitationMarkers() {
+        val local = citation(chunkId = "chunk-1")
+        val web = citation(chunkId = null, citationId = "web-1", sourceType = CitationSource.WEB)
+        val registry = CitationRegistry.fromIncludedEvidence(listOf(local), listOf(web))
+        val malformedMarkers = listOf(
+            "[S1]", "[W1]", "[S2|]", "[W2|bad id]", "[S2|bad|id]",
+            "[S2|unfinished", "[W2", "[s1|chunk-1]", "[ W1|web-1]",
+            "[S 1|chunk-1]", "[S|chunk-1]", "[W]", "[S#]", "[W#]",
+            "［Ｓ１|chunk-1］", "[S2|[S1|chunk-1]]", "[\u200BS1]", "[W\u200B1|bad]"
+        )
+
+        listOf(
+            RagMode.GROUNDED to "[S1|chunk-1]",
+            RagMode.WEB_GROUNDED to "[W1|web-1]",
+            RagMode.BUNDLED_GROUNDED to "[S1|chunk-1]"
+        ).forEach { (mode, validMarker) ->
+            val includedLocal = if (mode == RagMode.BUNDLED_GROUNDED) {
+                local.copy(sourceTier = EvidenceSourceTier.BUNDLED_LOCAL)
+            } else {
+                local
+            }
+            val includedRegistry = if (mode == RagMode.BUNDLED_GROUNDED) {
+                CitationRegistry.fromIncludedEvidence(listOf(includedLocal), listOf(web))
+            } else {
+                registry
+            }
+            malformedMarkers.forEach { malformed ->
+                val result = CounselorOutputGuard.Default.validate(
+                    text = "Dukungan coping $validMarker dan $malformed",
+                    mode = mode,
+                    citations = listOf(includedLocal, web),
+                    registry = includedRegistry
+                )
+                assertTrue("$mode admitted $malformed", result is GuardedCounselorOutput.Rejected)
+            }
+        }
+    }
+
+    @Test
+    fun generalSafeRejectsMalformedMarkersButAllowsOrdinaryBracketedWords() {
+        listOf("[S1", "[W1|]", "[ W1]", "[s1|chunk-1]").forEach { malformed ->
+            assertTrue(
+                malformed,
+                CounselorOutputGuard.Default.validate(
+                    "Dukungan $malformed",
+                    RagMode.GENERAL_SAFE,
+                    emptyList()
+                ) is GuardedCounselorOutput.Rejected
+            )
+        }
+        assertTrue(
+            CounselorOutputGuard.Default.validate(
+                "Catatan [Stress] dan [Sleep] untuk dibahas.",
+                RagMode.GENERAL_SAFE,
+                emptyList()
+            ) is GuardedCounselorOutput.Accepted
+        )
     }
 
     @Test

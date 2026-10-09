@@ -29,7 +29,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         StressSessionReportEntity::class,
         StressWindowEvaluationEntity::class
     ],
-    version = 20,
+    version = 21,
     exportSchema = false
 )
 abstract class StressDatabase : RoomDatabase() {
@@ -75,7 +75,8 @@ abstract class StressDatabase : RoomDatabase() {
                 MIGRATION_16_17,
                 MIGRATION_17_18,
                 MIGRATION_18_19,
-                MIGRATION_19_20
+                MIGRATION_19_20,
+                MIGRATION_20_21
             )
             .build()
 
@@ -421,6 +422,32 @@ abstract class StressDatabase : RoomDatabase() {
         internal val MIGRATION_19_20 = object : Migration(19, 20) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 createAiReminderTable(database)
+            }
+        }
+
+        /** An unavailable prediction is NULL, not NaN (SQLite converts NaN to NULL). */
+        internal val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `stress_sessions_new` (" +
+                        "`sessionId` TEXT NOT NULL, `startedAtMillis` INTEGER NOT NULL, " +
+                        "`endedAtMillis` INTEGER NOT NULL, `durationMillis` INTEGER NOT NULL, " +
+                        "`primarySensor` TEXT NOT NULL, `finalLabel` TEXT NOT NULL, " +
+                        "`confidence` REAL NOT NULL, `qualityTier` TEXT NOT NULL, " +
+                        "`stressProbability` REAL, `greenSampleCount` INTEGER NOT NULL, " +
+                        "`irSampleCount` INTEGER NOT NULL, `errorReason` TEXT, " +
+                        "`transportIncomplete` INTEGER NOT NULL, `transportFailureReason` TEXT, " +
+                        "PRIMARY KEY(`sessionId`))"
+                )
+                database.execSQL(
+                    "INSERT INTO `stress_sessions_new` SELECT `sessionId`, `startedAtMillis`, " +
+                        "`endedAtMillis`, `durationMillis`, `primarySensor`, `finalLabel`, " +
+                        "`confidence`, `qualityTier`, `stressProbability`, `greenSampleCount`, " +
+                        "`irSampleCount`, `errorReason`, `transportIncomplete`, `transportFailureReason` " +
+                        "FROM `stress_sessions`"
+                )
+                database.execSQL("DROP TABLE `stress_sessions`")
+                database.execSQL("ALTER TABLE `stress_sessions_new` RENAME TO `stress_sessions`")
             }
         }
 

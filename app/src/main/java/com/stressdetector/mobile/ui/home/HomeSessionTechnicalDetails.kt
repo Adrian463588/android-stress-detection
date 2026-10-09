@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.stressdetector.mobile.BuildConfig
 import com.stressdetector.mobile.domain.CoreCoverageDiagnostics
 import com.stressdetector.mobile.domain.PredictionAvailability
+import com.stressdetector.mobile.signal.MotionAnnotation
 import com.stressdetector.mobile.ui.MetricRow
 import com.stressdetector.shared.StressLabel
 
@@ -44,6 +45,10 @@ internal fun TechnicalDetailsSheet(state: HomeUiState, onDismiss: () -> Unit) {
                 text = "Detail teknis",
                 style = MaterialTheme.typography.titleLarge
             )
+            val liveSession = state.status == HomeSessionStatus.RECORDING || state.status == HomeSessionStatus.FINALIZING
+            if (liveSession || state.greenSamples > 0 || state.irSamples > 0) {
+                MetricRow("Sampel diterima", "Green ${state.greenSamples} · IR ${state.irSamples}")
+            }
             state.modelGate.reason?.let { reason ->
                 Text(
                     text = "Model: $reason",
@@ -51,9 +56,44 @@ internal fun TechnicalDetailsSheet(state: HomeUiState, onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+            if (state.hasPrediction) {
+                Text(
+                    text = "Hasil yang tersedia telah melewati filter, SQA, ekstraksi puncak dan model per kanal.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            val sessionEnded = state.status == HomeSessionStatus.RESULT_READY ||
+                state.status == HomeSessionStatus.INSUFFICIENT_SIGNAL
+            val hasMotionEvidence = state.greenMotionAnnotations.isNotEmpty() || state.irMotionAnnotations.isNotEmpty()
+            if (sessionEnded || hasMotionEvidence) {
+                MotionEvidenceRow("Green", state.greenMotionAnnotations)
+                MotionEvidenceRow("IR", state.irMotionAnnotations)
+            }
             TechnicalPredictionDetails("Green", state.greenPrediction)
             TechnicalPredictionDetails("IR", state.irPrediction)
         }
+    }
+}
+
+@Composable
+private fun MotionEvidenceRow(channel: String, annotations: List<MotionAnnotation>) {
+    MetricRow("MADC $channel", motionEvidenceLabel(annotations))
+}
+
+internal fun motionEvidenceLabel(annotations: List<MotionAnnotation>): String {
+    val available = annotations.count { it.motionScore != null }
+    val gaps = annotations.count { it.motionAnnotation == "accelerometer_gap" }
+    return if (annotations.isEmpty()) {
+        "Tidak ada window yang dievaluasi"
+    } else if (available == 0) {
+        if (gaps > 0) {
+            "$gaps/${annotations.size} window memiliki gap data akselerometer"
+        } else {
+            "Akselerometer tidak tersedia untuk window yang dievaluasi"
+        }
+    } else {
+        "$available/${annotations.size} window memiliki anotasi gerak"
     }
 }
 
@@ -74,12 +114,12 @@ private fun TechnicalPredictionDetails(label: String, state: HomePredictionUiSta
         when (availability) {
             is PredictionAvailability.Ready -> {
                 MetricRow("Label", StressLabel.displayName(availability.prediction.label))
-                MetricRow("Stress probability", availability.prediction.stressProbability.asPercent())
-                MetricRow("Confidence", availability.prediction.confidence.asPercent())
+                MetricRow("Probabilitas terkalibrasi", availability.prediction.stressProbability.asPercent())
+                MetricRow("Keyakinan model", availability.prediction.confidence.asPercent())
+                ModelProvenanceDetails(availability.prediction)
                 MetricRow(
-                    "Signal quality",
-                    "${availability.prediction.quality.qualityScore.asPercent()} — " +
-                        availability.prediction.quality.tier
+                    "Kualitas PPG",
+                    availability.prediction.quality.tier
                 )
                 availability.prediction.researchDisclaimer?.let { disclaimer ->
                     Text(
@@ -157,11 +197,8 @@ private fun CoreCoverageDetails(diagnostics: CoreCoverageDiagnostics) {
         "Cadence aktual",
         diagnostics.actualCadenceHz?.let { "${"%.1f".format(it)} Hz" } ?: "tidak tersedia"
     )
-    MetricRow(
-        "Gap transport",
-        "${diagnostics.significantGapCount} · maks ${diagnostics.largestGapMillis} ms · " +
-            "urutan hilang ${diagnostics.transportMissingSequenceCount}"
-    )
+    MetricRow("Jeda PPG", "maks ${diagnostics.largestGapMillis} ms")
+    MetricRow("Batch hilang", diagnostics.transportMissingSequenceCount.toString())
     diagnostics.rawMinimum?.let { minimum ->
         diagnostics.rawMaximum?.let { maximum ->
             MetricRow("Raw range preview", "$minimum – $maximum")

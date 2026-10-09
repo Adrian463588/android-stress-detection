@@ -26,7 +26,8 @@ enum class ModelStorageSlot(val directoryName: String) {
     GEMMA("gemma-4-e2b"),
     SPEECH_BUNDLE("speech-bundle"),
     MULTILINGUAL_EMBEDDING("multilingual-e5-small"),
-    PERSONA_AI("persona-ai")
+    PERSONA_AI("persona-ai"),
+    USER_DATA_BACKUP("user-data-backup")
 }
 
 enum class SafStorageStatus {
@@ -135,6 +136,8 @@ data class SafGenerationPayload(
     val expectedSha256: String,
     val mediaType: String = "application/octet-stream"
 )
+
+data class SafRestoredPayload(val generation: String, val sizeBytes: Long, val sha256: String)
 
 class PendingSafTreeSelection internal constructor(
     val candidate: SafTreeSelection,
@@ -453,6 +456,42 @@ class ModelStorageManager(context: Context) {
             true
         }.getOrDefault(false)
     }
+
+    /**
+     * Restores one complete generation payload after independently verifying the
+     * SAF completion manifest and content digest. The caller owns the private
+     * destination and must authenticate/decrypt user data before importing it.
+     */
+    suspend fun copyLatestGenerationFile(slot: ModelStorageSlot, fileName: String, target: File): Result<SafRestoredPayload?> =
+        withContext(Dispatchers.IO) {
+            slotMutexes.getValue(slot).withLock {
+                runCatching {
+                    require(state.value.connected) { "Hubungkan kembali folder SAF sebelum pemulihan." }
+                    require(fileName.isNotBlank() && '/' !in fileName && '\\' !in fileName) {
+                        "Nama payload SAF tidak valid."
+                    }
+                    val treeUri = state.value.treeUri ?: error("Folder SAF tidak dipilih.")
+                    val base = ensureSlotDirectory(ensureModelDirectoryUris(treeUri), slot)
+                    val directory = completedGenerationDirectory(base, slot) ?: return@runCatching null
+                    val manifest = readGenerationManifest(directory) ?: error("Manifest cadangan SAF tidak tersedia.")
+                    val file = manifest.files.singleOrNull { it.fileName == fileName }
+                        ?: error("Payload cadangan SAF tidak tersedia: $fileName")
+                    val document = findChild(directory, fileName) ?: error("File cadangan SAF hilang: $fileName")
+                    val temporary = File(target.parentFile, ".${target.name}.restore.part")
+                    temporary.parentFile?.mkdirs()
+                    try {
+                        copyDocument(document, temporary)
+                        require(temporary.length() == file.sizeBytes && sha256(temporary) == file.sha256.lowercase()) {
+                            "Checksum cadangan SAF tidak cocok: $fileName"
+                        }
+                        replaceLocalFileAtomically(temporary, target, fileName)
+                    } finally {
+                        temporary.delete()
+                    }
+                    SafRestoredPayload(manifest.generation, file.sizeBytes, file.sha256.lowercase())
+                }
+            }
+        }
 
     suspend fun restoreSpeechBundleIfMissing(
         bundleTarget: File,
@@ -1077,6 +1116,7 @@ class ModelStorageManager(context: Context) {
             ModelStorageSlot.SPEECH_BUNDLE -> LegacySafPaths.SPEECH_BUNDLE_DIRECTORY
             ModelStorageSlot.MULTILINGUAL_EMBEDDING -> return null
             ModelStorageSlot.PERSONA_AI -> return null
+            ModelStorageSlot.USER_DATA_BACKUP -> return null
         }
         return findChild(model, legacyName)
     }

@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import com.stressdetector.mobile.domain.PredictionAvailability
 import com.stressdetector.mobile.ui.StatusDot
 import com.stressdetector.shared.StressLabel
+import kotlin.math.roundToInt
 
 private const val MIN_PERCENT_VALUE = 0f
 private const val MAX_PERCENT_VALUE = 1f
@@ -71,7 +72,7 @@ private fun ChannelResultRow(state: HomePredictionUiState) {
         }
         if (availability is PredictionAvailability.Ready) {
             Text(
-                text = "${availability.prediction.quality.qualityScore.asPercent()} kualitas",
+                text = "Lolos SQA",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -100,4 +101,4 @@ private fun availabilityLabel(state: HomePredictionUiState): String = when (val 
     is PredictionAvailability.InferenceError -> "Analisis gagal"
 }
 
-internal fun Float.asPercent(): String = "${(coerceIn(MIN_PERCENT_VALUE, MAX_PERCENT_VALUE) * PERCENT_SCALE).toInt()}%"
+internal fun Float.asPercent(): String = "${(coerceIn(MIN_PERCENT_VALUE, MAX_PERCENT_VALUE) * PERCENT_SCALE).roundToInt()}%"

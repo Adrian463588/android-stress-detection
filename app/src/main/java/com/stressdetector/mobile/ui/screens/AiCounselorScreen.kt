@@ -31,7 +31,7 @@ internal fun AiCounselorScreen(
         val observed by aiReminderViewModel.uiState.collectAsStateWithLifecycleCompat()
         observed
     }
-    var inputText by remember { mutableStateOf("") }
+    var inputText by rememberSaveable(state.activeChatSessionId) { mutableStateOf("") }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     var showTechnicalDetails by remember { mutableStateOf(false) }
     var sessionPendingDelete by remember { mutableStateOf<UiChatSession?>(null) }
@@ -63,7 +63,7 @@ internal fun AiCounselorScreen(
         composer = ChatComposerState(
             inputText = inputText,
             onInputChanged = { inputText = it },
-            isGenerating = state.isGenerating,
+            isGenerating = state.canCancel,
             voiceBusy = state.voiceInputState.isVoiceBusy(),
             onCancelGeneration = viewModel::cancelGeneration,
             onSend = { sendChatMessage(state, inputText, viewModel) { inputText = "" } },

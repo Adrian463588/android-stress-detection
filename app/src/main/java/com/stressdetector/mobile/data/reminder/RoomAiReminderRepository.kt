@@ -6,13 +6,23 @@ import com.stressdetector.mobile.domain.reminder.AiReminderRecord
 import com.stressdetector.mobile.domain.reminder.AiReminderRepository
 import com.stressdetector.mobile.domain.reminder.AiReminderSecretStore
 import com.stressdetector.mobile.domain.reminder.ReminderPayload
+import com.stressdetector.mobile.domain.reminder.ReminderPublishResult
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 @Suppress("TooManyFunctions")
 class RoomAiReminderRepository(private val dao: AiReminderDao, private val secretStore: AiReminderSecretStore) : AiReminderRepository {
+    // ponytail: one gate for low-volume reminders; use per-reminder gates only if contention matters.
+    private val publicationMutex = Mutex()
+
     override fun observeLatest(): Flow<AiReminderRecord?> = dao.observeLatest(1).map { records ->
         records.firstOrNull()?.toDomain()
     }
@@ -29,56 +39,93 @@ class RoomAiReminderRepository(private val dao: AiReminderDao, private val secre
     override suspend fun getLatestDeliveredSince(since: Instant): AiReminderRecord? =
         dao.latestDeliveredSince(since.toEpochMilli())?.toDomain()
 
-    override suspend fun insertIfAbsent(record: AiReminderRecord): Boolean = dao.insertIfAbsent(record.toEntity()) != 0L
+    override suspend fun insertIfAbsent(record: AiReminderRecord): Boolean = publicationMutex.withLock {
+        dao.insertIfAbsent(record.toEntity()) != 0L
+    }
 
     override suspend fun markStatus(reminderId: String, status: String, errorCode: String?) {
-        dao.updateStatus(reminderId, status, errorCode)
+        publicationMutex.withLock {
+            if (dao.getById(reminderId)?.isActive() == true) dao.updateStatus(reminderId, status, errorCode)
+        }
     }
 
     override suspend fun markGenerated(reminderId: String, generatedAt: Instant, modelVersion: String?) {
-        dao.markGenerated(
-            reminderId = reminderId,
-            status = ReminderRecordStatus.GENERATED,
-            generatedAtMillis = generatedAt.toEpochMilli(),
-            modelVersion = modelVersion
-        )
+        publicationMutex.withLock {
+            dao.markGenerated(
+                reminderId = reminderId,
+                status = ReminderRecordStatus.GENERATED,
+                generatedAtMillis = generatedAt.toEpochMilli(),
+                modelVersion = modelVersion
+            )
+        }
     }
 
     override suspend fun markDelivered(reminderId: String, deliveredAt: Instant) {
-        dao.markDelivered(
-            reminderId = reminderId,
-            status = ReminderRecordStatus.DELIVERED,
-            deliveredAtMillis = deliveredAt.toEpochMilli()
-        )
+        publicationMutex.withLock {
+            if (dao.getById(reminderId)?.isActive() == true) persistDelivered(reminderId, deliveredAt)
+        }
+    }
+
+    override suspend fun publishIfActive(reminderId: String, publish: () -> ReminderPublishResult): ReminderPublishResult =
+        publicationMutex.withLock {
+            // AppLocator owns one repository in the app process. A mutation that wins this gate
+            // invalidates the final read; publication that wins completes its receipt before deletion.
+            if (dao.getById(reminderId)?.isActive() != true) {
+                ReminderPublishResult.Rejected("REMINDER_INACTIVE")
+            } else {
+                currentCoroutineContext().ensureActive()
+                val result = publish()
+                if (result == ReminderPublishResult.Published) {
+                    // Once notify succeeds, worker cancellation must not omit its delivery receipt.
+                    withContext(NonCancellable) { persistDelivered(reminderId, Instant.now()) }
+                }
+                result
+            }
+        }
+
+    private suspend fun persistDelivered(reminderId: String, deliveredAt: Instant) {
+        dao.markDelivered(reminderId, ReminderRecordStatus.DELIVERED, deliveredAt.toEpochMilli())
     }
 
     override suspend fun deletePendingForSource(sourceSessionId: String) {
-        dao.getUndelivered()
-            .filter { it.sourceSessionId == sourceSessionId }
-            .forEach { secretStore.deletePayload(it.reminderId) }
-        dao.deletePendingForSource(sourceSessionId)
+        publicationMutex.withLock {
+            dao.getUndelivered()
+                .filter { it.sourceSessionId == sourceSessionId }
+                .forEach { secretStore.deletePayload(it.reminderId) }
+            dao.deletePendingForSource(sourceSessionId)
+        }
     }
 
     override suspend fun deletePending() {
-        dao.getUndelivered().forEach { entity -> secretStore.deletePayload(entity.reminderId) }
-        dao.deletePending()
+        publicationMutex.withLock {
+            dao.getUndelivered().forEach { entity -> secretStore.deletePayload(entity.reminderId) }
+            dao.deletePending()
+        }
     }
 
     override suspend fun deleteAll() {
-        dao.deleteAll()
-        secretStore.clear()
+        publicationMutex.withLock {
+            dao.deleteAll()
+            secretStore.clear()
+        }
     }
 
     override suspend fun readPayload(reminderId: String): ReminderPayload? = secretStore.readPayload(reminderId)
 
     override suspend fun writePayload(reminderId: String, payload: ReminderPayload) {
-        secretStore.writePayload(reminderId, payload)
+        publicationMutex.withLock {
+            if (dao.getById(reminderId)?.isActive() == true) secretStore.writePayload(reminderId, payload)
+        }
     }
 
     override suspend fun deletePayload(reminderId: String) {
-        secretStore.deletePayload(reminderId)
+        publicationMutex.withLock { secretStore.deletePayload(reminderId) }
     }
 }
+
+private fun AiReminderEntity.isActive(): Boolean = status == ReminderRecordStatus.SCHEDULED ||
+    status == ReminderRecordStatus.GENERATING ||
+    status == ReminderRecordStatus.GENERATED
 
 object ReminderRecordStatus {
     const val SCHEDULED = "SCHEDULED"

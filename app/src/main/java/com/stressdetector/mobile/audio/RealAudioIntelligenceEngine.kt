@@ -77,7 +77,11 @@ class RealAudioIntelligenceEngine(
     override val transcriptFlow: Flow<SpeechSegment> = _transcriptFlow.asSharedFlow()
     private val _acousticAnalysisFlow = MutableSharedFlow<AcousticAnalysisSnapshot>(extraBufferCapacity = 64)
     override val acousticAnalysisFlow: Flow<AcousticAnalysisSnapshot> = _acousticAnalysisFlow.asSharedFlow()
+    private val _livePitchFlow = MutableSharedFlow<com.stressdetector.mobile.domain.engine.LivePitchObservation>(extraBufferCapacity = 64)
+    override val livePitchFlow: Flow<com.stressdetector.mobile.domain.engine.LivePitchObservation> = _livePitchFlow.asSharedFlow()
     private val acousticFrameAnalyzer = AcousticFrameAnalyzer()
+    private val prosodyExtractor = OpenSmileProsodyExtractor(appContext)
+    private val cueAnalyzer = com.stressdetector.mobile.domain.engine.VerbatimCueAnalyzer()
 
     private var recorder: AudioRecord? = null
     private var writerJob: Job? = null
@@ -211,6 +215,7 @@ class RealAudioIntelligenceEngine(
                 transcriptById.clear()
                 acousticFrameAnalyzer.reset(sessionId)
                 speechRuntime.beginSession(startedAtUtcMillis, languageCode, sessionId)
+                _speechProcessingState.update { it.copy(decoderDescription = speechRuntime.decoderDescription) }
                 _captureState.value = AudioCaptureState.Recording(sessionId, startedAtUtcMillis)
                 writerJob = scope.launch { capturePcm(audioRecord, stagingFile, minimum * 2) }
                 AudioOperationResult.Success(
@@ -290,6 +295,7 @@ class RealAudioIntelligenceEngine(
             transcriptById.clear()
             acousticFrameAnalyzer.reset(sessionId)
             speechRuntime.beginSession(startedAtUtcMillis, languageCode, sessionId)
+            _speechProcessingState.update { it.copy(decoderDescription = speechRuntime.decoderDescription) }
             _captureState.value = AudioCaptureState.Recording(sessionId, startedAtUtcMillis)
             writerJob = scope.launch {
                 FileInputStream(sourceFile).use { input ->
@@ -477,6 +483,7 @@ class RealAudioIntelligenceEngine(
         val sampleClock = AudioSampleClock(SAMPLE_RATE_HZ)
         var sequence = 0L
         var streamingUtteranceActive = false
+        var lastCaptureEndMs: Long? = null
         val segmenter = SpeechUtteranceSegmenter(sampleRateHz = SAMPLE_RATE_HZ)
         val utteranceSpool = SpeechUtteranceSpool(
             directory = File(destination.parentFile, "${destination.nameWithoutExtension}.utterances"),
@@ -523,14 +530,14 @@ class RealAudioIntelligenceEngine(
             } else {
                 frameSpool.delete(reference)
                 _speechProcessingState.update { it.copy(droppedFrameCount = it.droppedFrameCount + 1L) }
-                recordGap(AudioGap(frame.startOffsetMs, frame.durationMs, "TRANSCRIPTION_QUEUE_FULL"))
+                recordGap(AudioGap(frame.startOffsetMs, frame.durationMs, "TRANSCRIPTION_QUEUE_FULL", recordedPcmPresent = true))
             }
         }
 
         suspend fun enqueueTranscriptionFrame(frame: SpeechFrame) {
             val reference = runCatching { frameSpool.write(frame) }.getOrElse { error ->
                 recordProcessingError(error)
-                recordGap(AudioGap(frame.startOffsetMs, frame.durationMs, "FRAME_SPOOL_WRITE_FAILED"))
+                recordGap(AudioGap(frame.startOffsetMs, frame.durationMs, "FRAME_SPOOL_WRITE_FAILED", recordedPcmPresent = true))
                 return
             }
             val accepted = workQueue.offer(
@@ -543,7 +550,7 @@ class RealAudioIntelligenceEngine(
             } else {
                 frameSpool.delete(reference)
                 _speechProcessingState.update { it.copy(droppedFrameCount = it.droppedFrameCount + 1L) }
-                recordGap(AudioGap(frame.startOffsetMs, frame.durationMs, "TRANSCRIPTION_QUEUE_CLOSED"))
+                recordGap(AudioGap(frame.startOffsetMs, frame.durationMs, "TRANSCRIPTION_QUEUE_CLOSED", recordedPcmPresent = true))
             }
         }
 
@@ -552,6 +559,16 @@ class RealAudioIntelligenceEngine(
                 when (work) {
                     is SpeechTranscriptionWork.Capture -> {
                         val frame = frameSpool.read(work.reference)
+                        if (lastCaptureEndMs?.let { frame.startOffsetMs - it > CAPTURE_GAP_TOLERANCE_MS } == true) {
+                            val pending = segmenter.finish()
+                            if (streamingUtteranceActive || pending != null) {
+                                check(workQueue.offer(SpeechTranscriptionWork.FinalizeUtterance, allowAfterClose = true)) {
+                                    "Speech boundary after capture gap could not be queued."
+                                }
+                            }
+                            streamingUtteranceActive = false
+                        }
+                        lastCaptureEndMs = frame.startOffsetMs + frame.durationMs
                         val speechDetected = vadMutex.withLock {
                             speechRuntime.detectSpeech(frame.samples)
                         }
@@ -678,6 +695,10 @@ class RealAudioIntelligenceEngine(
             }
         }
 
+        val pitchProcessor = LivePitchProcessor(sessionId, scope, prosodyExtractor::analyze) { observation ->
+            _livePitchFlow.emit(observation)
+        }
+
         try {
             FileOutputStream(destination).use { output ->
                 output.write(ByteArray(WAV_HEADER_BYTES))
@@ -719,7 +740,7 @@ class RealAudioIntelligenceEngine(
                                 .order(ByteOrder.LITTLE_ENDIAN)
                                 .asShortBuffer()
                                 .get(shorts)
-                            for (index in shorts.indices) samples[index] = shorts[index] / Short.MAX_VALUE.toFloat()
+                            for (index in shorts.indices) samples[index] = shorts[index] / PCM16_SCALE
 
                             val frame = SpeechFrame(
                                 samples = samples,
@@ -738,6 +759,7 @@ class RealAudioIntelligenceEngine(
                                     )
                                 )
                             )
+                            pitchProcessor.offer(frame)
                             captureHandoffPending.incrementAndGet()
                             if (!captureHandoff.trySend(frame).isSuccess) {
                                 captureHandoffPending.decrementAndGet()
@@ -748,7 +770,8 @@ class RealAudioIntelligenceEngine(
                                     AudioGap(
                                         frame.startOffsetMs,
                                         frame.durationMs,
-                                        "CAPTURE_HANDOFF_QUEUE_FULL"
+                                        "CAPTURE_HANDOFF_QUEUE_FULL",
+                                        recordedPcmPresent = true
                                     )
                                 )
                                 updateBacklog()
@@ -778,6 +801,7 @@ class RealAudioIntelligenceEngine(
 
             captureHandoff.close()
             captureHandoffJob.join()
+            pitchProcessor.close()
             if (!workQueue.offer(SpeechTranscriptionWork.FlushCapture)) {
                 recordProcessingError(IllegalStateException("Speech capture drain could not be queued."))
             }
@@ -790,6 +814,7 @@ class RealAudioIntelligenceEngine(
             frameSpool.cleanup()
             utteranceSpool.cleanup()
         } catch (error: Exception) {
+            pitchProcessor.cancel()
             captureHandoff.close()
             captureHandoffJob.cancelAndJoin()
             workQueue.close()
@@ -803,13 +828,52 @@ class RealAudioIntelligenceEngine(
     }
 
     private suspend fun publishTranscript(segment: SpeechSegment) {
-        val normalized = if (segment.sessionId.isBlank()) {
+        var normalized = if (segment.sessionId.isBlank()) {
             segment.copy(sessionId = currentSessionId.orEmpty())
         } else {
             segment
         }
-        synchronized(transcriptById) { transcriptById[normalized.id] = normalized }
+        if (normalized.isFinal) {
+            val cues = cueAnalyzer.analyze(normalized).cues
+            normalized = normalized.copy(
+                isDisfluent = cues.any {
+                    it.type in setOf(
+                        com.stressdetector.mobile.domain.engine.VerbatimCueType.FILLED_PAUSE,
+                        com.stressdetector.mobile.domain.engine.VerbatimCueType.REPETITION,
+                        com.stressdetector.mobile.domain.engine.VerbatimCueType.SELF_REPAIR
+                    )
+                },
+                prosody = analyzeRecordedProsody(normalized)
+            )
+        }
+        synchronized(transcriptById) {
+            if (transcriptById[normalized.id]?.isFinal == true && !normalized.isFinal) return
+            transcriptById[normalized.id] = normalized
+        }
         _transcriptFlow.emit(normalized)
+    }
+
+    private fun analyzeRecordedProsody(segment: SpeechSegment): com.stressdetector.mobile.domain.engine.VerbatimProsodyEvidence = try {
+        val audioTimeline = com.stressdetector.mobile.domain.engine.AudioTimeline(
+            _speechProcessingState.value.audioGaps.filter { it.reason == "PAUSE" }
+        )
+        val start = audioTimeline.sessionOffsetToAudioOffset(segment.startOffsetMs)
+        val end = audioTimeline.sessionOffsetToAudioOffset(segment.endOffsetMs)
+        val count = ((end - start) * SAMPLE_RATE_HZ / MILLIS_PER_SECOND).toInt()
+        require(count in SAMPLE_RATE_HZ..MAX_PROSODY_SAMPLES) { "Utterance terlalu pendek/panjang untuk openSMILE." }
+        val wav = checkNotNull(temporaryWav) { "PCM recording belum tersedia." }
+        val bytes = ByteArray(count * BYTES_PER_SAMPLE)
+        RandomAccessFile(wav, "r").use { input ->
+            input.seek(WAV_HEADER_BYTES + start * SAMPLE_RATE_HZ * BYTES_PER_SAMPLE / MILLIS_PER_SECOND)
+            input.readFully(bytes)
+        }
+        val samples = FloatArray(count) { index ->
+            val value = (bytes[index * 2].toInt() and 0xff) or (bytes[index * 2 + 1].toInt() shl 8)
+            value.toShort().toFloat() / PCM16_SCALE
+        }
+        prosodyExtractor.analyze(samples)
+    } catch (error: Exception) {
+        com.stressdetector.mobile.domain.engine.VerbatimProsodyEvidence(unavailableReason = "Prosodi unavailable: ${error.message}")
     }
 
     private fun releaseRecorder() {
@@ -845,6 +909,9 @@ class RealAudioIntelligenceEngine(
     }
 
     private companion object {
+        private const val CAPTURE_GAP_TOLERANCE_MS = 1L
+        private const val MAX_PROSODY_SAMPLES = 20 * 16_000
+        private const val PCM16_SCALE = 32_768f
         const val SAMPLE_RATE_HZ = 16_000
         const val CAPTURE_HANDOFF_CAPACITY = 32
         const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO

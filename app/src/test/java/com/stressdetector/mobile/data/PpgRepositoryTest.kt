@@ -1,5 +1,6 @@
 package com.stressdetector.mobile.data
 
+import com.stressdetector.shared.AccelerometerSample
 import com.stressdetector.shared.PpgBatch
 import com.stressdetector.shared.PpgBatchDisposition
 import com.stressdetector.shared.PpgTerminalReceipt
@@ -12,6 +13,26 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PpgRepositoryTest {
+    @Test
+    fun homeSnapshotContainsMotionOnlyFromAcceptedBatchAndDeduplicatesAcrossChannels() {
+        val repository = PpgRepositoryImpl()
+        repository.startSession("session-a")
+        val sample = AccelerometerSample(1_000_000_000L, 0L, 1f, 2f, 3f)
+        val green = batch(1L, 0L).copy(accelerometerSamples = listOf(sample))
+        val ir = batch(1L, 0L, PpgType.IR).copy(accelerometerSamples = listOf(sample))
+        assertEquals(PpgBatchDisposition.APPLIED, repository.append(green).disposition)
+        assertEquals(PpgBatchDisposition.APPLIED, repository.append(ir).disposition)
+        val staleMotion = AccelerometerSample(1_001_000_000L, 1L, 9f, 9f, 9f)
+        assertEquals(
+            PpgBatchDisposition.DUPLICATE,
+            repository.append(green.copy(accelerometerSamples = listOf(staleMotion))).disposition
+        )
+        repository.append(green.copy(sequenceNumber = 0L, sessionId = "wrong"))
+
+        assertEquals(listOf(sample), repository.fullGreenWindow().accelerometerSamples)
+        assertEquals(listOf(sample), repository.fullIrWindow().accelerometerSamples)
+    }
+
     @Test
     fun unsolicitedBatchIsRejectedUntilSessionOwnershipIsEstablished() {
         val repository = PpgRepositoryImpl()

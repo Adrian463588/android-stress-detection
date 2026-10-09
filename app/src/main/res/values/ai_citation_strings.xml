@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="counselor_sources_show">Lihat sumber</string>
+    <string name="counselor_sources_hide">Sembunyikan sumber</string>
+    <plurals name="counselor_sources_collapsed">
+        <item quantity="one">%1$d sumber, disembunyikan</item>
+        <item quantity="other">%1$d sumber, disembunyikan</item>
+    </plurals>
+    <plurals name="counselor_sources_expanded">
+        <item quantity="one">%1$d sumber, ditampilkan</item>
+        <item quantity="other">%1$d sumber, ditampilkan</item>
+    </plurals>
+</resources>

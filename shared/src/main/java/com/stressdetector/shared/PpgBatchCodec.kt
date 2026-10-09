@@ -9,10 +9,10 @@ import java.nio.charset.StandardCharsets
 /**
  * Wire codec for Wear PPG batches.
  *
- * V4 writes a bounded binary frame: raw first timestamp plus lossless timestamp
- * deltas, raw values, session identity, nonce, channel and sequence metadata.
+ * V5 writes a bounded binary frame: raw PPG values plus optional observed
+ * accelerometer axes on the same authenticated batch/session timeline.
  * [decode] deliberately retains V1 line-oriented input during the rolling
- * phone/Wear update, but every new encode is V4.
+ * phone/Wear update, but every new encode is V5.
  */
 object PpgBatchCodec {
     fun encode(batch: PpgBatch): ByteArray {
@@ -45,6 +45,14 @@ object PpgBatchCodec {
                         output.writeLong(batch.timestampsMillis[index] - batch.timestampsMillis[index - 1])
                     }
                     batch.rawValues.forEach(output::writeInt)
+                }
+                output.writeInt(batch.accelerometerSamples.size)
+                batch.accelerometerSamples.forEach { sample ->
+                    output.writeLong(sample.sensorTimestampNanos)
+                    output.writeLong(sample.elapsedMillis)
+                    output.writeFloat(sample.x)
+                    output.writeFloat(sample.y)
+                    output.writeFloat(sample.z)
                 }
                 output.flush()
             }
@@ -224,18 +232,12 @@ object PpgBatchCodec {
         val samplingRateHz = input.readInt()
         val elapsedStartMillis = input.readLong()
         val elapsedEndMillis = input.readLong()
-        val count = input.readInt()
-        require(count in 0..MAX_SAMPLES_PER_BATCH) { "Invalid PPG sample count: $count" }
-        val timestamps = LongArray(count)
-        if (count > 0) {
-            timestamps[0] = input.readLong()
-            for (index in 1 until count) {
-                val delta = input.readLong()
-                require(delta >= 0L) { "PPG timestamps must be monotonic" }
-                timestamps[index] = Math.addExact(timestamps[index - 1], delta)
-            }
+        val (timestamps, values) = input.readPpgValues()
+        val accelerometerSamples = if (version >= PpgBatch.ACCELEROMETER_SCHEMA_VERSION) {
+            input.readAccelerometerSamples()
+        } else {
+            emptyList()
         }
-        val values = IntArray(count) { input.readInt() }
         require(input.available() == 0) { "Unexpected trailing PPG V2 bytes" }
         PpgBatch(
             type = type,
@@ -252,8 +254,40 @@ object PpgBatchCodec {
             sessionNonce = sessionNonce,
             protocolVersion = protocolVersion,
             peerNodeId = peerNodeId,
-            generation = generation
+            generation = generation,
+            accelerometerSamples = accelerometerSamples
         )
+    }
+
+    private fun DataInputStream.readPpgValues(): Pair<LongArray, IntArray> {
+        val count = readInt()
+        require(count in 0..MAX_SAMPLES_PER_BATCH) { "Invalid PPG sample count: $count" }
+        val timestamps = LongArray(count)
+        if (count > 0) {
+            timestamps[0] = readLong()
+            for (index in 1 until count) {
+                val delta = readLong()
+                require(delta >= 0L) { "PPG timestamps must be monotonic" }
+                timestamps[index] = Math.addExact(timestamps[index - 1], delta)
+            }
+        }
+        return timestamps to IntArray(count) { readInt() }
+    }
+
+    private fun DataInputStream.readAccelerometerSamples(): List<AccelerometerSample> {
+        val count = readInt()
+        require(count in 0..PpgBatch.MAX_ACCELEROMETER_SAMPLES) {
+            "Invalid accelerometer sample count: $count"
+        }
+        return List(count) {
+            AccelerometerSample(
+                sensorTimestampNanos = readLong(),
+                elapsedMillis = readLong(),
+                x = readFloat(),
+                y = readFloat(),
+                z = readFloat()
+            )
+        }
     }
 
     private fun decodeV1(bytes: ByteArray): PpgBatch {

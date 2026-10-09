@@ -18,16 +18,22 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.stressdetector.mobile.data.db.StressSessionEntity
@@ -73,27 +79,31 @@ fun HistoryDetailScreen(sessionId: String, viewModel: HistoryDetailViewModel, on
 
 @Composable
 private fun HistoryDetailContent(state: HistoryDetailUiState, onRetry: () -> Unit) {
-    when {
-        state.isLoading -> CircularProgressIndicator()
-        state.errorMessage != null -> Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(state.errorMessage, color = MaterialTheme.colorScheme.onErrorContainer)
-                Button(onClick = onRetry) { Text("Coba lagi") }
-            }
-        }
-        state.session != null -> {
-            SessionSummaryCard(state.session, state.report)
-            HistoryChartSection(state.chartArtifact)
-            if (state.report == null) {
-                Card {
-                    Text(
-                        "Detail report tidak tersedia untuk sesi legacy.",
-                        modifier = Modifier.padding(16.dp)
-                    )
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        when {
+            state.isLoading -> CircularProgressIndicator()
+            state.errorMessage != null -> Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(state.errorMessage, color = MaterialTheme.colorScheme.onErrorContainer)
+                    Button(onClick = onRetry) { Text("Coba lagi") }
                 }
-            } else {
-                ReportSummaryCard(state.report)
-                WindowEvaluationSection(state.windows)
+            }
+            state.session != null -> {
+                SessionSummaryCard(state.session, state.report)
+                HistoryChartSection(state.chartArtifact)
+                if (state.report == null) {
+                    Card {
+                        Text(
+                            "Detail report tidak tersedia untuk sesi legacy.",
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                } else {
+                    ReportSummaryCard(state.report)
+                    WindowEvaluationSection(state.windows)
+                }
             }
         }
     }
@@ -107,29 +117,44 @@ private fun SessionSummaryCard(session: StressSessionEntity, report: StressSessi
         reportStatus = report?.reportStatus,
         transportIncomplete = session.transportIncomplete
     )
-    val statusLabel = when (status) {
-        HistoryResultStatus.STRESS -> "Stress"
-        HistoryResultStatus.NORMAL -> "Normal"
-        HistoryResultStatus.INVALID -> "Tidak valid"
-    }
-    Card {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("${formatDate(session.endedAtMillis)} · ${session.sessionId}", fontWeight = FontWeight.Bold)
+    var showTechnical by rememberSaveable(session.sessionId) { mutableStateOf(false) }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(formatDate(session.endedAtMillis), style = MaterialTheme.typography.titleMedium)
             HistoryStatusChip(status)
-            Text("Hasil: $statusLabel")
-            Text("Primary channel: ${session.primarySensor}")
-            Text("Durasi: ${session.durationMillis / 1_000}s")
-            Text("Confidence: ${session.confidence.asPercentOrUnavailable()}")
-            Text("Probabilitas stres: ${session.stressProbability.asPercentOrUnavailable()}")
-            Text("Quality: ${session.qualityTier}")
-            Text("Sample Green/IR: ${session.greenSampleCount}/${session.irSampleCount}")
-            session.errorReason?.let { Text("Catatan: $it") }
-            if (session.transportIncomplete) {
-                Text("Transport: incomplete${session.transportFailureReason?.let { " ($it)" } ?: ""}")
+            Text(
+                "Kanal utama: ${session.primarySensor.displayChannel()} · Durasi ${session.durationMillis / 1_000} detik",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                "Hasil ini adalah dukungan keputusan, bukan diagnosis.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TextButton(
+                onClick = { showTechnical = !showTechnical },
+                modifier = Modifier.semantics { stateDescription = if (showTechnical) "Diperluas" else "Diciutkan" }
+            ) { Text(if (showTechnical) "Sembunyikan detail teknis" else "Detail teknis") }
+            if (showTechnical) {
+                Text("ID sesi: ${session.sessionId}")
+                Text("Probabilitas model: ${session.stressProbability.asPercentOrUnavailable()}")
+                Text("Kualitas: ${session.qualityTier}")
+                Text("Sampel Green/IR: ${session.greenSampleCount}/${session.irSampleCount}")
+                session.errorReason?.let { Text("Alasan: $it") }
+                if (session.transportIncomplete) {
+                    Text("Pengiriman akhir belum terkonfirmasi${session.transportFailureReason?.let { " ($it)" } ?: ""}")
+                }
+                if (report == null) Text("Laporan window belum tersedia")
             }
-            if (report == null) Text("Report window: belum tersedia")
         }
     }
+}
+
+private fun String.displayChannel(): String = when (this) {
+    "ppg_green" -> "Green"
+    "ppg_ir" -> "IR"
+    "ppg_red" -> "Red"
+    else -> this
 }
 
 @Composable
@@ -159,14 +184,21 @@ private fun HistoryStatusChip(status: HistoryResultStatus) {
 
 @Composable
 private fun HistoryChartSection(artifact: HistoryChartArtifact?) {
-    Card {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("PPG CLEANED CORE", fontWeight = FontWeight.Bold)
-            Text("Core 30–270 detik · data aktual hasil preprocessing")
+            Text("Sinyal PPG diproses", style = MaterialTheme.typography.titleMedium)
+            Text("Segmen analisis 30–270 detik · hanya sampel yang diterima")
             when {
                 artifact == null -> Text("Grafik sesi tidak tersedia; artefak belum tersimpan.")
                 artifact.series.isEmpty() -> Text("Grafik tidak tersedia: ${artifact.unavailableReason ?: "cleaned core tidak tersedia"}.")
-                else -> artifact.series.sortedBy { it.channel.assetSuffix }.forEach { HistorySeriesChart(it) }
+                else -> {
+                    TextButton(
+                        onClick = { expanded = !expanded },
+                        modifier = Modifier.semantics { stateDescription = if (expanded) "Diperluas" else "Diciutkan" }
+                    ) { Text(if (expanded) "Sembunyikan grafik" else "Lihat grafik") }
+                    if (expanded) artifact.series.sortedBy { it.channel.assetSuffix }.forEach { HistorySeriesChart(it) }
+                }
             }
         }
     }
@@ -178,7 +210,7 @@ private fun HistorySeriesChart(series: HistoryChartSeries) {
     val projector = remember { GapAwareHistoryChartProjector() }
     val density = LocalDensity.current
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(series.channel.assetSuffix, color = color, fontWeight = FontWeight.Bold)
+        Text(series.channel.assetSuffix.displayChannel(), color = color, fontWeight = FontWeight.Bold)
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val renderWidth = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }
             val projection = remember(series, renderWidth) {
@@ -230,65 +262,91 @@ private fun HistorySeriesChart(series: HistoryChartSeries) {
 
 @Composable
 private fun ReportSummaryCard(report: StressSessionReportEntity) {
-    Card {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("CORE ANALYSIS", fontWeight = FontWeight.Bold)
-            Text("Sesi ${report.sessionDurationSeconds}s · core ${report.coreStartSeconds}–${report.coreEndSeconds}s")
-            Text("Window expected: ${report.expectedWindowCount}")
-            Text("Green valid: ${report.greenValidWindows}/${report.greenAttemptedWindows}")
-            Text("IR valid: ${report.irValidWindows}/${report.irAttemptedWindows}")
+            Text("Analisis sinyal", style = MaterialTheme.typography.titleMedium)
             Text(
-                bpmReportLine(
-                    channel = "Green",
-                    meanBpm = report.greenMeanBpm,
-                    medianBpm = report.greenMedianBpm,
-                    observationCount = report.greenBpmObservationCount,
-                    validPeakCount = report.greenValidPeakCount
-                )
+                "Sesi ${report.sessionDurationSeconds} detik · " +
+                    "segmen ${report.coreStartSeconds}–${report.coreEndSeconds} detik"
             )
+            Text("Green: ${report.greenValidWindows}/${report.greenAttemptedWindows} window valid")
             Text(
-                bpmReportLine(
-                    channel = "IR",
-                    meanBpm = report.irMeanBpm,
-                    medianBpm = report.irMedianBpm,
-                    observationCount = report.irBpmObservationCount,
-                    validPeakCount = report.irValidPeakCount
-                )
+                if (report.irAttemptedWindows == 0) {
+                    "IR: tidak ada window yang dievaluasi"
+                } else {
+                    "IR: ${report.irValidWindows}/${report.irAttemptedWindows} window valid"
+                }
             )
-            Text("Status: ${report.reportStatus}")
             if (report.evidenceMode == "research") {
                 Text(
-                    "Model riset — development only · Decision-support",
+                    "Model riset historis · bukan diagnosis",
                     color = MaterialTheme.colorScheme.error,
                     fontWeight = FontWeight.Bold
                 )
             } else if (report.evidenceMode == "internal") {
                 Text(
-                    "Validasi internal 32 peserta · Decision-support",
+                    "Model internal · validasi eksternal belum tersedia",
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold
                 )
             } else {
-                Text("Evidence mode: production")
+                Text("Model aplikasi · validasi eksternal belum tersedia")
             }
-            report.selectedChannel?.let { Text("Selected channel: $it") }
-            report.modelVersion?.let { Text("Model: $it") }
-            report.preprocessingFingerprint?.let { Text("Preprocessing: $it") }
-            report.rejectionReason?.let { Text("Rejection: $it") }
+            TextButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.semantics { stateDescription = if (expanded) "Diperluas" else "Diciutkan" }
+            ) { Text(if (expanded) "Sembunyikan pemrosesan" else "Detail pemrosesan") }
+            if (expanded) ReportTechnicalContent(report)
         }
     }
 }
 
 @Composable
+private fun ReportTechnicalContent(report: StressSessionReportEntity) {
+    Text("Window diharapkan: ${report.expectedWindowCount}")
+    Text(
+        bpmReportLine(
+            channel = "Green",
+            meanBpm = report.greenMeanBpm,
+            medianBpm = report.greenMedianBpm,
+            observationCount = report.greenBpmObservationCount,
+            validPeakCount = report.greenValidPeakCount
+        )
+    )
+    Text(
+        bpmReportLine(
+            channel = "IR",
+            meanBpm = report.irMeanBpm,
+            medianBpm = report.irMedianBpm,
+            observationCount = report.irBpmObservationCount,
+            validPeakCount = report.irValidPeakCount
+        )
+    )
+    Text("Status analisis: ${report.reportStatus}")
+    report.selectedChannel?.let { Text("Kanal terpilih: $it") }
+    report.modelVersion?.let { Text("Model: $it") }
+    report.preprocessingFingerprint?.let { Text("Preprocessing: $it") }
+    report.rejectionReason?.let { Text("Alasan penolakan: $it") }
+}
+
+@Composable
 private fun WindowEvaluationSection(windows: List<StressWindowEvaluationEntity>) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("WINDOW EVALUATIONS", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("Evaluasi window", style = MaterialTheme.typography.titleMedium)
         if (windows.isEmpty()) {
-            Card { Text("Belum ada evaluasi window tersimpan.", modifier = Modifier.padding(16.dp)) }
+            Text("Belum ada evaluasi window tersimpan.")
         } else {
-            windows.groupBy { it.channel }.toSortedMap().forEach { (channel, evaluations) ->
-                Text(channel, fontWeight = FontWeight.Bold)
-                evaluations.sortedBy { it.windowIndex }.forEach { WindowEvaluationCard(it) }
+            TextButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.semantics { stateDescription = if (expanded) "Diperluas" else "Diciutkan" }
+            ) { Text(if (expanded) "Sembunyikan ${windows.size} evaluasi" else "Lihat ${windows.size} evaluasi") }
+            if (expanded) {
+                windows.groupBy { it.channel }.toSortedMap().forEach { (channel, evaluations) ->
+                    Text(channel.displayChannel(), fontWeight = FontWeight.Bold)
+                    evaluations.sortedBy { it.windowIndex }.forEach { WindowEvaluationCard(it) }
+                }
             }
         }
     }
@@ -296,16 +354,16 @@ private fun WindowEvaluationSection(windows: List<StressWindowEvaluationEntity>)
 
 @Composable
 private fun WindowEvaluationCard(evaluation: StressWindowEvaluationEntity) {
-    Card {
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Window ${evaluation.windowIndex} · ${evaluation.status}", fontWeight = FontWeight.Bold)
-            Text("Elapsed: ${formatElapsed(evaluation.startElapsedMillis)}–${formatElapsed(evaluation.endElapsedMillis)}")
+            Text("Rentang: ${formatElapsed(evaluation.startElapsedMillis)}–${formatElapsed(evaluation.endElapsedMillis)}")
             evaluation.label?.let { Text("Label: ${StressLabel.displayName(it)}") }
-            Text("Stress probability: ${evaluation.stressProbability.asPercentOrUnavailable()}")
-            Text("Confidence: ${evaluation.confidence.asPercentOrUnavailable()}")
-            Text("Quality: ${evaluation.qualityTier ?: "Tidak tersedia"} (${evaluation.qualityScore.asPercentOrUnavailable()})")
-            Text("Samples: ${evaluation.sampleCount} · interpolated: ${evaluation.interpolatedSampleCount}")
-            evaluation.rejectionReason?.let { Text("Reason: $it") }
+            Text("Probabilitas model: ${evaluation.stressProbability.asPercentOrUnavailable()}")
+            Text("Skor internal: ${evaluation.confidence.asPercentOrUnavailable()}")
+            Text("Kualitas: ${evaluation.qualityTier ?: "Tidak tersedia"} (${evaluation.qualityScore.asPercentOrUnavailable()})")
+            Text("Sampel: ${evaluation.sampleCount} · interpolasi: ${evaluation.interpolatedSampleCount}")
+            evaluation.rejectionReason?.let { Text("Alasan: $it") }
             evaluation.modelVersion?.let { Text("Model: $it") }
         }
     }

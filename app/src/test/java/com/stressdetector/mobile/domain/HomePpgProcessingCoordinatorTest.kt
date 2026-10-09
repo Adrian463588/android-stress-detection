@@ -58,6 +58,27 @@ class HomePpgProcessingCoordinatorTest {
     }
 
     @Test
+    fun unusablePreparedSignalIsRejectedBeforeModelInference() {
+        val flatline = PreparedPpgWindow(
+            type = PpgType.GREEN,
+            timestampsMillis = LongArray(100) { it * 40L },
+            filteredValues = DoubleArray(100) { 1.0 },
+            rawSampleCount = 100,
+            interpolatedSampleCount = 0
+        )
+        val runtime = FakeRuntime(flatline)
+        val coordinator = HomePpgProcessingCoordinator(
+            runtime = runtime,
+            qualityGate = SignalQualityGate(testLiveMonitorConfig())
+        )
+
+        val result = coordinator.processPrepared(flatline)
+
+        assertTrue(result.availability is PredictionAvailability.Rejected)
+        assertEquals(0, runtime.inferCalls)
+    }
+
+    @Test
     fun coordinatorUsesTheManifestDecisionPolicyForGreen() {
         val runtime = FakeRuntime(
             prepared = readyWindow(),

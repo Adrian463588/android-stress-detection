@@ -1,5 +1,6 @@
 package com.stressdetector.mobile.signal
 
+import com.stressdetector.shared.AccelerometerSample
 import com.stressdetector.shared.PpgType
 import com.stressdetector.shared.PredictionWindowConfig
 import org.junit.Assert.assertEquals
@@ -10,6 +11,9 @@ class PreparedPpgWindowSlicerTest {
     fun slicesPreparedSessionWithoutChangingValuesOrTiming() {
         val elapsed = LongArray(7_501) { it * 40L }
         val values = DoubleArray(elapsed.size) { it.toDouble() }
+        val motion = elapsed.map { millis ->
+            AccelerometerSample(1_000_000_000L + millis * 1_000_000L, millis, 0f, 9.8f, 0f)
+        }
         val prepared = PreparedPpgWindow(
             type = PpgType.GREEN,
             timestampsMillis = elapsed.copyOf(),
@@ -19,7 +23,8 @@ class PreparedPpgWindowSlicerTest {
             elapsedTimestampsMillis = elapsed.copyOf(),
             observedSampleCount = values.size,
             observedMask = BooleanArray(values.size) { true },
-            gridResampledMask = BooleanArray(values.size)
+            gridResampledMask = BooleanArray(values.size),
+            accelerometerSamples = motion
         )
 
         val windows = PreparedPpgWindowSlicer(PredictionWindowConfig()).modelWindows(prepared)
@@ -33,6 +38,8 @@ class PreparedPpgWindowSlicerTest {
             assertEquals(true, window.elapsedTimestampsMillis.last() < 270_000L)
             assertEquals(window.size, window.observedSampleCount)
             assertEquals(0, window.gridResampledSampleCount)
+            assertEquals(4_500, window.motionAnnotation.sampleCount)
+            assertEquals("time_windowed_rolling_variance_robust_mad", window.motionAnnotation.motionMethod)
         }
     }
 

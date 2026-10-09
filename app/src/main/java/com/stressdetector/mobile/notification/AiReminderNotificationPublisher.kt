@@ -3,6 +3,7 @@ package com.stressdetector.mobile.notification
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -30,7 +31,15 @@ class AndroidAiReminderNotificationPublisher(context: Context) : ReminderNotific
                 Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
         ) &&
-        manager.areNotificationsEnabled()
+        manager.areNotificationsEnabled() &&
+        channelAllowsNotification()
+
+    private fun channelAllowsNotification(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) return true
+        val notificationManager = applicationContext.getSystemService(NotificationManager::class.java)
+        val channel = notificationManager?.getNotificationChannel(AI_REMINDER_CHANNEL_ID)
+        return channel != null && channel.importance != NotificationManager.IMPORTANCE_NONE
+    }
 
     @SuppressLint("MissingPermission")
     override fun publish(reminderId: String, content: ReminderContent): ReminderPublishResult {

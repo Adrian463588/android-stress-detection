@@ -119,6 +119,8 @@ data class MobileUiState(
     ),
     val greenCoreDiagnostics: CoreCoverageDiagnostics? = null,
     val irCoreDiagnostics: CoreCoverageDiagnostics? = null,
+    val greenMotionAnnotations: List<com.stressdetector.mobile.signal.MotionAnnotation> = emptyList(),
+    val irMotionAnnotations: List<com.stressdetector.mobile.signal.MotionAnnotation> = emptyList(),
     val greenChart: PpgChartData = PpgChartData.empty("Menunggu data sensor"),
     val irChart: PpgChartData = PpgChartData.empty("Menunggu data sensor"),
     val redChart: PpgChartData = PpgChartData.empty("Menunggu data diagnostik"),
@@ -134,9 +136,39 @@ data class MobileUiState(
     /** Debug-only, explicit opt-in capture of acknowledged Watch batches. */
     val debugLivePpgCaptureEnabled: Boolean = false,
     val finalizationState: StressSessionFinalizationState = StressSessionFinalizationState.Idle,
+    val finalizationSnapshotSessionId: String? = null,
+    val pendingPersistence: Boolean = false,
     val lastError: String? = null,
     val sessionNotice: String? = null
 )
+
+private fun MobileUiState.acceptsLiveChartFrame(frameSessionId: String?): Boolean = isRecording &&
+    finalizationState == StressSessionFinalizationState.Idle &&
+    finalizationSnapshotSessionId == null &&
+    frameSessionId != null &&
+    frameSessionId == sessionId
+
+internal fun MobileUiState.withLiveChartFrame(
+    frameSessionId: String?,
+    charts: Triple<PpgChartData, PpgChartData, PpgChartData>
+): MobileUiState = if (acceptsLiveChartFrame(frameSessionId)) {
+    copy(greenChart = charts.first, irChart = charts.second, redChart = charts.third)
+} else {
+    this
+}
+
+internal fun finalHomeChannelChart(
+    rejectionReason: String?,
+    cleanedCore: () -> PpgChartData,
+    rawDiagnostic: () -> PpgChartData
+): PpgChartData = if (rejectionReason == null) {
+    cleanedCore()
+} else {
+    rawDiagnostic().copy(
+        mode = com.stressdetector.mobile.domain.PpgChartMode.RAW_DIAGNOSTIC,
+        statusMessage = "RAW / DIAGNOSTIC: $rejectionReason"
+    )
+}
 
 @Suppress("LongParameterList")
 class StressViewModel(
@@ -155,7 +187,9 @@ class StressViewModel(
         evidenceMode = if (BuildConfig.RESEARCH_MODEL_MODE) "research" else "internal"
     )
     private val finalizeStressSession = FinalizeStressSessionUseCase(watchSessionCoordinator)
-    private val historyChartArtifactStore = HistoryChartArtifactStore(application)
+    private val historyChartArtifactStore = HistoryChartArtifactStore(application) {
+        AppLocator.userBackupService(application).requestBackup()
+    }
     private var finalizationJob: Job? = null
     private var sessionClockJob: Job? = null
     private var connectionProbeJob: Job? = null
@@ -277,6 +311,7 @@ class StressViewModel(
                 ) {
                     return@collect
                 }
+                if (!mutableUiState.value.acceptsLiveChartFrame(frame.sessionId)) return@collect
                 val charts = kotlinx.coroutines.withContext(Dispatchers.Default) {
                     Triple(
                         inference.preview(frame.greenSnapshot),
@@ -284,12 +319,8 @@ class StressViewModel(
                         inference.preview(frame.redSnapshot)
                     )
                 }
-                mutableUiState.update {
-                    it.copy(
-                        greenChart = charts.first,
-                        irChart = charts.second,
-                        redChart = charts.third
-                    )
+                mutableUiState.update { current ->
+                    current.withLiveChartFrame(frame.sessionId, charts)
                 }
             }
         }
@@ -319,7 +350,7 @@ class StressViewModel(
         val bpmSummary: com.stressdetector.mobile.domain.engine.BpmSummary? = null
     )
 
-    private data class CoreEvaluation(val green: CoreChannelEvaluation, val ir: CoreChannelEvaluation)
+    private data class CoreEvaluation(val green: CoreChannelEvaluation, val ir: CoreChannelEvaluation, val redDiagnosticChart: PpgChartData)
 
     private data class EvaluatedSession(val snapshot: FinalizationSnapshot, val endedAtMillis: Long, val core: CoreEvaluation)
 
@@ -430,6 +461,15 @@ class StressViewModel(
                 )
             }
             is PpgPreprocessResult.Rejected -> {
+                val diagnostics = result.diagnostics
+                Log.i(
+                    TAG,
+                    "core_rejected channel=${channel.assetSuffix} reason=${result.reason} " +
+                        "samples=${diagnostics?.observedSampleCount ?: 0} " +
+                        "maxGapMs=${diagnostics?.maxGapMillis ?: 0} " +
+                        "trueGaps=${diagnostics?.trueGapCount ?: 0} " +
+                        "sequenceLoss=${core.diagnostics?.transportMissingSequenceCount ?: 0}"
+                )
                 rejectedCoreChannel(fullSession, core, result.reason, "RAW / DIAGNOSTIC: ${result.reason}")
             }
         }
@@ -447,8 +487,8 @@ class StressViewModel(
         val windows = buildList {
             plan.preparedSlicer.modelWindows(preparedSession).forEachIndexed { index, window ->
                 currentCoroutineContext().ensureActive()
-                onProgress(index + 1, plan.config.expectedModelWindows)
                 add(inference.processPrepared(window).also(::logProcessing))
+                onProgress(index + 1, plan.config.expectedModelWindows)
                 yield()
             }
         }
@@ -468,6 +508,12 @@ class StressViewModel(
         } else {
             null
         }
+        val rejectionReason = if (aggregate == null) {
+            diagnosticRejection ?: aggregation.rejectionReason
+                ?: "insufficient_valid_core_windows:${aggregation.validWindowCount}/${aggregation.expectedWindowCount}"
+        } else {
+            null
+        }
         val bpmAccumulator = BpmSummaryAccumulator()
         if (windows.any { it.availability is PredictionAvailability.Ready }) {
             val bpmEstimator = PpgBpmEstimator(BPM_OBSERVATION_SECONDS)
@@ -479,14 +525,16 @@ class StressViewModel(
             aggregate = aggregate,
             availability = aggregate?.let { PredictionAvailability.Ready(it, windowStats) }
                 ?: PredictionAvailability.Rejected(
-                    reason = diagnosticRejection
-                        ?: aggregation.rejectionReason
-                        ?: "insufficient_valid_core_windows:${aggregation.validWindowCount}/${aggregation.expectedWindowCount}",
+                    reason = requireNotNull(rejectionReason),
                     sampleCount = fullSession.size,
                     windowStats = windowStats
                 ),
             windows = windows,
-            chart = inference.chartForPrepared(preparedSession),
+            chart = finalHomeChannelChart(
+                rejectionReason = rejectionReason,
+                cleanedCore = { inference.chartForPrepared(preparedSession) },
+                rawDiagnostic = { inference.preview(fullSession) }
+            ),
             coreDiagnostics = core.diagnostics,
             bpmSummary = bpmAccumulator.summary()
         )
@@ -580,7 +628,14 @@ class StressViewModel(
                 snapshot.streamState.missingIrSequenceCount
             ) { completed, total -> report(PpgType.IR, completed, total) }
         }
-        CoreEvaluation(green.await(), ir.await())
+        CoreEvaluation(
+            green = green.await(),
+            ir = ir.await(),
+            redDiagnosticChart = inference.preview(snapshot.redWindow).copy(
+                mode = com.stressdetector.mobile.domain.PpgChartMode.RAW_DIAGNOSTIC,
+                statusMessage = "RAW / DIAGNOSTIC: Red tidak digunakan model"
+            )
+        )
     }
 
     private fun logProcessing(snapshot: com.stressdetector.mobile.domain.PpgProcessingSnapshot) {
@@ -661,6 +716,8 @@ class StressViewModel(
                 startedAtMillis = startedAtMillis,
                 primaryPrediction = null,
                 irPrediction = null,
+                greenMotionAnnotations = emptyList(),
+                irMotionAnnotations = emptyList(),
                 primaryPredictionState = PredictionAvailability.WarmingUp(
                     currentSamples = 0,
                     requiredSamples = requiredRawSamples(PpgType.GREEN)
@@ -675,6 +732,8 @@ class StressViewModel(
                 irChart = PpgChartData.empty("Menunggu data sensor"),
                 redChart = PpgChartData.empty("Menunggu data diagnostik"),
                 finalizationState = StressSessionFinalizationState.Idle,
+                finalizationSnapshotSessionId = null,
+                pendingPersistence = false,
                 lastError = null,
                 sessionNotice = null
             )
@@ -747,6 +806,7 @@ class StressViewModel(
                             )
                         }
                         is HomeFinalizationResult.Failed -> {
+                            mutableUiState.update { it.copy(pendingPersistence = true) }
                             publishFinalizationState(
                                 StressSessionFinalizationState.ResultReady(
                                     persisted = false,
@@ -806,6 +866,8 @@ class StressViewModel(
         .resetCharts()
         .copy(
             finalizationState = StressSessionFinalizationState.Idle,
+            finalizationSnapshotSessionId = null,
+            pendingPersistence = false,
             sessionNotice = null,
             lastError = null
         )
@@ -842,6 +904,8 @@ class StressViewModel(
     private fun MobileUiState.resetPredictions(): MobileUiState = copy(
         primaryPrediction = null,
         irPrediction = null,
+        greenMotionAnnotations = emptyList(),
+        irMotionAnnotations = emptyList(),
         primaryPredictionState = PredictionAvailability.WarmingUp(
             currentSamples = 0,
             requiredSamples = requiredRawSamples(PpgType.GREEN)
@@ -933,6 +997,13 @@ class StressViewModel(
                             ?: freezeFinalizationSnapshot(sessionId).also {
                                 pendingFinalizationSnapshots[sessionId] = it
                             }
+                        mutableUiState.update { current ->
+                            if (current.sessionId == sessionId) {
+                                current.copy(finalizationSnapshotSessionId = sessionId)
+                            } else {
+                                current
+                            }
+                        }
                         val core = kotlinx.coroutines.withContext(Dispatchers.Default) {
                             evaluateCorePredictions(snapshot, onProgress = progress)
                         }
@@ -1115,15 +1186,18 @@ class StressViewModel(
             is StressSessionFinalizationOutcome.PersistencePending -> {
                 pendingFinalizationSnapshots[sessionId] = outcome.evaluation.snapshot
                 pendingEvaluations[sessionId] = outcome.evaluation
+                mutableUiState.update { it.copy(pendingPersistence = true) }
                 applyEvaluatedSession(
                     evaluated = outcome.evaluation,
                     persisted = false,
-                    warning = "Hasil tersedia tetapi belum tersimpan: ${outcome.reason}"
+                    warning = null
                 )
-                finalizationRequested.remove(sessionId)
             }
-            is StressSessionFinalizationOutcome.Failed -> finalizationRequested.remove(sessionId)
-            is StressSessionFinalizationOutcome.TimedOut -> finalizationRequested.remove(sessionId)
+            is StressSessionFinalizationOutcome.Failed -> Unit
+            is StressSessionFinalizationOutcome.TimedOut -> Unit
+        }
+        if (outcome is StressSessionFinalizationOutcome.PersistencePending) {
+            Log.w(TAG, "finalization_outcome=persistence_pending error=${outcome.reason.take(MAX_FAILURE_REASON_LOG_LENGTH)}")
         }
         Log.i(TAG, finalizationTraceLog(outcome.trace))
     }
@@ -1137,8 +1211,11 @@ class StressViewModel(
                 irPredictionState = evaluated.core.ir.availability,
                 greenCoreDiagnostics = evaluated.core.green.coreDiagnostics,
                 irCoreDiagnostics = evaluated.core.ir.coreDiagnostics,
+                greenMotionAnnotations = evaluated.core.green.windows.mapNotNull { it.preparedWindow?.motionAnnotation },
+                irMotionAnnotations = evaluated.core.ir.windows.mapNotNull { it.preparedWindow?.motionAnnotation },
                 greenChart = evaluated.core.green.chart,
                 irChart = evaluated.core.ir.chart,
+                redChart = evaluated.core.redDiagnosticChart,
                 finalizationState = if (persisted) StressSessionFinalizationState.Completed else current.finalizationState,
                 sessionNotice = warning
             )
@@ -1152,7 +1229,7 @@ class StressViewModel(
             warning = transportWarning?.let { "Transport warning: $it" }
         )
         mutableUiState.update { current ->
-            current.copy(savedSessionIds = current.savedSessionIds + sessionId)
+            current.copy(savedSessionIds = current.savedSessionIds + sessionId, pendingPersistence = false)
         }
         scheduleOptionalSessionArtifacts(
             sessionId = sessionId,
@@ -1272,6 +1349,7 @@ class StressViewModel(
 
     companion object {
         private const val TAG = "HomePpgProcessing"
+        private const val MAX_FAILURE_REASON_LOG_LENGTH = 160
         private const val SESSION_CLOCK_TICK_MILLIS = 250L
         private const val BPM_OBSERVATION_SECONDS = 30
         val Factory: ViewModelProvider.Factory = object : ViewModelProvider.Factory {
@@ -1298,7 +1376,10 @@ private fun PreparedPpgWindow?.processingLogFields(): String {
         "interpolated=${window.interpolatedSampleCount} " +
         "repairedShortGap=${window.repairedShortGapSampleCount} " +
         "trueGaps=${window.trueGapCount} unresolved=${window.unresolvedSampleCount} " +
-        "gridResampled=${window.gridResampledSampleCount}"
+        "gridResampled=${window.gridResampledSampleCount} " +
+        "motion=${window.motionAnnotation.motionAnnotation} " +
+        "motionMethod=${window.motionAnnotation.motionMethod} " +
+        "motionSamples=${window.motionAnnotation.sampleCount}"
 }
 
 private fun StressPrediction?.processingLogFields(): String {

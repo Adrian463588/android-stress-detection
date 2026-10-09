@@ -69,6 +69,44 @@ class AiReminderContractTest {
     }
 
     @Test
+    fun outputGuardRejectsClaimsOfCompletedTherapyWithoutRecordedAction() {
+        listOf(
+            "Kemarin kamu sudah mencoba grounding, lanjutkan lagi.",
+            "Latihan terapi kemarin sudah selesai.",
+            "You completed your grounding practice yesterday."
+        ).forEach { message ->
+            val result = ReminderOutputGuard.validate(message, null)
+            assertEquals("REMINDER_UNRECORDED_ACTION_CLAIM", (result as ReminderOutputGuard.Result.Rejected).reason)
+        }
+    }
+
+    @Test
+    fun outputGuardAcceptsNeutralActionQuestionsWithoutRecordedAction() {
+        listOf(
+            "Sudah mencoba beristirahat sebentar?",
+            "Apakah kamu sudah mencoba beristirahat sebentar?",
+            "Halo Alex. Sudah mencoba beristirahat sebentar?"
+        ).forEach { message ->
+            assertEquals(message, ReminderOutputGuard.Result.Accepted, ReminderOutputGuard.validate(message, null))
+        }
+    }
+
+    @Test
+    fun aQuestionDoesNotHideAnActionAssertionOrInventAnEarlierAssignment() {
+        listOf(
+            "Kamu sudah mencoba beristirahat sebentar.",
+            "Kamu sudah mencoba beristirahat sebentar, bukan?",
+            "Kamu telah menyelesaikan terapi. Bagaimana kabarmu?",
+            "Sudah mencoba beristirahat sebentar? Kamu telah menyelesaikan terapi.",
+            "Sudah mencoba beristirahat, kamu telah menyelesaikan terapi?",
+            "Sudah mencoba tugas kemarin?"
+        ).forEach { message ->
+            val result = ReminderOutputGuard.validate(message, null) as ReminderOutputGuard.Result.Rejected
+            assertEquals(message, "REMINDER_UNRECORDED_ACTION_CLAIM", result.reason)
+        }
+    }
+
+    @Test
     fun contentGeneratorCollectsRealDeltasAndAcceptsNaturalSafeMessage() = runTest {
         val engine = FakeEngine(
             fragments = listOf(

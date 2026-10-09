@@ -13,7 +13,7 @@ data class StressSessionEntity(
     val finalLabel: String,
     val confidence: Float,
     val qualityTier: String,
-    val stressProbability: Float,
+    val stressProbability: Float?,
     val greenSampleCount: Int,
     val irSampleCount: Int,
     val errorReason: String?,

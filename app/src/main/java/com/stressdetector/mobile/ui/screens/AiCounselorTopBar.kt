@@ -116,7 +116,11 @@ private fun CounselorTopBarActions(model: CounselorScreenModel, dialogs: Counsel
                 contentDescription = when (state.webSearchMode) {
                     WebSearchMode.Disabled -> "Aktifkan pencarian web"
                     WebSearchMode.NextMessage -> "Pencarian web aktif untuk pesan berikutnya"
-                    WebSearchMode.Persistent -> "Pencarian web otomatis selalu aktif"
+                    WebSearchMode.Persistent -> if (state.automaticWebAllowed) {
+                        "Pencarian web topik publik otomatis aktif bila sumber lokal belum cukup"
+                    } else {
+                        "Konfirmasi pencarian web bila sumber lokal belum cukup"
+                    }
                 },
                 tint = if (state.webSearchMode == WebSearchMode.Disabled) {
                     MaterialTheme.colorScheme.onSurfaceVariant

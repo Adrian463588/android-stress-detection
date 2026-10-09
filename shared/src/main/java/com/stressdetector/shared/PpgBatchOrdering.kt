@@ -34,7 +34,7 @@ class PpgBatchSequenceAudit {
     private val streams = mutableMapOf<StreamKey, StreamState>()
 
     fun accept(batch: PpgBatch): PpgBatchDelivery {
-        if (batch.schemaVersion >= PpgBatch.CURRENT_SCHEMA_VERSION && batch.sequenceNumber < FIRST_SEQUENCE_NUMBER) {
+        if (batch.schemaVersion >= PpgBatch.IDENTITY_SCHEMA_VERSION && batch.sequenceNumber < FIRST_SEQUENCE_NUMBER) {
             return PpgBatchDelivery(
                 disposition = PpgBatchDisposition.REJECTED,
                 reason = "invalid_v2_sequence:${batch.sequenceNumber}"
@@ -96,7 +96,7 @@ class PpgBatchSequenceAudit {
      * real samples behind an in-memory pending queue.
      */
     fun acceptDirect(batch: PpgBatch): PpgBatchDelivery {
-        if (batch.schemaVersion >= PpgBatch.CURRENT_SCHEMA_VERSION &&
+        if (batch.schemaVersion >= PpgBatch.IDENTITY_SCHEMA_VERSION &&
             batch.sequenceNumber < FIRST_SEQUENCE_NUMBER
         ) {
             return PpgBatchDelivery(
@@ -156,6 +156,6 @@ class PpgBatchSequenceAudit {
 
         /** V1 peers started at zero; V2 persistently starts at one. */
         fun firstExpectedSequence(batch: PpgBatch): Long =
-            if (batch.schemaVersion >= PpgBatch.CURRENT_SCHEMA_VERSION) FIRST_SEQUENCE_NUMBER else 0L
+            if (batch.schemaVersion >= PpgBatch.IDENTITY_SCHEMA_VERSION) FIRST_SEQUENCE_NUMBER else 0L
     }
 }

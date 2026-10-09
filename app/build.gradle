@@ -12,6 +12,13 @@ android {
     compileSdk 35
     ndkVersion = "28.0.13004108"
 
+    externalNativeBuild {
+        cmake {
+            path file("src/main/cpp/CMakeLists.txt")
+            version "3.22.1"
+        }
+    }
+
     defaultConfig {
         applicationId "com.stressdetector"
         minSdk 26
@@ -20,6 +27,12 @@ android {
         versionName "0.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders = [appLabel: "Stress Detector"]
+        externalNativeBuild {
+            cmake {
+                arguments "-DOPENSMILE_SOURCE=${file('build/third-party/opensmile-3.0.2').absolutePath.replace('\\', '/')}"
+                targets "verbatim_prosody", "secure_file_ops"
+            }
+        }
         // The static Sherpa distribution is supplied for these ABIs. Excluding
         // x86 prevents its shared-ORT fallback from reintroducing a duplicate
         // libonnxruntime.so into the final APK.
@@ -64,7 +77,7 @@ android {
     }
 
     sourceSets {
-        main.assets.srcDirs = ["src/main/canonicalAssets"]
+        main.assets.srcDirs = ["src/main/canonicalAssets", "build/generated/openSmileAssets"]
     }
 }
 
@@ -184,6 +197,39 @@ def sha256File = { File source ->
         while ((count = stream.read(buffer)) != -1) digest.update(buffer, 0, count)
     }
     digest.digest().collect { String.format("%02x", it) }.join()
+}
+
+// audEERING Research License: noncommercial research only. Commercial product
+// distribution needs a separate license. License/configs ship with the APK.
+tasks.register("prepareOpenSmile") {
+    inputs.file("src/main/cpp/verbatim-lld.conf")
+    outputs.dir("build/third-party/opensmile-3.0.2")
+    outputs.dir("build/generated/openSmileAssets")
+    doLast {
+        def archive = file("build/third-party/opensmile-v3.0.2.zip")
+        archive.parentFile.mkdirs()
+        if (!archive.isFile()) {
+            new URL("https://codeload.github.com/audeering/opensmile/zip/refs/tags/v3.0.2")
+                .withInputStream { input -> archive.withOutputStream { output -> output << input } }
+        }
+        if (sha256File(archive) != "34579ef7e700f5d304354b0cba5c795bcfc14cd9c736eaf6bbb6584f1749504f") {
+            throw new GradleException("openSMILE 3.0.2 source checksum mismatch; do not use this archive")
+        }
+        copy { from zipTree(archive); into file("build/third-party") }
+        def source = file("build/third-party/opensmile-3.0.2")
+        def assets = file("build/generated/openSmileAssets/opensmile-v3.0.2")
+        copy {
+            from(source) { include "config/gemaps/v01b/**", "config/egemaps/v02/**", "config/shared/**", "LICENSE", "CITING", "licenses/**" }
+            into assets
+        }
+        copy { from "src/main/cpp/verbatim-lld.conf"; into assets }
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == "preBuild" || task.name.startsWith("configureCMake") || task.name.contains("Assets")) {
+        task.dependsOn("prepareOpenSmile")
+    }
 }
 
 tasks.register("verifyStaticSherpaRuntime") {

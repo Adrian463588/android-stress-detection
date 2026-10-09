@@ -47,6 +47,10 @@ class CounselorChatSessionTest {
             ioDispatcher = dispatcher
         )
         advanceUntilIdle()
+        assertEquals(0, viewModel.uiState.value.chatSessions.size)
+        // The initial UI draft is not data; create a real session explicitly before switching history.
+        viewModel.newChat()
+        advanceUntilIdle()
         val firstSessionId = viewModel.uiState.value.activeChatSessionId
 
         viewModel.newChat()

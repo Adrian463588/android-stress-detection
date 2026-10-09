@@ -5,6 +5,7 @@ import com.stressdetector.mobile.domain.engine.KnowledgeCitation
 import com.stressdetector.mobile.domain.engine.RagRetrievalResult
 import com.stressdetector.mobile.domain.engine.RagRetriever
 import java.security.MessageDigest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -15,7 +16,7 @@ class BundledLocalKnowledgeTest {
     fun `bundled retriever admits only checksum verified evidence`() = runBlocking {
         val text = "Coping dapat mencakup latihan napas dan dukungan sosial."
         val document = document(text)
-        val result = BundledLocalRagRetriever(FixtureCorpus(document, text), clock = { 42L })
+        val result = BundledLocalRagRetriever(FixtureCorpus(document, text), clock = { 42L }, policy = calibratedPolicy())
             .retrieveRelevantPassages("apa itu coping", maxResults = 2)
 
         val retrieved = result as RagRetrievalResult.Retrieved
@@ -29,7 +30,8 @@ class BundledLocalKnowledgeTest {
     fun `checksum mismatch abstains without citation`() = runBlocking {
         val document = document("Coping lokal")
         val result = BundledLocalRagRetriever(
-            FixtureCorpus(document.copy(sourceSha256 = "b".repeat(64)), "Coping lokal")
+            FixtureCorpus(document.copy(sourceSha256 = "b".repeat(64)), "Coping lokal"),
+            policy = calibratedPolicy()
         ).retrieveRelevantPassages("coping")
 
         assertTrue(result is RagRetrievalResult.BelowThreshold)
@@ -60,6 +62,102 @@ class BundledLocalKnowledgeTest {
         assertEquals(1, bundledCalls)
         assertEquals(EvidenceSourceTier.BUNDLED_LOCAL, result.sourceTier)
         assertEquals(EvidenceSourceTier.BUNDLED_LOCAL, result.citations.single().sourceTier)
+    }
+
+    @Test
+    fun `app evidence short circuits bundled retrieval`() = runBlocking {
+        var bundledCalls = 0
+        val resolver = TieredRagRetriever(
+            appRag = countingRetriever { RagRetrievalResult.Retrieved(listOf(validCitation())) },
+            bundledLocal = countingRetriever {
+                bundledCalls++
+                RagRetrievalResult.Unavailable("must not be called")
+            }
+        )
+
+        val result = resolver.retrieveRelevantPassages("coping") as RagRetrievalResult.Retrieved
+
+        assertEquals(0, bundledCalls)
+        assertEquals(EvidenceSourceTier.APP_RAG, result.sourceTier)
+    }
+
+    @Test
+    fun `app cancellation propagates without bundled fallback`() = runBlocking {
+        val cancellation = CancellationException("app retrieval cancelled")
+        var bundledCalls = 0
+        val resolver = TieredRagRetriever(
+            appRag = countingRetriever { throw cancellation },
+            bundledLocal = countingRetriever {
+                bundledCalls++
+                RagRetrievalResult.Unavailable("must not be called")
+            }
+        )
+
+        val result = runCatching { resolver.retrieveRelevantPassages("coping") }
+
+        assertTrue(result.exceptionOrNull() === cancellation)
+        assertEquals(0, bundledCalls)
+    }
+
+    @Test
+    fun `bundled cancellation propagates`() = runBlocking {
+        val cancellation = CancellationException("bundled retrieval cancelled")
+        val resolver = TieredRagRetriever(
+            appRag = countingRetriever { RagRetrievalResult.Unavailable("no app evidence") },
+            bundledLocal = countingRetriever { throw cancellation }
+        )
+
+        assertTrue(runCatching { resolver.retrieveRelevantPassages("coping") }.exceptionOrNull() === cancellation)
+    }
+
+    @Test
+    fun `uncalibrated bundled retrieval cannot be enabled by legacy threshold`() = runBlocking {
+        val text = "Coping lokal"
+        val retriever = BundledLocalRagRetriever(FixtureCorpus(document(text), text))
+
+        assertTrue(retriever.retrieveRelevantPassages("coping") is RagRetrievalResult.BelowThreshold)
+        assertTrue(
+            retriever.retrieveRelevantPassages("coping", minRelevanceThreshold = 0f) is RagRetrievalResult.BelowThreshold
+        )
+    }
+
+    @Test
+    fun `bundled evidence uses injected policy with lexical RRF scores`() = runBlocking {
+        val text = "Coping lokal"
+        var policyCalls = 0
+        val policy = LocalRagRetrievalPolicy(
+            thresholdPolicy = RetrievalThresholdPolicy { context ->
+                policyCalls++
+                assertEquals("coping", context.query)
+                assertEquals(LocalRetrievalMode.LEXICAL_ONLY, context.mode)
+                assertEquals(1f / 61f, context.candidates.single().fusedScore, 0.000001f)
+                false
+            }
+        )
+        val retriever = BundledLocalRagRetriever(FixtureCorpus(document(text), text), policy = policy)
+
+        assertTrue(retriever.retrieveRelevantPassages("coping", minRelevanceThreshold = 0f) is RagRetrievalResult.BelowThreshold)
+        assertEquals(1, policyCalls)
+    }
+
+    @Test
+    fun `corpus cancellation failures propagate from manifest and document reads`() = runBlocking {
+        listOf(true, false).forEach { cancelManifest ->
+            val cancellation = CancellationException("corpus cancelled")
+            val text = "Coping lokal"
+            val corpus = object : BundledLocalCorpus {
+                override suspend fun loadDocuments(): Result<List<BundledLocalDocument>> = if (cancelManifest) {
+                    Result.failure(cancellation)
+                } else {
+                    Result.success(listOf(document(text)))
+                }
+
+                override suspend fun read(document: BundledLocalDocument): Result<ByteArray> = Result.failure(cancellation)
+            }
+            val result = runCatching { BundledLocalRagRetriever(corpus, policy = calibratedPolicy()).retrieveRelevantPassages("coping") }
+            assertTrue(result.exceptionOrNull() is CancellationException)
+            assertEquals(cancellation.message, result.exceptionOrNull()?.message)
+        }
     }
 
     @Test
@@ -99,6 +197,10 @@ class BundledLocalKnowledgeTest {
         override suspend fun retrieveRelevantPassages(query: String, maxResults: Int, minRelevanceThreshold: Float): RagRetrievalResult =
             block()
     }
+
+    private fun calibratedPolicy() = LocalRagRetrievalPolicy(
+        thresholdPolicy = CalibratedRetrievalThresholdPolicy("test-calibration-v1", 0.01f, 0.01f)
+    )
 
     private class FixtureCorpus(private val document: BundledLocalDocument, private val content: String) : BundledLocalCorpus {
         override suspend fun loadDocuments(): Result<List<BundledLocalDocument>> = Result.success(listOf(document))

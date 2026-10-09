@@ -139,7 +139,7 @@ internal object HistoryChartArtifactCodec {
  * App-private, atomic history artifact storage. It stores only the cleaned chart
  * projection produced by final inference; no raw/model/SAF data is copied here.
  */
-class HistoryChartArtifactStore(context: Context) {
+class HistoryChartArtifactStore(context: Context, private val onChanged: () -> Unit = {}) {
     private val directory = File(context.applicationContext.filesDir, "history_chart_artifacts")
 
     suspend fun save(sessionId: String, series: List<HistoryChartSeries>): Result<Unit> = withContext(Dispatchers.IO) {
@@ -165,6 +165,7 @@ class HistoryChartArtifactStore(context: Context) {
         val temporary = File(directory, "$sessionId.json.tmp")
         temporary.outputStream().bufferedWriter().use { it.write(HistoryChartArtifactCodec.encode(artifact)) }
         check(temporary.renameTo(target)) { "history chart atomic rename failed" }
+        onChanged()
     }
 }
 

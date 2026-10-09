@@ -43,13 +43,12 @@ data class StressHistoryContextSnapshot(
         if (validEntries.isEmpty()) return "No valid stored stress history is available."
 
         val lines = buildList {
-            add("Bounded local physiological arousal history (not a diagnosis):")
+            add("Local PPG history (not a diagnosis):")
             add("Trend: $trend")
             validEntries.forEach { entry ->
                 add(
                     buildString {
                         append("- ").append(formatTimestamp(entry.endedAtMillis))
-                        append("; session=").append(entry.sessionId.take(12))
                         append("; label=").append(entry.label)
                         append("; stressProbability=").append(formatNumber(entry.stressProbability))
                         append("; confidence=").append(formatNumber(entry.confidence))
@@ -59,7 +58,7 @@ data class StressHistoryContextSnapshot(
                     }
                 )
             }
-            add("Use this only as bounded self-report context. Do not diagnose or infer deception.")
+            add("Physiological arousal only. Do not diagnose or infer deception.")
         }
         val bounded = StringBuilder()
         lines.forEach { line ->
@@ -165,7 +164,7 @@ class RoomStressHistoryContextProvider(
     override fun setEnabled(enabled: Boolean) = settings.setEnabled(enabled)
 
     private fun buildSnapshot(sessions: List<StressSessionEntity>): StressHistoryContextSnapshot {
-        val entries = sessions.take(MAX_CONTEXT_ENTRIES).map { it.toContextEntry() }
+        val entries = sessions.sortedByDescending { it.endedAtMillis }.take(MAX_CONTEXT_ENTRIES).map { it.toContextEntry() }
         val valid = entries.filter(StressHistoryContextEntry::valid)
         val trend = when {
             valid.isEmpty() -> "insufficient valid sessions"
@@ -197,17 +196,19 @@ class RoomStressHistoryContextProvider(
 class StressHistoryUnavailableException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
 
 private fun StressSessionEntity.toContextEntry(): StressHistoryContextEntry {
-    val probabilityUsable = stressProbability.isFinite() && stressProbability in 0f..1f
+    val probabilityUsable = stressProbability?.let { it.isFinite() && it in 0f..1f } == true
     val confidenceUsable = confidence.isFinite() && confidence in 0f..1f
+    val label = StressHistoryFormatter.formatLabel(finalLabel)
+    val quality = qualityTier.trim().lowercase(Locale.US)
+    val completed = durationMillis >= HOME_HISTORY_DURATION_MILLIS && endedAtMillis > startedAtMillis && startedAtMillis > 0L
     // A direct-message transport warning is evidence for review, but it does
     // not invalidate an otherwise complete core/model decision. The Home
     // finalizer persists it separately for exactly this reason. Keep only
     // objective prediction/SQA failures out of the AI+ history context.
-    val valid = errorReason.isNullOrBlank() &&
-        probabilityUsable &&
-        confidenceUsable &&
-        qualityTier.lowercase(Locale.US) !in setOf("poor", "invalid", "unavailable")
-    val rejectionReason = errorReason ?: when {
+    val rejectionReason = errorReason?.takeIf(String::isNotBlank) ?: when {
+        !completed -> "session_incomplete_or_invalid_time"
+        label !in setOf("Stres", "Normal") -> "prediction_label_unsupported"
+        quality !in setOf("excellent", "good", "acceptable") -> "quality_not_accepted"
         !probabilityUsable || !confidenceUsable -> "prediction_out_of_range_or_non_finite"
         else -> null
     }
@@ -215,11 +216,13 @@ private fun StressSessionEntity.toContextEntry(): StressHistoryContextEntry {
         sessionId = sessionId,
         endedAtMillis = endedAtMillis,
         durationMillis = durationMillis,
-        label = StressHistoryFormatter.formatLabel(finalLabel),
+        label = label,
         stressProbability = stressProbability.takeIf { probabilityUsable },
         confidence = confidence.takeIf { confidenceUsable },
-        qualityTier = qualityTier.ifBlank { "unavailable" },
-        valid = valid,
+        qualityTier = quality.ifBlank { "unavailable" },
+        valid = rejectionReason == null,
         rejectionReason = rejectionReason
     )
 }
+
+private const val HOME_HISTORY_DURATION_MILLIS = 300_000L

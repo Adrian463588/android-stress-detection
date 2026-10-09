@@ -165,6 +165,15 @@ interface ChatDao {
         touchChatSession(session.chatSessionId, crisisMessage.timestampMs)
     }
 
+    /** Any lost ownership/consent during a write rolls back the entire assistant turn. */
+    @Transaction
+    suspend fun persistAssistantTurn(message: ChatMessageEntity, requireAllowed: suspend () -> Unit) {
+        requireAllowed()
+        insertMessage(message)
+        touchChatSession(message.chatSessionId, message.timestampMs)
+        requireAllowed()
+    }
+
     @Query("SELECT * FROM chat_messages WHERE chatSessionId = :chatSessionId ORDER BY timestampMs ASC")
     fun getMessagesForSession(chatSessionId: String): Flow<List<ChatMessageEntity>>
 
@@ -255,7 +264,8 @@ interface AiReminderDao {
 
     @Query(
         "UPDATE ai_reminders SET status = :status, generatedAtMillis = :generatedAtMillis, " +
-            "modelVersion = :modelVersion, lastErrorCode = NULL WHERE reminderId = :reminderId"
+            "modelVersion = :modelVersion, lastErrorCode = NULL WHERE reminderId = :reminderId " +
+            "AND status IN ('SCHEDULED', 'GENERATING', 'GENERATED')"
     )
     suspend fun markGenerated(reminderId: String, status: String, generatedAtMillis: Long, modelVersion: String?): Int
 

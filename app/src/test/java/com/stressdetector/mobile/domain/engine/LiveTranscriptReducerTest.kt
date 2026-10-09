@@ -1,10 +1,42 @@
 package com.stressdetector.mobile.domain.engine
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LiveTranscriptReducerTest {
+    @Test
+    fun latePartialCannotRemoveFinalSpeakerTextOrCueEvidence() {
+        val reducer = LiveTranscriptReducer()
+        val sessionId = "session-current"
+        val finalized = segment(sessionId, "mungkin besok", isFinal = true).copy(speakerId = "Speaker_0")
+        val state = reducer.accept(LiveTranscriptState(sessionId = sessionId), finalized, sessionId)
+        reducer.setTextOverride(finalized.id, "sepertinya besok")
+        val late = reducer.accept(state, finalized.copy(rawText = "mungkin", isFinal = false), sessionId)
+
+        assertSame(state, late)
+        assertEquals("Speaker_0", late.segments.single().speakerId)
+        assertEquals("mungkin besok", late.segments.single().rawText)
+        assertEquals(1, VerbatimCueAnalyzer().analyze(late.segments.single()).cues.size)
+    }
+
+    @Test
+    fun duplicateFinalDoesNotAppendAndUserEditsRemainAuthoritative() {
+        val reducer = LiveTranscriptReducer()
+        val sessionId = "session-current"
+        val final = segment(sessionId, "maybe tomorrow", isFinal = true)
+        val state = reducer.accept(LiveTranscriptState(sessionId = sessionId), final, sessionId)
+        reducer.setSpeakerOverride(final.id, "Patient")
+        reducer.setTextOverride(final.id, "perhaps tomorrow")
+        val repeated = reducer.accept(state, final, sessionId)
+
+        assertEquals(1, repeated.segments.size)
+        assertEquals("Patient", repeated.segments.single().speakerId)
+        assertEquals("perhaps tomorrow", repeated.segments.single().displayText)
+        assertEquals("maybe tomorrow", repeated.segments.single().rawText)
+    }
+
     @Test
     fun partialEventsAreReplacedByFinalAndLateSessionEventsAreIgnored() {
         val reducer = LiveTranscriptReducer()

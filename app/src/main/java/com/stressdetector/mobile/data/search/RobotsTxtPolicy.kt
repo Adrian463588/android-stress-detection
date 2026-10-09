@@ -1,9 +1,10 @@
 package com.stressdetector.mobile.data.search
 
-import java.io.ByteArrayOutputStream
 import java.net.InetAddress
 import java.net.UnknownHostException
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.Dns
 import okhttp3.HttpUrl
@@ -25,6 +26,7 @@ class RobotsTxtPolicy(private val client: OkHttpClient) {
         // window even though the page fetch is protected.
         val approvedAddresses = SecureWebUrlPolicy.resolvePublicAddresses(robotsUrl)
             ?: error("Host robots.txt tidak menyelesaikan ke alamat publik.")
+        coroutineContext.ensureActive()
         val pinnedClient = redirectControlledClient.newBuilder()
             .dns(object : Dns {
                 override fun lookup(hostname: String): List<InetAddress> {
@@ -35,47 +37,29 @@ class RobotsTxtPolicy(private val client: OkHttpClient) {
                 }
             })
             .build()
-        val response = pinnedClient.newCall(
+        pinnedClient.newCall(
             Request.Builder()
                 .url(robotsUrl)
                 .header("User-Agent", USER_AGENT)
                 .header("Accept", "text/plain")
                 .build()
-        ).execute()
-        response.use {
-            if (it.code == 404) return@withContext null
-            require(it.isSuccessful) { "robots.txt tidak dapat diverifikasi (${it.code})." }
-            val rules = RobotsRules.parse(it.body?.let(::readBoundedBody).orEmpty())
-            require(rules.permits(url.encodedPath)) {
-                "robots.txt melarang pengambilan halaman ini."
+        ).readCancellable {
+            if (it.code == 404) {
+                null
+            } else {
+                require(it.isSuccessful) { "robots.txt tidak dapat diverifikasi (${it.code})." }
+                val rules = RobotsRules.parse(it.body?.let { body -> readBoundedWebBody(body, MAX_ROBOTS_BYTES) }.orEmpty())
+                require(rules.permits(url.encodedPath)) {
+                    "robots.txt melarang pengambilan halaman ini."
+                }
+                rules.crawlDelayMillis
             }
-            rules.crawlDelayMillis
         }
     }
 
     private companion object {
-        const val MAX_ROBOTS_CHARS = 128 * 1024
-        const val BUFFER_BYTES = 8 * 1024
+        const val MAX_ROBOTS_BYTES = 128 * 1024L
         const val USER_AGENT = "StressDetector-AI-Counselor/1.0"
-    }
-
-    private fun readBoundedBody(body: okhttp3.ResponseBody): String {
-        require(body.contentLength() <= MAX_ROBOTS_CHARS || body.contentLength() < 0) {
-            "robots.txt terlalu besar untuk diverifikasi."
-        }
-        val output = ByteArrayOutputStream()
-        body.byteStream().use { input ->
-            val buffer = ByteArray(BUFFER_BYTES)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                require(output.size() + count <= MAX_ROBOTS_CHARS) {
-                    "robots.txt terlalu besar untuk diverifikasi."
-                }
-                output.write(buffer, 0, count)
-            }
-        }
-        return output.toString(Charsets.UTF_8.name())
     }
 }
 

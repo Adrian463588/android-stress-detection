@@ -249,10 +249,11 @@ class LiteRTLlmEngine(private val context: Context, private val modelManager: Mo
 
             var conversation: Conversation? = null
             try {
+                val prompt = promptBuilder.prepare(request)
                 val createdConversation = runtime.createConversation(
                     ConversationConfig(
-                        systemInstruction = Contents.of(promptBuilder.systemInstruction(request)),
-                        samplerConfig = SamplerConfig(topK = 40, topP = 0.95, temperature = 0.7)
+                        systemInstruction = Contents.of(prompt.systemInstruction),
+                        samplerConfig = counselorSamplerConfig(request.ragMode)
                     )
                 )
                 conversation = createdConversation
@@ -261,9 +262,8 @@ class LiteRTLlmEngine(private val context: Context, private val modelManager: Mo
                     activeConversation = createdConversation
                 }
                 withTimeout(GENERATION_TIMEOUT_MS) {
-                    createdConversation.sendMessageAsync(promptBuilder.userPrompt(request)).collect { message ->
-                        val text = message.textContent()
-                        if (text.isNotBlank()) emit(LlmGenerationState.Content(text))
+                    createdConversation.sendMessageAsync(prompt.userPrompt).collect { message ->
+                        counselorContentDelta(message.textContent())?.let { emit(it) }
                     }
                 }
             } catch (timeout: TimeoutCancellationException) {
@@ -350,4 +350,15 @@ class LiteRTLlmEngine(private val context: Context, private val modelManager: Mo
         is ModelReadiness.UnsupportedDevice -> LlmReadiness.InitializationFailed(reason)
         is ModelReadiness.Ready -> LlmReadiness.Ready(metadata.version)
     }
+}
+
+/** Whitespace-only deltas carry word/paragraph boundaries, not an empty response. */
+internal fun counselorContentDelta(text: String): LlmGenerationState.Content? =
+    text.takeIf(String::isNotEmpty)?.let { LlmGenerationState.Content(it) }
+
+/** Exact evidence markers favor deterministic copying; ordinary support keeps conversational sampling. */
+internal fun counselorSamplerConfig(mode: RagMode): SamplerConfig = when (mode) {
+    RagMode.GROUNDED, RagMode.BUNDLED_GROUNDED, RagMode.WEB_GROUNDED ->
+        SamplerConfig(topK = 1, topP = 1.0, temperature = 0.0)
+    else -> SamplerConfig(topK = 40, topP = 0.95, temperature = 0.7)
 }

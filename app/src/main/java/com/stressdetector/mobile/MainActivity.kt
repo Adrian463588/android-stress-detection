@@ -40,9 +40,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
@@ -90,6 +87,7 @@ import com.stressdetector.mobile.domain.history.HistoryStatusMapper
 import com.stressdetector.mobile.navigation.BackNavigationAction
 import com.stressdetector.mobile.navigation.BackNavigationPolicy
 import com.stressdetector.mobile.ui.APP_DESTINATIONS
+import com.stressdetector.mobile.ui.AppBottomNavigation
 import com.stressdetector.mobile.ui.AppPalette
 import com.stressdetector.mobile.ui.AppSpacing
 import com.stressdetector.mobile.ui.DualPpgChartSection
@@ -426,6 +424,7 @@ private fun StressDetectorApp(
                 MonitoringScreen(
                     progress = state.progress,
                     elapsedMillis = state.elapsedMillis,
+                    recordingSignalLabel = HomeUiState.from(state, permissionStatus).recordingSignalLabel,
                     greenSamples = state.greenSamples,
                     irSamples = state.irSamples,
                     redDiagnosticSamples = state.redDiagnosticSamples,
@@ -610,34 +609,7 @@ private fun StressDetectorApp(
 @Composable
 @Suppress("FunctionNaming")
 private fun AppBottomNav(selectedDestination: Screen?, onSelect: (Screen) -> Unit) {
-    NavigationBar(
-        modifier = Modifier.fillMaxWidth(),
-        containerColor = CharcoalSlate
-    ) {
-        APP_DESTINATIONS.forEach { destination ->
-            NavigationBarItem(
-                modifier = Modifier
-                    .weight(1f)
-                    .semantics {
-                        selected = selectedDestination == destination
-                        stateDescription = if (selectedDestination == destination) {
-                            "Tab aktif"
-                        } else {
-                            "Tab tidak aktif"
-                        }
-                    },
-                selected = selectedDestination == destination,
-                onClick = { onSelect(destination) },
-                icon = { androidx.compose.material3.Icon(destination.icon, contentDescription = destination.label) },
-                label = { Text(destination.label, fontSize = 10.sp, maxLines = 1) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedTextColor = NeonEmerald,
-                    indicatorColor = NeonEmerald.copy(alpha = 0.15f),
-                    unselectedTextColor = TextSecondary
-                )
-            )
-        }
-    }
+    AppBottomNavigation(selectedDestination, onSelect)
 }
 
 @Composable
@@ -1074,12 +1046,11 @@ private fun CalendarDayCell(day: CalendarDayItem, selected: Boolean, onClick: ()
 
 @Composable
 private fun HistoryRow(session: StressSessionEntity, onClick: () -> Unit) {
-    val transportIncomplete = session.transportIncomplete
     val status = HistoryStatusMapper.map(
         finalLabel = session.finalLabel,
         errorReason = session.errorReason,
         reportStatus = null,
-        transportIncomplete = transportIncomplete
+        transportIncomplete = session.transportIncomplete
     )
     val (statusLabel, accent) = when (status) {
         HistoryResultStatus.STRESS -> "Stress" to AlertRed
@@ -1099,41 +1070,13 @@ private fun HistoryRow(session: StressSessionEntity, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(session.formatTime(), color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-        Column {
-            Text(
-                statusLabel,
-                color = accent,
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.bodySmall
-            )
-            if (transportIncomplete) {
-                Text("Transport incomplete", color = WarnAmber, style = MaterialTheme.typography.labelSmall)
-            }
-        }
-        if (session.stressProbability.isFinite() && session.stressProbability in 0f..1f) {
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    "S ${session.stressProbability.asPercent()} · N ${(1f - session.stressProbability).asPercent()}",
-                    color = TextSecondary,
-                    style = MaterialTheme.typography.labelSmall
-                )
-                Text(
-                    "C ${session.confidence.asPercent()} — ${if (session.confidence >= 0.80f) "High" else "Review"}",
-                    color = TextSecondary,
-                    style = MaterialTheme.typography.labelSmall
-                )
-            }
-        } else {
-            Text("Review required", color = WarnAmber, style = MaterialTheme.typography.labelSmall)
-        }
+        Text(statusLabel, color = accent, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
 // ─── Format Helpers ───────────────────────────────────────────────────────────
 
 private fun StressSessionEntity.formatTime(): String = SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()).format(Date(endedAtMillis))
-
-private fun Float.asPercent(): String = "${(coerceIn(0f, 1f) * 100f).toInt()}%"
 
 private fun formatDate(timeMillis: Long): String = SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault()).format(Date(timeMillis))
 

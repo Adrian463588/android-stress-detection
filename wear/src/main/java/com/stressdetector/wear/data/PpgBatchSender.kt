@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import com.google.android.gms.wearable.Wearable
+import com.stressdetector.shared.AccelerometerSample
 import com.stressdetector.shared.PpgBatch
 import com.stressdetector.shared.PpgBatchCodec
 import com.stressdetector.shared.PpgTerminalReceipt
@@ -42,6 +43,7 @@ class PpgBatchSender(context: Context) {
         }
     }
 
+    @Suppress("LongParameterList") // One immutable batch boundary carries channel, timeline, and observed motion.
     fun send(
         type: PpgType,
         timestamps: LongArray,
@@ -50,7 +52,8 @@ class PpgBatchSender(context: Context) {
         elapsedMillis: Long,
         elapsedStartMillis: Long = elapsedMillis,
         elapsedEndMillis: Long = elapsedMillis,
-        callbackReceivedAtElapsedRealtimeMillis: Long = monotonicNowMillis()
+        callbackReceivedAtElapsedRealtimeMillis: Long = monotonicNowMillis(),
+        accelerometerSamples: List<AccelerometerSample> = emptyList()
     ) {
         if (values.isEmpty()) return
         require(type.isAcquisitionChannel) { "Only acquired PPG channels may be transported" }
@@ -77,7 +80,8 @@ class PpgBatchSender(context: Context) {
                 sessionNonce = identity.nonce,
                 protocolVersion = identity.protocolVersion,
                 peerNodeId = nodeId.orEmpty(),
-                generation = activeGeneration
+                generation = activeGeneration,
+                accelerometerSamples = accelerometerSamples.toList()
             )
             DirectDispatch(
                 nodeId = nodeId,
@@ -87,12 +91,16 @@ class PpgBatchSender(context: Context) {
             )
         }
 
+        sendDirect(dispatch)
+    }
+
+    private fun sendDirect(dispatch: DirectDispatch) {
         WearTrackingState.recordQueued(dispatch.batch.type, dispatch.batch.size)
         val nodeId = dispatch.nodeId
         if (nodeId.isNullOrBlank()) {
             WearTrackingState.recordTransportGap(dispatch.batch.type, "phone_node_unavailable")
             WearTrackingState.setPhoneReachable(false, "Phone node unavailable; direct PPG batch dropped")
-            WearTrackingState.message("PPG ${type.assetSuffix} transport gap")
+            WearTrackingState.message("PPG ${dispatch.batch.type.assetSuffix} transport gap")
             return
         }
 

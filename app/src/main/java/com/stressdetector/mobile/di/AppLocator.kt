@@ -28,7 +28,7 @@ import com.stressdetector.mobile.data.repository.RoomCounselorPersonaRepository
 import com.stressdetector.mobile.data.repository.RoomLiveMonitorRecordStore
 import com.stressdetector.mobile.data.repository.SafCounselorPersonaRepository
 import com.stressdetector.mobile.data.search.FileBackedWebResearchEvidenceStore
-import com.stressdetector.mobile.data.search.GoogleHtmlSearchDiscovery
+import com.stressdetector.mobile.data.search.HtmlWebSearchDiscovery
 import com.stressdetector.mobile.data.search.OkHttpKsoupWebPageScraper
 import com.stressdetector.mobile.data.search.SharedPreferencesWebConsentStore
 import com.stressdetector.mobile.data.search.WebGroundingGatewayImpl
@@ -76,12 +76,15 @@ import com.stressdetector.mobile.domain.voice.VoiceSettingsRepository
 import com.stressdetector.mobile.lifecycle.AiReminderLifecycleDependencies
 import com.stressdetector.mobile.lifecycle.DataLifecycleService
 import com.stressdetector.mobile.lifecycle.LocalDataLifecycleService
+import com.stressdetector.mobile.lifecycle.PortableUserDataArchive
+import com.stressdetector.mobile.lifecycle.SafUserBackupService
 import com.stressdetector.mobile.ml.StressInferenceRuntime
 import com.stressdetector.mobile.ml.artifacts.EmbeddingArtifactManager
 import com.stressdetector.mobile.ml.artifacts.LocalArtifactCatalog
 import com.stressdetector.mobile.ml.rag.AndroidEncryptedDocumentSourceStore
 import com.stressdetector.mobile.ml.rag.AssetBundledLocalCorpus
 import com.stressdetector.mobile.ml.rag.AssetRagRuntimeContract
+import com.stressdetector.mobile.ml.rag.AssetRetrievalBenchmark
 import com.stressdetector.mobile.ml.rag.BundledLocalRagRetriever
 import com.stressdetector.mobile.ml.rag.DocumentIngestionService
 import com.stressdetector.mobile.ml.rag.DocumentParser
@@ -94,7 +97,6 @@ import com.stressdetector.mobile.ml.rag.RagRuntimeContract
 import com.stressdetector.mobile.ml.rag.RetrievalPolicyBinding
 import com.stressdetector.mobile.ml.rag.TextChunker
 import com.stressdetector.mobile.ml.rag.TieredRagRetriever
-import com.stressdetector.mobile.ml.rag.VersionedRetrievalPolicyResolver
 import com.stressdetector.mobile.ml.speech.SpeechBundleCatalog
 import com.stressdetector.mobile.ml.speech.SpeechBundleDescriptor
 import com.stressdetector.mobile.ml.speech.SpeechBundleDownloadManager
@@ -157,6 +159,17 @@ object AppLocator {
                 settings = aiReminderSettings(context)
             )
         ).also { dataLifecycleInstance = it }
+    }
+
+    @Volatile private var userBackupServiceInstance: SafUserBackupService? = null
+    fun userBackupService(context: Context): SafUserBackupService = userBackupServiceInstance ?: synchronized(this) {
+        userBackupServiceInstance ?: SafUserBackupService(
+            context.applicationContext,
+            database(context),
+            modelStorageManager(context),
+            PortableUserDataArchive(context.applicationContext, database(context), encryptedStorage(context)),
+            keyManager
+        ).also { userBackupServiceInstance = it }
     }
 
     val ppgRepository: IPpgRepository by lazy {
@@ -450,15 +463,18 @@ object AppLocator {
     @Volatile private var ragInstance: RagRetriever? = null
     fun ragRetriever(context: Context): RagRetriever = ragInstance ?: synchronized(this) {
         ragInstance ?: ragRuntimeContract(context).let { contract ->
+            val policy = contract.retrievalPolicy(retrievalPolicyBinding(context))
             TieredRagRetriever(
                 appRag = LocalRagRetrieverImpl(
                     knowledgeBaseDatabase(context).knowledgeBaseDao(),
                     embeddingModel(context),
-                    contract.retrievalPolicy(retrievalPolicyBinding(context)),
+                    policy,
                     contract.retrievalRanker()
                 ),
                 bundledLocal = BundledLocalRagRetriever(
-                    AssetBundledLocalCorpus(context.applicationContext)
+                    AssetBundledLocalCorpus(context.applicationContext),
+                    policy = policy,
+                    ranker = contract.retrievalRanker()
                 )
             )
         }.also { ragInstance = it }
@@ -475,8 +491,14 @@ object AppLocator {
      * Retrieval stays abstaining until a versioned local benchmark artifact is supplied.
      * The same binding is used by retrieval and the persisted AI+ context receipt.
      */
-    fun retrievalPolicyBinding(@Suppress("UNUSED_PARAMETER") context: Context): RetrievalPolicyBinding =
-        VersionedRetrievalPolicyResolver.resolve(artifact = null)
+    @Volatile private var retrievalPolicyBindingInstance: RetrievalPolicyBinding? = null
+    fun retrievalPolicyBinding(context: Context): RetrievalPolicyBinding = retrievalPolicyBindingInstance ?: synchronized(this) {
+        // No active-corpus benchmark receipt exists yet. A future packaged artifact alone
+        // must not silently calibrate a different corpus or retrieval implementation.
+        retrievalPolicyBindingInstance ?: AssetRetrievalBenchmark(openAsset = context.applicationContext.assets::open)
+            .load()
+            .also { retrievalPolicyBindingInstance = it }
+    }
 
     @Volatile private var embeddingModelInstance: LocalEmbeddingModel? = null
 
@@ -613,7 +635,7 @@ object AppLocator {
 
     @Volatile private var webSearchDiscoveryInstance: WebSearchDiscovery? = null
     fun webSearchDiscovery(): WebSearchDiscovery = webSearchDiscoveryInstance ?: synchronized(this) {
-        webSearchDiscoveryInstance ?: GoogleHtmlSearchDiscovery(webHttpClient())
+        webSearchDiscoveryInstance ?: HtmlWebSearchDiscovery(webHttpClient())
             .also { webSearchDiscoveryInstance = it }
     }
 

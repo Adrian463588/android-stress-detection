@@ -11,6 +11,7 @@ import com.stressdetector.shared.PpgBatchPolicy
 import com.stressdetector.shared.WearSessionMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -105,6 +106,8 @@ class UnifiedSessionEngine(
     private var speechProcessingJob: Job? = null
     private var divergenceJob: Job? = null
     private var acousticJob: Job? = null
+    private var pitchJob: Job? = null
+    private var livePitchHistory = emptyList<LivePitchObservation>()
     private var watchSessionActive = false
     private var biosignalMonitoringActive = false
 
@@ -117,22 +120,27 @@ class UnifiedSessionEngine(
     private val transcriptSegments = mutableListOf<SpeechSegment>()
     private val divergenceEvents = mutableListOf<com.stressdetector.mobile.data.db.DivergenceEventEntity>()
     private val acousticEvents = mutableListOf<com.stressdetector.mobile.data.db.DivergenceEventEntity>()
-    private var latestAcousticAnalysis: AcousticAnalysisSnapshot? = null
+
+    @Volatile private var latestAcousticAnalysis: AcousticAnalysisSnapshot? = null
     private var ppgArchiveResult: VerbatimPpgArchiveResult = VerbatimPpgArchiveResult.unavailable(
         "archive_not_started"
     )
     private val liveTranscriptReducer = LiveTranscriptReducer()
+    private val livePublicationLock = Any()
     private var currentMonitorStatus = "NOT_STARTED"
+    private val prosodyDetector = VerbatimProsodyMarkerDetector()
+    private val analyzedProsodySegments = mutableSetOf<String>()
 
     @Suppress("LongParameterList")
     suspend fun startSession(
         sessionId: String,
         userId: String,
         recordingConsent: ConsentToken,
-        monitoringConsent: ConsentToken,
+        monitoringConsent: ConsentToken? = null,
         sessionName: String = "Session",
         languageCode: String = "id",
-        audioInput: AudioInputSource = AudioInputSource.Microphone
+        audioInput: AudioInputSource = AudioInputSource.Microphone,
+        monitoringEnabled: Boolean = monitoringConsent != null
     ) = sessionLifecycleMutex.withLock {
         startSessionInternal(
             sessionId = sessionId,
@@ -141,7 +149,8 @@ class UnifiedSessionEngine(
             monitoringConsent = monitoringConsent,
             sessionName = sessionName,
             languageCode = languageCode,
-            audioInput = audioInput
+            audioInput = audioInput,
+            monitoringEnabled = monitoringEnabled
         )
     }
 
@@ -150,10 +159,11 @@ class UnifiedSessionEngine(
         sessionId: String,
         userId: String,
         recordingConsent: ConsentToken,
-        monitoringConsent: ConsentToken,
+        monitoringConsent: ConsentToken?,
         sessionName: String,
         languageCode: String,
-        audioInput: AudioInputSource
+        audioInput: AudioInputSource,
+        monitoringEnabled: Boolean
     ) {
         check(!_isSessionActive.value && !sessionStopping) { "A clinical session is already active or finalizing." }
         _sessionError.value = null
@@ -161,7 +171,10 @@ class UnifiedSessionEngine(
         _finalizationStage.value = SessionFinalizationStage.RECORDING
         try {
             consentRepository.require(recordingConsent, userId, sessionId, ConsentScope.VERBATIM_RECORDING)
-            consentRepository.require(monitoringConsent, userId, sessionId, ConsentScope.LIVE_MONITORING)
+            if (monitoringEnabled) {
+                require(audioInput is AudioInputSource.Microphone) { "Audio historis tidak boleh dipasangkan dengan PPG live baru." }
+                consentRepository.require(checkNotNull(monitoringConsent), userId, sessionId, ConsentScope.LIVE_MONITORING)
+            }
 
             // An external/replayed service Intent must not get far enough to
             // create a Room session or start the Watch when Sherpa is absent.
@@ -192,7 +205,10 @@ class UnifiedSessionEngine(
             transcriptSegments.clear()
             divergenceEvents.clear()
             acousticEvents.clear()
+            prosodyDetector.reset()
+            analyzedProsodySegments.clear()
             latestAcousticAnalysis = null
+            livePitchHistory = emptyList()
             ppgArchiveResult = VerbatimPpgArchiveResult.unavailable("archive_not_started")
             liveTranscriptReducer.reset()
             _liveTranscriptState.value = LiveTranscriptState(sessionId = sessionId)
@@ -205,7 +221,11 @@ class UnifiedSessionEngine(
             currentMonitorStatus = "UNAVAILABLE: not started"
             _monitorStatus.value = currentMonitorStatus
             _isSessionActive.value = true
-            val watchStart = watchSessionCoordinator.start(sessionId, WearSessionMode.VERBATIM_AROUSAL)
+            val watchStart = if (monitoringEnabled) {
+                watchSessionCoordinator.start(sessionId, WearSessionMode.VERBATIM_AROUSAL)
+            } else {
+                Result.failure(IllegalStateException("PPG_DISABLED: sesi audio-only"))
+            }
             if (watchStart.isSuccess) {
                 watchSessionActive = true
                 val stream = ppgRepository?.state?.value
@@ -249,21 +269,25 @@ class UnifiedSessionEngine(
                         }
                     )
                 }
-                currentMonitorStatus = "UNAVAILABLE: ${watchFailure?.message ?: "Watch session could not start"}"
+                currentMonitorStatus = if (monitoringEnabled) {
+                    "UNAVAILABLE: ${watchFailure?.message ?: "Watch session could not start"}"
+                } else {
+                    "NOT_REQUESTED: audio-only"
+                }
             }
             _monitorStatus.value = currentMonitorStatus
 
             // Collectors are scoped to the valid session identity; they do not
             // wait for a correlated Watch pong. Stale frames are still rejected
             // by the repository/session generation checks.
-            transcriptJob = scope.launch {
+            transcriptJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 audioEngine.transcriptFlow.collect { segment ->
                     if (acceptsTranscriptEvent(segment, sessionId, timeline)) {
                         upsertTranscript(segment, sessionId)
                     }
                 }
             }
-            speechProcessingJob = scope.launch {
+            speechProcessingJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 audioEngine.speechProcessingState.collect { processing ->
                     if (acceptingSessionEvents && currentSessionId == sessionId && processing.sessionId == sessionId) {
                         _liveTranscriptState.update { current ->
@@ -273,9 +297,9 @@ class UnifiedSessionEngine(
                     }
                 }
             }
-            acousticJob = scope.launch {
+            acousticJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 audioEngine.acousticAnalysisFlow.collect { analysis ->
-                    if (!acceptsAcousticEvent(analysis, sessionId, timeline)) return@collect
+                    if (!acceptsAudioDiagnostic(analysis.sessionId, analysis.endOffsetMs, sessionId, timeline)) return@collect
                     latestAcousticAnalysis = analysis
                     analysis.markerTransition?.let { marker ->
                         val event = analysis.toDivergenceEntity(marker, timeline)
@@ -287,7 +311,17 @@ class UnifiedSessionEngine(
                     publishLiveSessionState(sessionId)
                 }
             }
-            divergenceJob = scope.launch {
+            pitchJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                audioEngine.livePitchFlow.collect { observation ->
+                    synchronized(livePublicationLock) {
+                        if (acceptsAudioDiagnostic(observation.sessionId, observation.endOffsetMs, sessionId, timeline)) {
+                            livePitchHistory = appendLivePitch(livePitchHistory, observation)
+                            publishLiveSessionState(sessionId)
+                        }
+                    }
+                }
+            }
+            divergenceJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 biosignalEngine.liveState.collect { snapshot ->
                     if ((!acceptingSessionEvents && sessionStopCutoff == null) ||
                         currentSessionId != sessionId ||
@@ -304,7 +338,7 @@ class UnifiedSessionEngine(
                         divergenceEvents.clear()
                         divergenceEvents.addAll(events)
                     }
-                    publishLiveSessionState(sessionId, snapshot.copy(divergenceEvents = events))
+                    publishLiveSessionState(sessionId)
                 }
             }
 
@@ -532,9 +566,6 @@ class UnifiedSessionEngine(
         }
         val completedStop = checkNotNull(stopResult)
         val audio = completedStop.audio
-        val editedSpeakerLabels = synchronized(transcriptSegments) {
-            transcriptSegments.associate { it.id to it.speakerId }
-        }
         val finalizedTranscript = completedStop.finalTranscript
             .filter { it.sessionId == sessionId }
             .filter(SpeechSegment::isFinal)
@@ -549,7 +580,8 @@ class UnifiedSessionEngine(
                         )
             }
             .map { segment ->
-                editedSpeakerLabels[segment.id]?.let { segment.copy(speakerId = it) } ?: segment
+                recordProsodyMarker(segment)
+                liveTranscriptReducer.applyUserOverrides(segment)
             }
             .associateBy(SpeechSegment::id)
             .values
@@ -825,19 +857,52 @@ class UnifiedSessionEngine(
         ) {
             return
         }
-        val normalized = liveTranscriptReducer.applyUserOverrides(segment)
-        synchronized(transcriptSegments) {
-            val index = transcriptSegments.indexOfFirst { it.id == normalized.id }
-            if (index >= 0) {
-                transcriptSegments[index] = normalized
-            } else {
-                transcriptSegments += normalized
-            }
-        }
         _liveTranscriptState.update { current ->
-            liveTranscriptReducer.accept(current, normalized, expectedSessionId)
+            liveTranscriptReducer.accept(current, segment, expectedSessionId)
         }
+        synchronized(transcriptSegments) {
+            transcriptSegments.clear()
+            transcriptSegments.addAll(_liveTranscriptState.value.segments)
+        }
+        if (segment.isFinal) recordProsodyMarker(segment)
         publishLiveSessionState(expectedSessionId)
+    }
+
+    private fun recordProsodyMarker(segment: SpeechSegment) {
+        val timeline = currentTimeline ?: return
+        val marker = if (analyzedProsodySegments.add(segment.id)) prosodyDetector.analyze(segment) else null
+        if (marker == null) return
+        val start = timeline.audioOffsetToSessionElapsed(marker.startOffsetMs)
+        val end = timeline.audioOffsetToSessionElapsed(marker.endOffsetMs)
+        val event = com.stressdetector.mobile.data.db.DivergenceEventEntity(
+            eventId = "${segment.sessionId}:opensmile:${segment.id}",
+            sessionId = segment.sessionId,
+            timestampMs = start,
+            delta = null,
+            currentProbability = null,
+            baselineProbability = null,
+            copyText = "openSMILE eGeMAPSv02: rata-rata pitch voiced %.2f semitone; baseline pembicara %.2f; selisih %+.2f. ".format(
+                java.util.Locale.ROOT,
+                marker.pitchSemitones,
+                marker.baselineSemitones,
+                marker.pitchSemitones - marker.baselineSemitones
+            ) + "Perubahan prosodi untuk ditinjau, bukan prediksi stres atau desepsi.",
+            channel = "AUDIO",
+            markerElapsedMillis = start,
+            episodeStartElapsedMillis = start,
+            episodeEndElapsedMillis = end,
+            contextWindowStartElapsedMillis = start,
+            contextWindowEndElapsedMillis = end,
+            confidence = segment.confidence,
+            signalQuality = segment.confidence,
+            sourceWindowId = segment.id,
+            transcriptSegmentId = segment.id,
+            markerType = "PROSODY_DIVERGENCE",
+            sourceChannels = "AUDIO",
+            markerConfigVersion = marker.evidence.version,
+            audioAnalysisVersion = marker.evidence.version
+        )
+        synchronized(acousticEvents) { acousticEvents.add(event) }
     }
 
     private fun acceptsTranscriptEvent(segment: SpeechSegment, expectedSessionId: String, timeline: SessionTimeline): Boolean {
@@ -865,28 +930,31 @@ class UnifiedSessionEngine(
             divergenceEvents.clear()
             divergenceEvents.addAll(events)
         }
-        publishLiveSessionState(sessionId, snapshot.copy(divergenceEvents = events))
+        publishLiveSessionState(sessionId)
         return snapshot.copy(divergenceEvents = events)
     }
 
-    private fun publishLiveSessionState(
-        sessionId: String? = _liveSessionState.value.sessionId ?: currentSessionId,
-        biosignal: LiveBiosignalSnapshot = liveBiosignalState.value
-    ) {
+    /** Read authoritative state inside one publication boundary, never a caller's stale snapshot. */
+    private fun publishLiveSessionState(sessionId: String? = currentSessionId) = synchronized(livePublicationLock) {
+        if (sessionId == null || currentSessionId != sessionId) return@synchronized
         val transcript = _liveTranscriptState.value
         val generation = currentTimeline?.takeIf { it.sessionId == sessionId }?.generation ?: 0L
-        val safeBiosignal = biosignal.takeIf {
+        val safeBiosignal = liveBiosignalState.value.takeIf {
             it.sessionId == sessionId && (generation == 0L || it.sessionGeneration == generation)
         } ?: LiveBiosignalSnapshot(sessionId = sessionId, sessionGeneration = generation)
         val audioEvents = synchronized(acousticEvents) { acousticEvents.toList() }
         val combinedEvents = (safeBiosignal.divergenceEvents + audioEvents)
-            .distinctBy { it.eventId }
+            .filter { it.sessionId == sessionId }
+            .associateBy { it.eventId }.values
+            .sortedWith(compareBy({ it.episodeStartElapsedMillis }, { it.eventId }))
+            .let { sessionStopCutoff?.filter(it) ?: it }
         val projectedBiosignal = safeBiosignal.copy(divergenceEvents = combinedEvents)
         _liveSessionState.value = UnifiedSessionLiveSnapshot(
             sessionId = sessionId,
             generation = generation,
             biosignal = projectedBiosignal,
             acousticAnalysis = latestAcousticAnalysis,
+            livePitch = livePitchHistory,
             transcript = transcript,
             backlogFrames = transcript.processing.backlogFrames,
             audioGaps = transcript.processing.audioGaps,
@@ -899,10 +967,12 @@ class UnifiedSessionEngine(
         speechProcessingJob?.cancelAndJoin()
         divergenceJob?.cancelAndJoin()
         acousticJob?.cancelAndJoin()
+        pitchJob?.cancelAndJoin()
         transcriptJob = null
         speechProcessingJob = null
         divergenceJob = null
         acousticJob = null
+        pitchJob = null
     }
 
     private fun clearSessionOwnership() {
@@ -914,16 +984,17 @@ class UnifiedSessionEngine(
         sessionStopping = false
     }
 
-    private fun acceptsAcousticEvent(analysis: AcousticAnalysisSnapshot, expectedSessionId: String, timeline: SessionTimeline): Boolean {
-        if ((!acceptingSessionEvents && sessionStopCutoff == null) ||
-            currentSessionId != expectedSessionId ||
-            analysis.sessionId != expectedSessionId
-        ) {
-            return false
-        }
-        return sessionStopCutoff?.let { cutoff ->
-            cutoff.sessionId == expectedSessionId && cutoff.generation == timeline.generation
-        } ?: true
+    private fun acceptsAudioDiagnostic(
+        eventSessionId: String,
+        endOffsetMs: Long,
+        expectedSessionId: String,
+        timeline: SessionTimeline
+    ): Boolean {
+        if (!acceptingSessionEvents && sessionStopCutoff == null) return false
+        val ownsSession = currentSessionId == expectedSessionId &&
+            eventSessionId == expectedSessionId &&
+            currentTimeline?.generation == timeline.generation
+        return ownsSession && (sessionStopCutoff?.acceptsAudioOffset(eventSessionId, endOffsetMs, timeline) ?: true)
     }
 
     private fun AcousticAnalysisSnapshot.toDivergenceEntity(

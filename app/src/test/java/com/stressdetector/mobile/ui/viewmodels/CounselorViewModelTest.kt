@@ -17,6 +17,7 @@ import com.stressdetector.mobile.domain.engine.OnDeviceLlmEngine
 import com.stressdetector.mobile.domain.engine.RagMode
 import com.stressdetector.mobile.domain.engine.RagRetrievalResult
 import com.stressdetector.mobile.domain.engine.RagRetriever
+import com.stressdetector.mobile.domain.search.WebConsentStore
 import com.stressdetector.mobile.domain.search.WebGroundingGateway
 import com.stressdetector.mobile.domain.search.WebGroundingResult
 import com.stressdetector.mobile.domain.search.WebSearchMode
@@ -31,8 +32,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -49,6 +52,42 @@ class CounselorViewModelTest {
     @Before fun setup() = Dispatchers.setMain(dispatcher)
 
     @After fun tearDown() = Dispatchers.resetMain()
+
+    @Test
+    fun `opening an empty app leaves recovery tables empty until a message is sent`() = runTest {
+        val messages = mutableListOf<ChatMessageEntity>()
+        val sessions = mutableListOf<ChatSessionEntity>()
+        val dao = object : ChatDao {
+            override suspend fun insertChatSession(session: ChatSessionEntity) {
+                sessions += session
+            }
+            override fun getAllChatSessions(): Flow<List<ChatSessionEntity>> = flowOf(emptyList())
+            override suspend fun insertMessage(message: ChatMessageEntity) {
+                messages += message
+            }
+            override suspend fun touchChatSession(sessionId: String, timestampMs: Long) = Unit
+            override fun getMessagesForSession(chatSessionId: String): Flow<List<ChatMessageEntity>> = flowOf(emptyList())
+            override suspend fun deleteMessagesForSession(chatSessionId: String) = Unit
+            override suspend fun deleteChatSession(chatSessionId: String) = Unit
+            override suspend fun deleteAllMessages() = Unit
+            override suspend fun deleteAllChatSessions() = Unit
+        }
+        val viewModel = CounselorViewModel(
+            llmEngine = unavailableLlm(),
+            ragRetriever = unavailableRag(),
+            chatDao = dao,
+            modelManager = readyManager(),
+            ioDispatcher = dispatcher
+        )
+        advanceUntilIdle()
+        assertTrue(sessions.isEmpty())
+        assertTrue(messages.isEmpty())
+        viewModel.sendMessage("saya ingin bunuh diri")
+        advanceUntilIdle()
+        assertEquals(1, sessions.size)
+        assertEquals(listOf("user", "crisis_system"), messages.map { it.sender })
+        assertEquals(sessions.single().chatSessionId, messages.first().chatSessionId)
+    }
 
     @Test
     fun `crisis is persisted before rag web or llm can run`() = runTest {
@@ -186,6 +225,7 @@ class CounselorViewModelTest {
             },
             chatDao = fakeDao(mutableListOf()),
             modelManager = manager,
+            ioDispatcher = dispatcher,
             webGroundingGateway = object : WebGroundingGateway {
                 override suspend fun retrieveAutomatically(query: String): Result<WebGroundingResult> {
                     webCalls++
@@ -221,7 +261,7 @@ class CounselorViewModelTest {
             override suspend fun retrieveRelevantPassages(query: String, maxResults: Int, minRelevanceThreshold: Float) =
                 RagRetrievalResult.Unavailable("no indexed documents")
         }
-        val viewModel = CounselorViewModel(llm, rag, fakeDao(persisted), readyManager())
+        val viewModel = CounselorViewModel(llm, rag, fakeDao(persisted), readyManager(), ioDispatcher = dispatcher)
         advanceUntilIdle()
 
         viewModel.sendMessage("Bagaimana cara menenangkan diri?")
@@ -261,6 +301,7 @@ class CounselorViewModelTest {
             },
             chatDao = fakeDao(mutableListOf()),
             modelManager = readyManager(),
+            ioDispatcher = dispatcher,
             personaRepository = persona
         )
         advanceUntilIdle()
@@ -291,16 +332,18 @@ class CounselorViewModelTest {
                     RagRetrievalResult.Unavailable("no indexed documents")
             },
             chatDao = fakeDao(persisted),
-            modelManager = readyManager()
+            modelManager = readyManager(),
+            ioDispatcher = dispatcher
         )
         advanceUntilIdle()
 
         viewModel.sendMessage("halo")
         advanceUntilIdle()
 
-        val expected = "Halo selamat pagi.\n\nCatatan: respons ini adalah dukungan umum dan bukan diagnosis medis."
+        val expected = "Halo selamat pagi.\n\nDukungan umum, bukan diagnosis medis."
         assertEquals(expected, persisted.single { it.sender == "counselor" }.content)
         assertEquals(expected, viewModel.uiState.value.messages.single { it.sender == "counselor" }.content)
+        assertEquals(null, viewModel.uiState.value.statusMessage)
     }
 
     @Test
@@ -369,7 +412,7 @@ class CounselorViewModelTest {
                 return RagRetrievalResult.BelowThreshold(0f)
             }
         }
-        val viewModel = CounselorViewModel(llm, rag, fakeDao(mutableListOf()), readyManager())
+        val viewModel = CounselorViewModel(llm, rag, fakeDao(mutableListOf()), readyManager(), ioDispatcher = dispatcher)
         advanceUntilIdle()
 
         viewModel.sendMessage("Tes runtime")
@@ -400,7 +443,7 @@ class CounselorViewModelTest {
             override suspend fun retrieveRelevantPassages(query: String, maxResults: Int, minRelevanceThreshold: Float) =
                 RagRetrievalResult.BelowThreshold(0.1f)
         }
-        val viewModel = CounselorViewModel(llm, rag, fakeDao(persisted), readyManager())
+        val viewModel = CounselorViewModel(llm, rag, fakeDao(persisted), readyManager(), ioDispatcher = dispatcher)
         advanceUntilIdle()
 
         viewModel.sendMessage("Saya butuh bantuan")
@@ -434,7 +477,7 @@ class CounselorViewModelTest {
         }
         val persisted = mutableListOf<ChatMessageEntity>()
         val manager = readyManager()
-        val viewModel = CounselorViewModel(llm, rag, fakeDao(persisted), manager)
+        val viewModel = CounselorViewModel(llm, rag, fakeDao(persisted), manager, ioDispatcher = dispatcher)
         advanceUntilIdle()
 
         viewModel.sendMessage("Saya merasa tertekan")
@@ -469,7 +512,8 @@ class CounselorViewModelTest {
             chatDao = fakeDao(mutableListOf()),
             modelManager = readyManager(),
             ioDispatcher = dispatcher,
-            webGroundingGateway = gateway
+            webGroundingGateway = gateway,
+            webConsentStore = mutableWebConsent()
         )
         advanceUntilIdle()
 
@@ -506,6 +550,7 @@ class CounselorViewModelTest {
             },
             chatDao = fakeDao(mutableListOf()),
             modelManager = readyManager(),
+            ioDispatcher = dispatcher,
             webGroundingGateway = object : WebGroundingGateway {
                 override suspend fun retrieveAutomatically(query: String): Result<WebGroundingResult> {
                     webCalls++
@@ -613,6 +658,7 @@ class CounselorViewModelTest {
             ragRetriever = unavailableRag(),
             chatDao = fakeDao(mutableListOf()),
             modelManager = readyManager(),
+            ioDispatcher = dispatcher,
             webGroundingGateway = object : WebGroundingGateway {
                 override suspend fun retrieveAutomatically(query: String): Result<WebGroundingResult> {
                     webCalls++
@@ -651,7 +697,7 @@ class CounselorViewModelTest {
                 RagRetrievalResult.BelowThreshold(0.1f)
         }
         val persisted = mutableListOf<ChatMessageEntity>()
-        val viewModel = CounselorViewModel(llm, rag, fakeDao(persisted), readyManager())
+        val viewModel = CounselorViewModel(llm, rag, fakeDao(persisted), readyManager(), ioDispatcher = dispatcher)
         advanceUntilIdle()
 
         viewModel.sendMessage("Tolong bantu saya")
@@ -686,7 +732,8 @@ class CounselorViewModelTest {
             },
             ragRetriever = unavailableRag(),
             chatDao = failingDao,
-            modelManager = readyManager()
+            modelManager = readyManager(),
+            ioDispatcher = dispatcher
         )
         advanceUntilIdle()
 
@@ -697,65 +744,442 @@ class CounselorViewModelTest {
         assertEquals(CounselorPhase.ERROR, viewModel.uiState.value.phase)
     }
 
-    private fun readyManager(): ModelManager {
-        val manager = Mockito.mock(ModelManager::class.java)
-        val entry = com.stressdetector.mobile.ml.assets.AiAssetEntry(
-            kind = com.stressdetector.mobile.ml.assets.AiAssetKind.LLM,
-            fileName = ModelManager.MODEL_FILE,
-            source = ModelManager.MODEL_SOURCE,
-            license = "Apache-2.0",
-            version = "test",
-            sizeBytes = 1L,
-            sha256 = ModelManager.MODEL_SHA256
+    @Test
+    fun `switching chat cancels local lookup and never starts a response in new chat`() = runTest {
+        val retrieval = CompletableDeferred<RagRetrievalResult>()
+        var cancelled = false
+        val viewModel = CounselorViewModel(
+            llmEngine = unavailableLlm(),
+            ragRetriever = object : RagRetriever {
+                override suspend fun retrieveRelevantPassages(query: String, maxResults: Int, minRelevanceThreshold: Float) = try {
+                    retrieval.await()
+                } finally {
+                    cancelled = true
+                }
+            },
+            chatDao = fakeDao(mutableListOf()),
+            modelManager = readyManager(),
+            ioDispatcher = dispatcher
         )
-        Mockito.`when`(manager.readiness).thenReturn(MutableStateFlow(ModelReadiness.Ready(entry)))
-        return manager
+        advanceUntilIdle()
+        val original = viewModel.uiState.value.activeChatSessionId
+        viewModel.setWebSearchMode(WebSearchMode.NextMessage)
+        viewModel.sendMessage("Apa itu coping?")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isRetrieving)
+        assertTrue(viewModel.uiState.value.canCancel)
+        viewModel.newChat()
+        advanceUntilIdle()
+        assertTrue(cancelled)
+        assertTrue(viewModel.uiState.value.activeChatSessionId != original)
+        retrieval.complete(RagRetrievalResult.Retrieved(listOf(localCitation())))
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.messages.isEmpty())
+        assertTrue(!viewModel.uiState.value.canCancel)
     }
 
-    private fun unavailableRag() = object : RagRetriever {
-        override suspend fun retrieveRelevantPassages(query: String, maxResults: Int, minRelevanceThreshold: Float) =
-            RagRetrievalResult.Unavailable("no indexed documents")
+    @Test
+    fun `stored web consent still requires separate query confirmation and uses edited query only`() = runTest {
+        var query: String? = null
+        val consent = mutableWebConsent(true)
+        val viewModel = CounselorViewModel(
+            llmEngine = object : OnDeviceLlmEngine {
+                override fun readiness() = LlmReadiness.Ready("test")
+                override suspend fun generate(request: CounselorGenerationRequest) =
+                    flowOf(LlmGenerationState.Content("Dukungan [W1|web-test]"))
+            },
+            ragRetriever = unavailableRag(),
+            chatDao = fakeDao(mutableListOf()),
+            modelManager = readyManager(),
+            ioDispatcher = dispatcher,
+            webConsentStore = consent,
+            webGroundingGateway = object : WebGroundingGateway {
+                override suspend fun retrieveAutomatically(value: String): Result<WebGroundingResult> {
+                    query = value
+                    return Result.success(WebGroundingResult(value, listOf(webCitation()), 1L))
+                }
+            }
+        )
+        advanceUntilIdle()
+        viewModel.setWebSearchMode(WebSearchMode.Persistent)
+        viewModel.sendMessage("Menurut dokumen ini, transcript: keluhan privat saya")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.webConsentRequired)
+        assertEquals("", viewModel.uiState.value.pendingWebQuery)
+        assertEquals(null, query)
+        viewModel.confirmWebConsent("Apa itu coping?")
+        advanceUntilIdle()
+        assertEquals("Apa itu coping?", query)
+        assertTrue(viewModel.uiState.value.messages.any { it.sender == "counselor" })
     }
 
-    private fun unavailableLlm() = object : OnDeviceLlmEngine {
-        override fun readiness(): LlmReadiness = LlmReadiness.ModelMissing
-
-        override suspend fun generate(request: CounselorGenerationRequest): Flow<LlmGenerationState> =
-            flowOf(LlmGenerationState.Unavailable(LlmReadiness.ModelMissing))
+    @Test
+    fun `cancel during web search rejects late evidence and clears pending state`() = runTest {
+        val result = CompletableDeferred<Result<WebGroundingResult>>()
+        val persisted = mutableListOf<ChatMessageEntity>()
+        var cancelled = false
+        val viewModel = CounselorViewModel(
+            llmEngine = unavailableLlm(),
+            ragRetriever = unavailableRag(),
+            chatDao = fakeDao(persisted),
+            modelManager = readyManager(),
+            ioDispatcher = dispatcher,
+            webConsentStore = mutableWebConsent(),
+            webGroundingGateway = object : WebGroundingGateway {
+                override suspend fun retrieveAutomatically(query: String): Result<WebGroundingResult> = try {
+                    result.await()
+                } finally {
+                    cancelled = true
+                }
+            }
+        )
+        advanceUntilIdle()
+        viewModel.setWebSearchMode(WebSearchMode.NextMessage)
+        viewModel.sendMessage("Apa itu coping?")
+        advanceUntilIdle()
+        viewModel.confirmWebConsent("Apa itu coping?")
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isRetrieving)
+        viewModel.cancelGeneration()
+        advanceUntilIdle()
+        result.complete(Result.success(WebGroundingResult("Apa itu coping?", listOf(webCitation()), 1L)))
+        advanceUntilIdle()
+        assertTrue(cancelled)
+        assertTrue(!viewModel.uiState.value.canCancel)
+        assertEquals(null, viewModel.uiState.value.pendingWebQuery)
+        assertTrue(persisted.none { it.sender == "counselor" })
+        assertEquals(CounselorPhase.CANCELLED, viewModel.uiState.value.phase)
     }
 
-    private fun localCitation() = com.stressdetector.mobile.domain.engine.KnowledgeCitation(
-        citationId = "local-test",
-        sourceTitle = "Local source",
-        section = "Section",
-        text = "Local grounding",
-        relevanceScore = 0.9f
-    )
+    @Test
+    fun `separate automatic permission searches public topic without per turn dialog`() = runTest {
+        var query: String? = null
+        val consent = mutableWebConsent()
+        val viewModel = CounselorViewModel(
+            llmEngine = object : OnDeviceLlmEngine {
+                override fun readiness() = LlmReadiness.Ready("test")
+                override suspend fun generate(request: CounselorGenerationRequest) =
+                    flowOf(LlmGenerationState.Content("Dukungan [W1|web-test]"))
+            },
+            ragRetriever = unavailableRag(),
+            chatDao = fakeDao(mutableListOf()),
+            modelManager = readyManager(),
+            ioDispatcher = dispatcher,
+            webConsentStore = consent,
+            webGroundingGateway = object : WebGroundingGateway {
+                override suspend fun retrieveAutomatically(value: String): Result<WebGroundingResult> {
+                    query = value
+                    return Result.success(WebGroundingResult(value, listOf(webCitation()), 1L))
+                }
+            }
+        )
+        advanceUntilIdle()
+        viewModel.setAutomaticWebSearchEnabled(true)
+        advanceUntilIdle()
+        viewModel.sendMessage("Menurut dokumen, saya Adrian, stres; transcript: private")
+        advanceUntilIdle()
+        assertEquals("cara mengelola stres sehari-hari", query)
+        assertTrue(!viewModel.uiState.value.webConsentRequired)
+        assertTrue(viewModel.uiState.value.messages.any { it.sender == "counselor" })
+        viewModel.setAutomaticWebSearchEnabled(false)
+        advanceUntilIdle()
+        assertEquals(WebSearchMode.Disabled, viewModel.uiState.value.webSearchMode)
+    }
 
-    private fun webCitation() = com.stressdetector.mobile.domain.engine.KnowledgeCitation(
-        citationId = "web-test",
-        sourceTitle = "Web source",
-        section = "Sumber web",
-        text = "Web grounding",
-        relevanceScore = 0f,
-        sourceType = CitationSource.WEB,
-        sourceUrl = "https://example.com/source",
-        sourceDomain = "example.com",
-        retrievedAtMillis = 10L,
-        contentHash = "a".repeat(64)
-    )
+    @Test
+    fun `automatic permission never transmits unsupported private topic`() = runTest {
+        var calls = 0
+        val viewModel = CounselorViewModel(
+            llmEngine = unavailableLlm(),
+            ragRetriever = unavailableRag(),
+            chatDao = fakeDao(mutableListOf()),
+            modelManager = readyManager(),
+            ioDispatcher = dispatcher,
+            webConsentStore = mutableWebConsent(),
+            webGroundingGateway = object : WebGroundingGateway {
+                override suspend fun retrieveAutomatically(query: String): Result<WebGroundingResult> {
+                    calls++
+                    return Result.failure(AssertionError("private input must not be sent"))
+                }
+            }
+        )
+        advanceUntilIdle()
+        viewModel.setAutomaticWebSearchEnabled(true)
+        advanceUntilIdle()
+        viewModel.sendMessage("Menurut dokumen, nama saya Adrian dan tinggal di Yogyakarta")
+        advanceUntilIdle()
+        assertEquals(0, calls)
+        assertTrue(!viewModel.uiState.value.webConsentRequired)
+    }
 
-    private fun fakeDao(messages: MutableList<ChatMessageEntity>) = object : ChatDao {
-        override suspend fun insertChatSession(session: ChatSessionEntity) = Unit
-        override fun getAllChatSessions(): Flow<List<ChatSessionEntity>> = flowOf(emptyList())
-        override suspend fun insertMessage(message: ChatMessageEntity) {
-            messages += message
+    @Test
+    fun `revoking automatic permission preserves newly selected next message mode`() = runTest {
+        val viewModel = CounselorViewModel(
+            llmEngine = unavailableLlm(),
+            ragRetriever = unavailableRag(),
+            chatDao = fakeDao(mutableListOf()),
+            modelManager = readyManager(),
+            ioDispatcher = dispatcher,
+            webConsentStore = mutableWebConsent()
+        )
+        advanceUntilIdle()
+        viewModel.setAutomaticWebSearchEnabled(true)
+        advanceUntilIdle()
+        viewModel.setAutomaticWebSearchEnabled(false)
+        viewModel.setWebSearchMode(WebSearchMode.NextMessage)
+        advanceUntilIdle()
+        assertEquals(WebSearchMode.NextMessage, viewModel.uiState.value.webSearchMode)
+        assertTrue(!viewModel.uiState.value.automaticWebAllowed)
+    }
+
+    @Test
+    fun `revoked automatic permission discards in flight web result`() = runTest {
+        val response = CompletableDeferred<Result<WebGroundingResult>>()
+        val persisted = mutableListOf<ChatMessageEntity>()
+        val viewModel = CounselorViewModel(
+            llmEngine = unavailableLlm(),
+            ragRetriever = unavailableRag(),
+            chatDao = fakeDao(persisted),
+            modelManager = readyManager(),
+            ioDispatcher = dispatcher,
+            webConsentStore = mutableWebConsent(),
+            webGroundingGateway = object : WebGroundingGateway {
+                override suspend fun retrieveAutomatically(query: String) = response.await()
+            }
+        )
+        advanceUntilIdle()
+        viewModel.setAutomaticWebSearchEnabled(true)
+        advanceUntilIdle()
+        viewModel.sendMessage("Menurut dokumen, apa itu stres?")
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isRetrieving)
+        viewModel.setAutomaticWebSearchEnabled(false)
+        runCurrent()
+        response.complete(Result.success(WebGroundingResult("cara mengelola stres sehari-hari", listOf(webCitation()), 1L)))
+        advanceUntilIdle()
+        assertEquals(WebSearchMode.Disabled, viewModel.uiState.value.webSearchMode)
+        assertTrue(persisted.none { it.sender == "counselor" })
+        assertTrue(!viewModel.uiState.value.canCancel)
+    }
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class CounselorTurnOwnershipTest {
+    private val dispatcher = StandardTestDispatcher()
+
+    @Before fun setup() = Dispatchers.setMain(dispatcher)
+
+    @After fun tearDown() = Dispatchers.resetMain()
+
+    @Test
+    fun `rapid enable then disable cannot restore automatic networking`() = runTest {
+        val consent = mutableWebConsent()
+        val viewModel = CounselorViewModel(
+            llmEngine = unavailableLlm(),
+            ragRetriever = unavailableRag(),
+            chatDao = fakeDao(mutableListOf()),
+            modelManager = readyManager(),
+            ioDispatcher = dispatcher,
+            webConsentStore = consent
+        )
+        advanceUntilIdle()
+        viewModel.setAutomaticWebSearchEnabled(true)
+        viewModel.setAutomaticWebSearchEnabled(false)
+        viewModel.setWebSearchMode(WebSearchMode.NextMessage)
+        advanceUntilIdle()
+        assertTrue(!consent.automaticAllowed.value)
+        assertTrue(!viewModel.uiState.value.automaticWebAllowed)
+        assertEquals(WebSearchMode.NextMessage, viewModel.uiState.value.webSearchMode)
+    }
+
+    @Test
+    fun `switching chat during initial consent wait never moves the old message`() = runTest {
+        val consent = CompletableDeferred<Boolean>()
+        val messages = mutableListOf<ChatMessageEntity>()
+        val viewModel = CounselorViewModel(
+            llmEngine = unavailableLlm(),
+            ragRetriever = unavailableRag(),
+            chatDao = fakeDao(messages),
+            modelManager = readyManager(),
+            ioDispatcher = dispatcher,
+            aiConsentGranted = { consent.await() }
+        )
+        advanceUntilIdle()
+        viewModel.sendMessage("Saya ingin bercerita")
+        runCurrent()
+        viewModel.newChat()
+        runCurrent()
+        consent.complete(true)
+        advanceUntilIdle()
+        assertTrue(messages.isEmpty())
+        assertTrue(viewModel.uiState.value.messages.isEmpty())
+    }
+
+    @Test
+    fun `cancel between IO retrieval and main handoff cannot start new generation`() = runTest {
+        val retrieval = CompletableDeferred<RagRetrievalResult>()
+        var calls = 0
+        val llm = object : OnDeviceLlmEngine {
+            override fun readiness() = LlmReadiness.Ready("test")
+            override suspend fun generate(request: CounselorGenerationRequest): Flow<LlmGenerationState> {
+                calls++
+                return flowOf(LlmGenerationState.Content("unexpected"))
+            }
         }
-        override suspend fun touchChatSession(sessionId: String, timestampMs: Long) = Unit
-        override fun getMessagesForSession(chatSessionId: String): Flow<List<ChatMessageEntity>> = flowOf(emptyList())
-        override suspend fun deleteMessagesForSession(chatSessionId: String) = Unit
-        override suspend fun deleteChatSession(chatSessionId: String) = Unit
-        override suspend fun deleteAllMessages() = Unit
-        override suspend fun deleteAllChatSessions() = Unit
+        val viewModel = CounselorViewModel(
+            llmEngine = llm,
+            ragRetriever = object : RagRetriever {
+                override suspend fun retrieveRelevantPassages(query: String, maxResults: Int, minRelevanceThreshold: Float) =
+                    retrieval.await()
+            },
+            chatDao = fakeDao(mutableListOf()),
+            modelManager = readyManager(),
+            ioDispatcher = UnconfinedTestDispatcher(testScheduler)
+        )
+        advanceUntilIdle()
+        viewModel.setWebSearchMode(WebSearchMode.NextMessage)
+        viewModel.sendMessage("Menurut dokumen, apa itu stres?")
+        runCurrent()
+        retrieval.complete(RagRetrievalResult.Retrieved(listOf(localCitation())))
+        viewModel.cancelGeneration()
+        advanceUntilIdle()
+        assertEquals(0, calls)
+        assertEquals(CounselorPhase.CANCELLED, viewModel.uiState.value.phase)
     }
+
+    @Test
+    fun `citation regeneration is bounded and only accepts an exact admitted source`() = runTest {
+        listOf(true, false).forEach { repaired ->
+            val messages = mutableListOf<ChatMessageEntity>()
+            var calls = 0
+            val engine = object : OnDeviceLlmEngine {
+                override fun readiness() = LlmReadiness.Ready("test")
+                override suspend fun generate(request: CounselorGenerationRequest): Flow<LlmGenerationState> {
+                    calls++
+                    val marker = if (repaired && calls == 2) request.citationRegistry.bindings.single().marker else "[W1]"
+                    return flowOf(LlmGenerationState.Content("Dukungan coping dari sumber $marker"))
+                }
+            }
+            val viewModel = CounselorViewModel(
+                llmEngine = engine,
+                ragRetriever = unavailableRag(),
+                chatDao = fakeDao(messages),
+                modelManager = readyManager(),
+                ioDispatcher = dispatcher,
+                webConsentStore = mutableWebConsent(),
+                webGroundingGateway = object : WebGroundingGateway {
+                    override suspend fun retrieveAutomatically(query: String) =
+                        Result.success(WebGroundingResult(query, listOf(webCitation()), 1L))
+                }
+            )
+            advanceUntilIdle()
+            viewModel.setAutomaticWebSearchEnabled(true)
+            advanceUntilIdle()
+            viewModel.sendMessage("Berikan sumber tentang stres")
+            advanceUntilIdle()
+            assertEquals(2, calls)
+            assertEquals(if (repaired) 1 else 0, messages.count { it.sender == "counselor" })
+            if (repaired) assertTrue(messages.last().content.contains("[W1|web-test]"))
+        }
+    }
+
+    @Test
+    fun `unsafe output is blocked without a citation regeneration`() = runTest {
+        var calls = 0
+        val messages = mutableListOf<ChatMessageEntity>()
+        val engine = object : OnDeviceLlmEngine {
+            override fun readiness() = LlmReadiness.Ready("test")
+            override suspend fun generate(request: CounselorGenerationRequest): Flow<LlmGenerationState> {
+                calls++
+                return flowOf(LlmGenerationState.Content("Saya mendiagnosis kondisi Anda."))
+            }
+        }
+        val viewModel = CounselorViewModel(
+            llmEngine = engine,
+            ragRetriever = unavailableRag(),
+            chatDao = fakeDao(messages),
+            modelManager = readyManager(),
+            ioDispatcher = dispatcher
+        )
+        advanceUntilIdle()
+        viewModel.sendMessage("Saya merasa lelah")
+        advanceUntilIdle()
+        assertEquals(1, calls)
+        assertTrue(messages.none { it.sender == "counselor" })
+    }
+}
+
+private fun readyManager(): ModelManager {
+    val manager = Mockito.mock(ModelManager::class.java)
+    val entry = com.stressdetector.mobile.ml.assets.AiAssetEntry(
+        kind = com.stressdetector.mobile.ml.assets.AiAssetKind.LLM,
+        fileName = ModelManager.MODEL_FILE,
+        source = ModelManager.MODEL_SOURCE,
+        license = "Apache-2.0",
+        version = "test",
+        sizeBytes = 1L,
+        sha256 = ModelManager.MODEL_SHA256
+    )
+    Mockito.`when`(manager.readiness).thenReturn(MutableStateFlow(ModelReadiness.Ready(entry)))
+    return manager
+}
+
+private fun mutableWebConsent(initial: Boolean = false): WebConsentStore = object : WebConsentStore {
+    override val granted = MutableStateFlow(initial)
+    override val automaticAllowed = MutableStateFlow(false)
+    override fun setGranted(granted: Boolean) {
+        this.granted.value = granted
+    }
+    override fun setAutomaticAllowed(allowed: Boolean) {
+        granted.value = allowed
+        automaticAllowed.value = allowed
+    }
+}
+
+private fun unavailableRag() = object : RagRetriever {
+    override suspend fun retrieveRelevantPassages(query: String, maxResults: Int, minRelevanceThreshold: Float) =
+        RagRetrievalResult.Unavailable("no indexed documents")
+}
+
+private fun unavailableLlm() = object : OnDeviceLlmEngine {
+    override fun readiness(): LlmReadiness = LlmReadiness.ModelMissing
+
+    override suspend fun generate(request: CounselorGenerationRequest): Flow<LlmGenerationState> =
+        flowOf(LlmGenerationState.Unavailable(LlmReadiness.ModelMissing))
+}
+
+private fun localCitation() = com.stressdetector.mobile.domain.engine.KnowledgeCitation(
+    citationId = "local-test",
+    sourceTitle = "Local source",
+    section = "Section",
+    text = "Local grounding",
+    relevanceScore = 0.9f
+)
+
+private fun webCitation() = com.stressdetector.mobile.domain.engine.KnowledgeCitation(
+    citationId = "web-test",
+    sourceTitle = "Web source",
+    section = "Sumber web",
+    text = "Web grounding",
+    relevanceScore = 0f,
+    sourceType = CitationSource.WEB,
+    sourceUrl = "https://example.com/source",
+    sourceDomain = "example.com",
+    retrievedAtMillis = 10L,
+    contentHash = "a".repeat(64)
+)
+
+private fun fakeDao(messages: MutableList<ChatMessageEntity>) = object : ChatDao {
+    override suspend fun insertChatSession(session: ChatSessionEntity) = Unit
+    override fun getAllChatSessions(): Flow<List<ChatSessionEntity>> = flowOf(emptyList())
+    override suspend fun insertMessage(message: ChatMessageEntity) {
+        messages.removeAll { it.messageId == message.messageId }
+        messages += message
+    }
+    override suspend fun touchChatSession(sessionId: String, timestampMs: Long) = Unit
+    override fun getMessagesForSession(chatSessionId: String): Flow<List<ChatMessageEntity>> = flowOf(emptyList())
+    override suspend fun deleteMessagesForSession(chatSessionId: String) = Unit
+    override suspend fun deleteChatSession(chatSessionId: String) = Unit
+    override suspend fun deleteAllMessages() = Unit
+    override suspend fun deleteAllChatSessions() = Unit
 }

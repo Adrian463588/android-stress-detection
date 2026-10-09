@@ -1,6 +1,7 @@
 package com.stressdetector.mobile.data
 
 import android.os.SystemClock
+import com.stressdetector.shared.AccelerometerSample
 import com.stressdetector.shared.PpgBatch
 import com.stressdetector.shared.PpgBatchDisposition
 import com.stressdetector.shared.PpgBatchSequenceAudit
@@ -16,6 +17,7 @@ import com.stressdetector.shared.SessionIdentity
 import com.stressdetector.shared.SessionProtocolRejection
 import com.stressdetector.shared.SessionReadyAck
 import com.stressdetector.shared.WearSessionMode
+import java.util.TreeMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -103,6 +105,7 @@ class PpgRepositoryImpl(private val monotonicNowMillis: () -> Long = SystemClock
     private val irFullSessionBuffer = RollingPpgBuffer(PpgType.IR, SessionConfig.SESSION_DURATION_SECONDS)
     private val redFullSessionBuffer = RollingPpgBuffer(PpgType.RED, SessionConfig.SESSION_DURATION_SECONDS)
     private val sequenceAudit = PpgBatchSequenceAudit()
+    private val motionSamples = TreeMap<Long, AccelerometerSample>()
     private val mutableState = MutableStateFlow(PpgStreamState())
     private val mutableChartFrames = MutableStateFlow(PpgChartFrame())
     private val chartScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -258,6 +261,12 @@ class PpgRepositoryImpl(private val monotonicNowMillis: () -> Long = SystemClock
             val acceptedByType = appliedBatches
                 .groupBy(PpgBatch::type)
                 .mapValues { (_, batches) -> batches.sumOf(::appendToBuffers) }
+            if (mutableState.value.sessionMode == WearSessionMode.HOME_STRESS) {
+                appliedBatches.flatMap(PpgBatch::accelerometerSamples).forEach { sample ->
+                    motionSamples.putIfAbsent(sample.sensorTimestampNanos, sample)
+                }
+                while (motionSamples.size > MAX_HOME_MOTION_SAMPLES) motionSamples.pollFirstEntry()
+            }
             val accepted = acceptedByType.values.sum()
             val observedElapsed = maxOf(
                 mutableState.value.observedDataElapsedMillis,
@@ -365,6 +374,7 @@ class PpgRepositoryImpl(private val monotonicNowMillis: () -> Long = SystemClock
         greenFullSessionBuffer.clear()
         irFullSessionBuffer.clear()
         redFullSessionBuffer.clear()
+        motionSamples.clear()
         pendingTerminalReceipt = null
         sequenceAudit.resetSession(current.sessionId.orEmpty())
 
@@ -583,9 +593,18 @@ class PpgRepositoryImpl(private val monotonicNowMillis: () -> Long = SystemClock
     override fun greenWindow(): WindowSnapshot = withTransportDiagnostics(greenBuffer.snapshot(), PpgType.GREEN)
     override fun irWindow(): WindowSnapshot = withTransportDiagnostics(irBuffer.snapshot(), PpgType.IR)
     override fun redWindow(): WindowSnapshot = withTransportDiagnostics(redBuffer.snapshot(), PpgType.RED)
-    override fun fullGreenWindow(): WindowSnapshot = withTransportDiagnostics(greenFullSessionBuffer.snapshot(), PpgType.GREEN)
-    override fun fullIrWindow(): WindowSnapshot = withTransportDiagnostics(irFullSessionBuffer.snapshot(), PpgType.IR)
-    override fun fullRedWindow(): WindowSnapshot = withTransportDiagnostics(redFullSessionBuffer.snapshot(), PpgType.RED)
+    override fun fullGreenWindow(): WindowSnapshot = synchronized(stateLock) {
+        withTransportDiagnostics(greenFullSessionBuffer.snapshot(), PpgType.GREEN)
+            .copy(accelerometerSamples = motionSamples.values.toList())
+    }
+    override fun fullIrWindow(): WindowSnapshot = synchronized(stateLock) {
+        withTransportDiagnostics(irFullSessionBuffer.snapshot(), PpgType.IR)
+            .copy(accelerometerSamples = motionSamples.values.toList())
+    }
+    override fun fullRedWindow(): WindowSnapshot = synchronized(stateLock) {
+        withTransportDiagnostics(redFullSessionBuffer.snapshot(), PpgType.RED)
+            .copy(accelerometerSamples = motionSamples.values.toList())
+    }
 
     /** Legacy live-monitor projection. Home renders [PpgChartFrame] snapshots through its projector. */
     override fun greenChartData(): ChartData = greenBuffer.recentChartData(CHART_WINDOW_SEC)
@@ -634,9 +653,12 @@ class PpgRepositoryImpl(private val monotonicNowMillis: () -> Long = SystemClock
         greenWindow = withTransportDiagnostics(greenBuffer.snapshot(), PpgType.GREEN),
         irWindow = withTransportDiagnostics(irBuffer.snapshot(), PpgType.IR),
         redWindow = withTransportDiagnostics(redBuffer.snapshot(), PpgType.RED),
-        fullGreenWindow = withTransportDiagnostics(greenFullSessionBuffer.snapshot(), PpgType.GREEN),
-        fullIrWindow = withTransportDiagnostics(irFullSessionBuffer.snapshot(), PpgType.IR),
+        fullGreenWindow = withTransportDiagnostics(greenFullSessionBuffer.snapshot(), PpgType.GREEN)
+            .copy(accelerometerSamples = motionSamples.values.toList()),
+        fullIrWindow = withTransportDiagnostics(irFullSessionBuffer.snapshot(), PpgType.IR)
+            .copy(accelerometerSamples = motionSamples.values.toList()),
         fullRedWindow = withTransportDiagnostics(redFullSessionBuffer.snapshot(), PpgType.RED)
+            .copy(accelerometerSamples = motionSamples.values.toList())
     )
 
     private fun withTransportDiagnostics(snapshot: WindowSnapshot, type: PpgType): WindowSnapshot {
@@ -773,3 +795,4 @@ private fun PpgStreamState.sessionIdentityOrNull(): SessionIdentity? {
 private const val CHART_WINDOW_SEC = 10f
 private const val CHART_COALESCE_MILLIS = 100L
 private const val MILLIS_PER_SECOND_FLOAT = 1_000f
+private const val MAX_HOME_MOTION_SAMPLES = 10_000

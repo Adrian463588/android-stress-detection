@@ -27,8 +27,9 @@ interface CounselorOutputGuard {
             }
 
             val markers = CITATION_MARKER.findAll(normalized).toList()
-            if (HAS_CITATION_LIKE_MARKER.containsMatchIn(normalized) && markers.isEmpty()) {
-                return GuardedCounselorOutput.Rejected(CITATION_FAILURE_RESPONSE)
+            val withoutExactMarkers = normalized.replace(CITATION_MARKER, " ")
+            if (HAS_CITATION_LIKE_MARKER.containsMatchIn(withoutExactMarkers)) {
+                return GuardedCounselorOutput.Rejected(CITATION_FAILURE_RESPONSE, "citation_malformed")
             }
             if (mode == RagMode.GENERAL_SAFE && markers.isNotEmpty()) {
                 return GuardedCounselorOutput.Rejected(SAFE_SCOPE_RESPONSE)
@@ -39,53 +40,74 @@ interface CounselorOutputGuard {
                 val label = match.groupValues[1]
                 val exactId = match.groupValues[2]
                 val binding = registry.exactBinding(label, exactId)
-                    ?: return GuardedCounselorOutput.Rejected(CITATION_FAILURE_RESPONSE)
+                    ?: return GuardedCounselorOutput.Rejected(CITATION_FAILURE_RESPONSE, "citation_unknown_binding")
                 if (referenced.any { it.label == label && it.evidenceId != exactId }) {
-                    return GuardedCounselorOutput.Rejected(CITATION_FAILURE_RESPONSE)
+                    return GuardedCounselorOutput.Rejected(CITATION_FAILURE_RESPONSE, "citation_conflicting_binding")
                 }
                 referenced += binding
             }
 
-            if (mode == RagMode.GROUNDED &&
-                referenced.none {
-                    it.citation.sourceType == CitationSource.LOCAL_DOCUMENT &&
-                        it.citation.sourceTier == EvidenceSourceTier.APP_RAG
-                }
-            ) {
-                return GuardedCounselorOutput.Rejected(DOCUMENT_ABSTENTION_RESPONSE)
-            }
-            if (mode == RagMode.BUNDLED_GROUNDED &&
-                referenced.none {
-                    it.citation.sourceType == CitationSource.LOCAL_DOCUMENT &&
-                        it.citation.sourceTier == EvidenceSourceTier.BUNDLED_LOCAL
-                }
-            ) {
-                return GuardedCounselorOutput.Rejected(DOCUMENT_ABSTENTION_RESPONSE)
-            }
-            if (mode == RagMode.WEB_GROUNDED &&
-                referenced.none {
-                    it.citation.sourceType == CitationSource.WEB &&
-                        it.citation.sourceTier == EvidenceSourceTier.WEB
-                }
-            ) {
-                return GuardedCounselorOutput.Rejected(CITATION_FAILURE_RESPONSE)
-            }
+            missingEvidence(mode, referenced)?.let { return it }
 
             val citedEvidence = referenced
                 .distinctBy { it.label to it.evidenceId }
                 .map(CitationBinding::citation)
+            if (citedEvidence.isNotEmpty() && !hasAnswerBeyondSourceMetadata(withoutExactMarkers, citedEvidence)) {
+                return GuardedCounselorOutput.Rejected(
+                    "Sumber tersedia, tetapi AI belum menyusun jawabannya. Coba lagi.",
+                    "citation_answer_empty"
+                )
+            }
             return GuardedCounselorOutput.Accepted(normalized, citedEvidence)
         }
     }
 }
 
-sealed interface GuardedCounselorOutput {
-    data class Accepted(val text: String, val citations: List<KnowledgeCitation>) : GuardedCounselorOutput
-    data class Rejected(val text: String) : GuardedCounselorOutput
+private fun missingEvidence(mode: RagMode, bindings: List<CitationBinding>): GuardedCounselorOutput.Rejected? {
+    val tier = when (mode) {
+        RagMode.GROUNDED -> EvidenceSourceTier.APP_RAG
+        RagMode.BUNDLED_GROUNDED -> EvidenceSourceTier.BUNDLED_LOCAL
+        RagMode.WEB_GROUNDED -> EvidenceSourceTier.WEB
+        else -> null
+    }
+    val source = if (tier == EvidenceSourceTier.WEB) CitationSource.WEB else CitationSource.LOCAL_DOCUMENT
+    return if (tier == null || bindings.any { it.citation.sourceTier == tier && it.citation.sourceType == source }) {
+        null
+    } else {
+        GuardedCounselorOutput.Rejected(
+            if (tier == EvidenceSourceTier.WEB) CITATION_FAILURE_RESPONSE else DOCUMENT_ABSTENTION_RESPONSE,
+            when (tier) {
+                EvidenceSourceTier.WEB -> "citation_missing_web"
+                EvidenceSourceTier.BUNDLED_LOCAL -> "citation_missing_bundled"
+                else -> "citation_missing_local"
+            }
+        )
+    }
 }
 
-private val CITATION_MARKER = Regex("\\[((?:S|W)\\d+)\\|([^]\\s|]+)]")
-private val HAS_CITATION_LIKE_MARKER = Regex("\\[(?:S|W)\\d+(?:\\|[^]]*)?]")
+private fun hasAnswerBeyondSourceMetadata(text: String, citations: List<KnowledgeCitation>): Boolean {
+    val metadata = citations.flatMap { citation ->
+        listOfNotNull(
+            citation.sourceTitle,
+            citation.section,
+            citation.sourceUrl,
+            citation.sourceDomain,
+            "source ${citation.sourceTier.name}"
+        )
+    }.filter(String::isNotBlank).distinct().sortedByDescending(String::length)
+    val answer = metadata.fold(text) { remaining, value -> remaining.replace(value, "", ignoreCase = true) }
+    return answer.any(Char::isLetterOrDigit)
+}
+
+sealed interface GuardedCounselorOutput {
+    data class Accepted(val text: String, val citations: List<KnowledgeCitation>) : GuardedCounselorOutput
+    data class Rejected(val text: String, val reasonCode: String = "output_rejected") : GuardedCounselorOutput
+}
+
+private val CITATION_MARKER = Regex("\\[((?:S|W)[0-9]+)\\|([^\\[\\]\\s|]+)]")
+private val HAS_CITATION_LIKE_MARKER = Regex(
+    "[\\[［][\\s\\p{Cf}]*[SWswＳＷｓｗ](?=[\\s\\p{Cf}]*(?:[\\p{N}#|｜\\]］]|$)|[^]\\r\\n]*[|｜])"
+)
 private val DANGEROUS_CLAIM = Regex(
     "(?i)(?:anda|kamu|pasien|you)\\s+(?:mengidap|menderita|terdiagnosis|are diagnosed)|" +
         "(?:lie detected|deception detected|truth score|patient is lying)|" +

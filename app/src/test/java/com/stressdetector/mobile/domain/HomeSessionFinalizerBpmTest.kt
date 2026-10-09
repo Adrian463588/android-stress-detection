@@ -57,12 +57,16 @@ class HomeSessionFinalizerBpmTest {
         assertNull(stored.irMedianBpm)
         assertEquals(0, stored.irBpmObservationCount)
         assertEquals(0, stored.irValidPeakCount)
+        assertNull(dao.session?.stressProbability)
     }
 
     private class RecordingStressSessionDao : StressSessionDao {
         var report: StressSessionReportEntity? = null
+        var session: StressSessionEntity? = null
 
-        override suspend fun insert(entity: StressSessionEntity) = Unit
+        override suspend fun insert(entity: StressSessionEntity) {
+            session = entity
+        }
 
         override fun latest(limit: Int): Flow<List<StressSessionEntity>> = flowOf(emptyList())
 

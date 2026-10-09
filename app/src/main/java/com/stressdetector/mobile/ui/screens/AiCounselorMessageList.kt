@@ -2,20 +2,24 @@ package com.stressdetector.mobile.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -26,6 +30,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.stressdetector.mobile.domain.voice.VoiceOutputState
@@ -52,7 +57,6 @@ internal fun CounselorMessageList(model: CounselorScreenModel, innerPadding: Pad
 private fun LazyListScope.counselorMessageItems(model: CounselorScreenModel) {
     val runtime = model.runtime
     val state = runtime.state
-    state.statusMessage?.let { message -> item { StatusMessageItem(model, message) } }
     if (!state.isModelReady && state.phase != CounselorPhase.CRISIS_ESCALATION) {
         item { ModelMissingCard(state.modelDownloadState, model.navigation.onNavigateToProfile) }
     }
@@ -68,8 +72,8 @@ private fun LazyListScope.counselorMessageItems(model: CounselorScreenModel) {
     (state.crisisPersistenceState as? CrisisPersistenceState.RetryableFailure)?.let { failure ->
         item { CrisisPersistenceRetryCard(failure.message, runtime.viewModel::retryCrisisPersistence) }
     }
-    if (state.messages.isEmpty()) {
-        item { if (state.isModelReady) emptyChatState() else modelUnavailableEmptyState() }
+    if (state.messages.isEmpty() && state.isModelReady && !state.canCancel) {
+        item { emptyChatState() }
     }
     items(state.messages, key = { it.id }) { message ->
         ChatMessageBubble(
@@ -85,12 +89,14 @@ private fun LazyListScope.counselorMessageItems(model: CounselorScreenModel) {
             )
         )
     }
+    state.statusMessage?.takeIf { state.isModelReady || state.phase != CounselorPhase.MODEL_MISSING }
+        ?.let { message -> item(key = "turn-status") { StatusMessageItem(model, message) } }
 }
 
 @Composable
 private fun StatusMessageItem(model: CounselorScreenModel, message: String) {
     val state = model.runtime.state
-    if (state.phase == CounselorPhase.ERROR || state.phase == CounselorPhase.RETRIEVAL_UNAVAILABLE) {
+    if (!state.canCancel && (state.phase == CounselorPhase.ERROR || state.phase == CounselorPhase.RETRIEVAL_UNAVAILABLE)) {
         RuntimeErrorCard(
             message = message,
             technicalMessage = state.runtimeTechnicalMessage,
@@ -98,9 +104,14 @@ private fun StatusMessageItem(model: CounselorScreenModel, message: String) {
             onToggleTechnicalDetails = {
                 model.dialogs.onTechnicalDetailsChanged(!model.dialogs.showTechnicalDetails)
             },
-            onRetry = model.runtime.viewModel::retryLastMessage
+            actions = RuntimeRecoveryActions(
+                onRetry = model.runtime.viewModel::retryLastMessage,
+                onSelectDocument = if (state.phase == CounselorPhase.RETRIEVAL_UNAVAILABLE) model.navigation.onNavigateToLibrary else null,
+                onSearchWeb = if (state.phase == CounselorPhase.RETRIEVAL_UNAVAILABLE) model.runtime.viewModel::requestWebFallback else null
+            )
         )
     } else {
+        if (state.isRetrieving) CircularProgressIndicator(modifier = Modifier.size(24.dp))
         Text(
             text = message,
             style = MaterialTheme.typography.bodySmall,
@@ -142,36 +153,54 @@ private fun modelDownloadMessage(downloadState: ModelDownloadState): String = wh
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun RuntimeErrorCard(
     message: String,
     technicalMessage: String?,
     showTechnicalDetails: Boolean,
     onToggleTechnicalDetails: () -> Unit,
-    onRetry: () -> Unit
+    actions: RuntimeRecoveryActions
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onToggleTechnicalDetails) {
-                    Text(if (showTechnicalDetails) "Sembunyikan detail" else "Detail teknis")
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+            FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = actions.onRetry, modifier = Modifier.heightIn(min = 48.dp)) { Text("Coba lagi") }
+                if (technicalMessage != null || actions.onSelectDocument != null || actions.onSearchWeb != null) {
+                    TextButton(
+                        onClick = onToggleTechnicalDetails,
+                        modifier = Modifier.heightIn(min = 48.dp).semantics {
+                            stateDescription = if (showTechnicalDetails) "Detail teknis terbuka" else "Detail teknis tertutup"
+                        }
+                    ) {
+                        Text(if (showTechnicalDetails) "Tutup opsi" else "Opsi lainnya")
+                    }
                 }
-                Button(onClick = onRetry) { Text("Coba lagi") }
+                if (showTechnicalDetails) {
+                    actions.onSelectDocument?.let {
+                        TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("Dokumen") }
+                    }
+                    actions.onSearchWeb?.let {
+                        TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cari sumber web") }
+                    }
+                }
             }
             if (showTechnicalDetails && !technicalMessage.isNullOrBlank()) {
                 Text(
                     technicalMessage,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
     }
     Spacer(modifier = Modifier.height(8.dp))
 }
+
+private data class RuntimeRecoveryActions(val onRetry: () -> Unit, val onSelectDocument: (() -> Unit)?, val onSearchWeb: (() -> Unit)?)
 
 @Composable
 private fun emptyChatState() {
@@ -182,28 +211,9 @@ private fun emptyChatState() {
             .semantics { liveRegion = LiveRegionMode.Polite },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Percakapan lokal siap", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+        Text("Ada yang ingin kamu ceritakan?", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
         Text(
-            "Tulis pertanyaan untuk mulai. Pesan diproses di perangkat saat Gemma siap.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun modelUnavailableEmptyState() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 24.dp)
-            .semantics { liveRegion = LiveRegionMode.Polite },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Text("AI Counselor belum siap", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
-        Text(
-            "Unduh dan verifikasi Gemma melalui Profile untuk menjawab pertanyaan normal.",
+            "Bisa curhat, berdiskusi, atau meminta dukungan untuk menghadapi stres. Pesan diproses lokal saat Gemma siap.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

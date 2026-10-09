@@ -186,7 +186,10 @@ class CorePpgWindowSlicer(
         sessionElapsedEndMillis = elapsed[indices.last()],
         elapsedTimestampsMillis = LongArray(indices.size) { elapsed[indices[it]] },
         sessionId = source.sessionId,
-        windowId = source.windowId
+        windowId = source.windowId,
+        accelerometerSamples = source.accelerometerSamples.filter {
+            it.elapsedMillis >= elapsed[indices.first()] && it.elapsedMillis <= elapsed[indices.last()]
+        }
     )
 
     private fun elapsedTimes(source: WindowSnapshot): LongArray {

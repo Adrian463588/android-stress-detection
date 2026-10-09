@@ -2,6 +2,7 @@ package com.stressdetector.mobile.audio
 
 import com.stressdetector.mobile.domain.engine.SpeechRuntimeState
 import com.stressdetector.mobile.domain.engine.SpeechSegment
+import com.stressdetector.mobile.ml.speech.SpeechBundleManifest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -83,6 +84,19 @@ class SpeechRuntimeCoordinator(private val runtimeFactory: (SpeechRuntimeMode) -
         }
     }
 
+    private suspend fun preflight(mode: SpeechRuntimeMode, candidateManifest: SpeechBundleManifest): SpeechRuntimeState {
+        // Installation already owns the bundle mutex. Never wait on a session
+        // that may itself be waiting for readiness: reject and retain its bundle.
+        if (!sessionMutex.tryLock()) {
+            return SpeechRuntimeState.Unavailable("Sesi suara aktif. Hentikan sesi sebelum memperbarui speech bundle.")
+        }
+        return try {
+            prepareLocked(mode).preflight(candidateManifest).also { mutableState.value = it }
+        } finally {
+            sessionMutex.unlock()
+        }
+    }
+
     private suspend fun end(runtime: LocalSpeechRuntime): List<SpeechSegment> = try {
         runtime.endSession()
     } finally {
@@ -96,8 +110,12 @@ class SpeechRuntimeCoordinator(private val runtimeFactory: (SpeechRuntimeMode) -
         private var delegate: LocalSpeechRuntime? = null
 
         override val state: StateFlow<SpeechRuntimeState> = coordinator.mutableState.asStateFlow()
+        override val decoderDescription: String? get() = delegate?.decoderDescription
 
         override suspend fun preflight(): SpeechRuntimeState = coordinator.preflight(mode)
+
+        override suspend fun preflight(candidateManifest: SpeechBundleManifest): SpeechRuntimeState =
+            coordinator.preflight(mode, candidateManifest)
 
         override suspend fun beginSession(startedAtUtcMillis: Long, languageCode: String, sessionId: String) {
             delegate = coordinator.begin(mode, startedAtUtcMillis, languageCode, sessionId)

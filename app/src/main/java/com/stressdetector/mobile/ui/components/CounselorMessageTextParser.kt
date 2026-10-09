@@ -21,7 +21,7 @@ internal data class CounselorInlineToken(val text: String, val style: CounselorI
 private data class InlineMatch(val consumed: Int, val token: CounselorInlineToken)
 
 private val HeadingPattern = Regex("""^(#{1,3})\s+(.+)$""")
-private val OrderedListPattern = Regex("""^(\d{1,3}[.)])(?:\s+|(?=(?:\*\*|__)\p{L}))(.+)$""")
+private val OrderedListPattern = Regex("""^(\d{1,3}[.)])(?:\s+|(?=(?:\*\*|__)?\p{L}))(.+)$""")
 private val UnorderedListPattern = Regex("""^([-*+•])\s+(.+)$""")
 private val CitationPattern = Regex("""\[((?:S|W)\d+)\|([^\]\s|]+)]""")
 private val LinkPattern = Regex("""\[([^\]\n]+)]\(https?://[^)\s]+\)""")
@@ -124,8 +124,12 @@ private fun normalizeCounselorLayout(raw: String): String {
     var normalized = raw.replace("\r\n", "\n").replace('\r', '\n')
     normalized = normalized.replace(Regex("""(?<=[.!?])(?=\p{L})"""), " ")
     normalized = normalized.replace(
-        Regex("""(?<=[.!?])[\t ]*(?=\d{1,3}[.)][\t ]*(?:\*\*|__)?\p{L})"""),
+        Regex("""(?<=[.!?:])[\t ]*(?=\d{1,3}[.)][\t ]*(?:\*\*|__)?\p{L})"""),
         "\n"
+    )
+    normalized = normalized.replace(
+        Regex("""(${CitationPattern.pattern})[\t ]*(?=\d{1,3}[.)][\t ]*(?:\*\*|__)?\p{L})"""),
+        "$1\n"
     )
     normalized = normalized.replace(
         Regex("""(?<=[\p{L}])(?=\d+(?:[-–]\d+)?[\t ]*(?:menit|jam|detik|hari|minggu|bulan|tahun|%))"""),

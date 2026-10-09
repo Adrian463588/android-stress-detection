@@ -304,31 +304,48 @@ class AiReminderDeliveryWorker(appContext: Context, workerParams: WorkerParamete
         publisher: ReminderNotificationPublisher,
         record: AiReminderRecord,
         content: ReminderContent
-    ): Result {
-        if (content.sourceSessionId != record.sourceSessionId) {
-            return fail(repository, record.reminderId, "REMINDER_SOURCE_MISMATCH")
+    ): Result = when {
+        content.sourceSessionId != record.sourceSessionId -> fail(repository, record.reminderId, "REMINDER_SOURCE_MISMATCH")
+        else -> {
+            repository.writePayload(
+                record.reminderId,
+                ReminderPayload(content.message, content.displayNameUsed, content.sourceSessionId)
+            )
+            // The DAO cannot revive a record cancelled while generation was running.
+            repository.markGenerated(record.reminderId, Instant.now(), content.modelVersion)
+            publishValidated(repository, publisher, record, content)
         }
-        repository.writePayload(
-            record.reminderId,
-            ReminderPayload(content.message, content.displayNameUsed, content.sourceSessionId)
-        )
-        repository.markGenerated(record.reminderId, Instant.now(), content.modelVersion)
-        return when (val published = publisher.publish(record.reminderId, content)) {
-            ReminderPublishResult.Published -> {
-                repository.markDelivered(record.reminderId, Instant.now())
-                Result.success()
-            }
-            ReminderPublishResult.PermissionDenied -> {
-                repository.deletePayload(record.reminderId)
-                repository.markStatus(record.reminderId, ReminderRecordStatus.FAILED, "NOTIFICATION_PERMISSION_DENIED")
-                Result.success()
-            }
-            is ReminderPublishResult.Failed -> if (published.retryable) {
-                repository.markStatus(record.reminderId, ReminderRecordStatus.SCHEDULED, "NOTIFICATION_RETRY_PENDING")
-                Result.retry()
-            } else {
-                fail(repository, record.reminderId, "NOTIFICATION_PUBLISH_FAILED")
-            }
+    }
+
+    private suspend fun publishValidated(
+        repository: AiReminderRepository,
+        publisher: ReminderNotificationPublisher,
+        record: AiReminderRecord,
+        content: ReminderContent
+    ): Result = when (
+        val published = AiReminderPublication(
+            repository,
+            publisher,
+            AppLocator.aiReminderEligibility(applicationContext)
+        ).publish(record, content)
+    ) {
+        ReminderPublishResult.Published -> Result.success()
+        is ReminderPublishResult.Rejected -> if (published.code == "REMINDER_INACTIVE") {
+            repository.deletePayload(record.reminderId)
+            Result.success()
+        } else {
+            fail(repository, record.reminderId, published.code)
+        }
+        ReminderPublishResult.PermissionDenied -> {
+            repository.deletePayload(record.reminderId)
+            repository.markStatus(record.reminderId, ReminderRecordStatus.FAILED, "NOTIFICATION_PERMISSION_DENIED")
+            Result.success()
+        }
+        is ReminderPublishResult.Failed -> if (published.retryable) {
+            repository.markStatus(record.reminderId, ReminderRecordStatus.SCHEDULED, "NOTIFICATION_RETRY_PENDING")
+            Result.retry()
+        } else {
+            fail(repository, record.reminderId, "NOTIFICATION_PUBLISH_FAILED")
         }
     }
 

@@ -6,7 +6,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 
-data class AudioGap(val startOffsetMs: Long, val durationMs: Long, val reason: String)
+data class AudioGap(
+    val startOffsetMs: Long,
+    val durationMs: Long,
+    val reason: String,
+    /** A dropped ASR work item can still have observed PCM in the recorded WAV. */
+    val recordedPcmPresent: Boolean = false
+)
 
 data class SpeechProcessingState(
     val sessionId: String? = null,
@@ -14,7 +20,8 @@ data class SpeechProcessingState(
     val droppedFrameCount: Long = 0L,
     val audioGaps: List<AudioGap> = emptyList(),
     val error: String? = null,
-    val isDraining: Boolean = false
+    val isDraining: Boolean = false,
+    val decoderDescription: String? = null
 )
 
 data class LiveTranscriptState(
@@ -34,6 +41,7 @@ data class UnifiedSessionLiveSnapshot(
     val generation: Long = 0L,
     val biosignal: LiveBiosignalSnapshot = LiveBiosignalSnapshot(),
     val acousticAnalysis: AcousticAnalysisSnapshot? = null,
+    val livePitch: List<LivePitchObservation> = emptyList(),
     val transcript: LiveTranscriptState = LiveTranscriptState(),
     val backlogFrames: Int = 0,
     val audioGaps: List<AudioGap> = emptyList(),
@@ -104,6 +112,10 @@ interface AudioIntelligenceEngine {
 
     /** Frame-level acoustic evidence derived from the real PCM capture path. */
     val acousticAnalysisFlow: Flow<AcousticAnalysisSnapshot>
+        get() = emptyFlow()
+
+    /** Bounded, observed openSMILE pitch windows from the same recorded PCM. */
+    val livePitchFlow: Flow<LivePitchObservation>
         get() = emptyFlow()
     val speechProcessingState: StateFlow<SpeechProcessingState>
         get() = EMPTY_SPEECH_PROCESSING_STATE

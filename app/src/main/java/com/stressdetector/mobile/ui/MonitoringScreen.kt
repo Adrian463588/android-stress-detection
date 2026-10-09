@@ -53,6 +53,7 @@ import com.stressdetector.mobile.domain.PpgChartData
 import com.stressdetector.mobile.domain.PpgChartMode
 import com.stressdetector.mobile.ui.components.TransportDiagnosticsCard
 import com.stressdetector.mobile.ui.components.TransportUiState
+import com.stressdetector.mobile.ui.home.RecordingCompanion
 
 // ─── Color tokens ─────────────────────────────────────────────────────────────
 private val NeonEmerald = Color(0xFF10B981)
@@ -76,6 +77,7 @@ private const val SESSION_DURATION_SEC = 300
 fun MonitoringScreen(
     progress: Float,
     elapsedMillis: Long,
+    recordingSignalLabel: String,
     greenSamples: Int,
     irSamples: Int,
     redDiagnosticSamples: Int = 0,
@@ -119,6 +121,7 @@ fun MonitoringScreen(
             connectionPhase = honestConnectionPhase
         )
         StopButton(onStop = onStop)
+        RecordingCompanion(recordingSignalLabel)
         SignalStatusCard(
             connectionPhase = honestConnectionPhase,
             modelStatus = modelStatus,
@@ -622,8 +625,14 @@ private fun chartStatus(data: PpgChartData): String {
         ?: base
 }
 
-private fun chartTelemetry(data: PpgChartData): String = buildString {
-    append("raw ").append(formatSignal(data.observedMin)).append("–").append(formatSignal(data.observedMax))
+internal fun chartTelemetry(data: PpgChartData): String = buildString {
+    val rangeLabel = when (data.mode) {
+        PpgChartMode.CLEANED_CORE, PpgChartMode.CLEANED_PARTIAL -> "terfilter"
+        PpgChartMode.FULL_SESSION_PREVIEW, PpgChartMode.RAW_DIAGNOSTIC -> "raw"
+        PpgChartMode.EMPTY -> "rentang"
+    }
+    append(rangeLabel).append(" ").append(formatSignal(data.observedMin)).append("–")
+        .append(formatSignal(data.observedMax))
     data.actualCadenceHz?.let { append(" · cadence ").append("%.1f".format(it)).append(" Hz") }
     append(" · gap ").append(data.significantGapCount).append(" (maks ").append(data.largestGapMillis).append(" ms)")
 }

@@ -80,24 +80,14 @@ class UnifiedSessionService : LifecycleService() {
 
         try {
             createNotificationChannel()
-            val notification = buildNotification()
+            val monitoringEnabled = intent.getBooleanExtra(EXTRA_MONITORING_ENABLED, false)
+            val notification = buildNotification(monitoringEnabled)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val isImportedAudio = intent.getStringExtra(EXTRA_AUDIO_URI).isNullOrBlank().not()
-                val serviceType = when {
-                    isImportedAudio && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ->
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
-                            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                    else -> 0
-                }
                 startForeground(
                     NOTIFICATION_ID,
                     notification,
-                    serviceType
+                    foregroundServiceType(intent, monitoringEnabled)
                 )
             } else {
                 startForeground(NOTIFICATION_ID, notification)
@@ -108,7 +98,7 @@ class UnifiedSessionService : LifecycleService() {
             val userId = intent.getStringExtra(EXTRA_USER_ID)
                 ?: throw SecurityException("Missing user ID.")
             val recordingConsent = getConsentToken(intent, "recording")
-            val monitoringConsent = getConsentToken(intent, "monitoring")
+            val monitoringConsent = if (monitoringEnabled) getConsentToken(intent, "monitoring") else null
             unifiedSessionEngine.startSession(
                 sessionId,
                 userId,
@@ -119,7 +109,8 @@ class UnifiedSessionService : LifecycleService() {
                 audioInput = intent.getStringExtra(EXTRA_AUDIO_URI)
                     ?.takeIf(String::isNotBlank)
                     ?.let(AudioInputSource::Imported)
-                    ?: AudioInputSource.Microphone
+                    ?: AudioInputSource.Microphone,
+                monitoringEnabled = monitoringEnabled
             )
             isServiceStarted = true
         } catch (e: Exception) {
@@ -128,6 +119,14 @@ class UnifiedSessionService : LifecycleService() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
+    }
+
+    private fun foregroundServiceType(intent: Intent, monitoringEnabled: Boolean): Int = when {
+        !intent.getStringExtra(EXTRA_AUDIO_URI).isNullOrBlank() -> ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        monitoringEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        else -> 0
     }
 
     private suspend fun stopSessionService() {
@@ -156,7 +155,7 @@ class UnifiedSessionService : LifecycleService() {
         manager.createNotificationChannel(channel)
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(monitoringEnabled: Boolean): Notification {
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
@@ -175,9 +174,9 @@ class UnifiedSessionService : LifecycleService() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Session Active")
-            .setContentText("Stress detector is actively monitoring...")
-            .setSmallIcon(com.stressdetector.mobile.R.mipmap.ic_launcher)
+            .setContentTitle("Verbatim+ aktif")
+            .setContentText(if (monitoringEnabled) "Rekaman dan PPG lokal berjalan" else "Rekaman dan analisis audio lokal berjalan")
+            .setSmallIcon(com.stressdetector.mobile.R.drawable.ic_verbatim_notification)
             .setContentIntent(pendingIntent)
             .addAction(android.R.drawable.ic_media_pause, "Stop", stopPendingIntent)
             .setOngoing(true)
@@ -215,6 +214,7 @@ class UnifiedSessionService : LifecycleService() {
         const val EXTRA_SESSION_NAME = "EXTRA_SESSION_NAME"
         const val EXTRA_SESSION_LANGUAGE = "EXTRA_SESSION_LANGUAGE"
         const val EXTRA_AUDIO_URI = "EXTRA_AUDIO_URI"
+        const val EXTRA_MONITORING_ENABLED = "EXTRA_MONITORING_ENABLED"
         private const val MAX_PROCESSED_COMMANDS = 64
 
         fun putConsentToken(intent: Intent, prefix: String, token: ConsentToken) {

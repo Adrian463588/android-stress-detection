@@ -285,6 +285,7 @@ class HomePpgProcessingCoordinator(
         append(':').append(window.timestampsMillis.firstOrNull() ?: 0L)
         append(':').append(window.timestampsMillis.lastOrNull() ?: 0L)
         append(':').append(window.rawValues.contentHashCode())
+        append(':').append(window.accelerometerSamples.hashCode())
     }
 
     private fun preparedFingerprint(window: PreparedPpgWindow): String = buildString {
@@ -297,6 +298,7 @@ class HomePpgProcessingCoordinator(
         append(':').append(window.observedMask.contentHashCode())
         append(':').append(window.repairedShortGapMask.contentHashCode())
         append(':').append(window.gridResampledMask.contentHashCode())
+        append(':').append(window.motionAnnotation.hashCode())
     }
 
     private fun reasonOf(availability: PredictionAvailability): String = when (availability) {

@@ -28,7 +28,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.stressdetector.mobile.ui.MetricRow
+import com.stressdetector.mobile.ui.LocalAppMotion
 import com.stressdetector.mobile.ui.StatusDot
 
 internal data class HomeSessionStatusContent(
@@ -64,16 +64,12 @@ internal fun SessionStatusCardContent(model: HomeSessionStatusContent, onEvent: 
         if (model.showLiveProgress) {
             SessionProgress(state, model.statusColor)
         }
+        ActiveSessionCompanion(state)
         if (model.showSessionData) {
             SessionResultSummary(
                 green = state.greenPrediction,
                 ir = state.irPrediction,
                 disagreement = state.hasChannelDisagreement
-            )
-        } else if (model.showLiveProgress) {
-            MetricRow(
-                label = "Sampel diterima",
-                value = "Green ${state.greenSamples} · IR ${state.irSamples}"
             )
         }
         SessionMessages(state, model.isCheckingConnection)
@@ -121,7 +117,7 @@ private fun SessionStatusHeader(state: HomeUiState, statusColor: Color) {
         StatusDot(color = statusColor, size = 10.dp)
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "SESSION STATUS",
+                text = "STATUS SESI",
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -137,31 +133,42 @@ private fun SessionStatusHeader(state: HomeUiState, statusColor: Color) {
 
 @Composable
 private fun SessionProgress(state: HomeUiState, statusColor: Color) {
-    val finalization = state.finalizationProgress
-    val progress = finalization?.progress ?: state.progress
+    val finalization = state.finalizationStatus
+    if (finalization != null) {
+        if (LocalAppMotion.current.enabled) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().height(6.dp),
+                color = statusColor,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        }
+        Text(
+            text = finalization.label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+        )
+        if (finalization.completedWindows != null && finalization.totalWindows != null) {
+            Text(
+                text = "${finalization.completedWindows} dari ${finalization.totalWindows} window diperiksa",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        return
+    }
     @Suppress("DEPRECATION")
     LinearProgressIndicator(
-        progress = progress.coerceIn(0f, 1f),
+        progress = state.progress.coerceIn(0f, 1f),
         modifier = Modifier.fillMaxWidth().height(6.dp),
         color = statusColor,
         trackColor = MaterialTheme.colorScheme.surfaceVariant
     )
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = finalization?.label ?: "Session time ${formatSessionElapsed(state.elapsedMillis)} / 05:00",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = "${(progress * 100f).toInt()}%",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
+    Text(
+        text = "Waktu sesi ${formatSessionElapsed(state.elapsedMillis)} / 05:00",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 @Composable

@@ -9,6 +9,51 @@ import org.junit.Test
 
 class PpgBatchCodecTest {
     @Test
+    fun roundTripPreservesObservedAccelerometerAndRejectsOutOfSpanMotion() {
+        val motion = listOf(
+            AccelerometerSample(1_000_000_000L, 100L, 0.1f, 9.7f, 0.2f),
+            AccelerometerSample(1_040_000_000L, 140L, 0.2f, 9.8f, 0.3f)
+        )
+        val batch = PpgBatch(
+            type = PpgType.GREEN,
+            timestampsMillis = longArrayOf(100L, 140L),
+            rawValues = intArrayOf(1, 2),
+            sessionId = "observed",
+            sessionNonce = "nonce",
+            elapsedMillis = 140L,
+            elapsedStartMillis = 100L,
+            elapsedEndMillis = 140L,
+            accelerometerSamples = motion
+        )
+
+        assertEquals(motion, PpgBatchCodec.decode(PpgBatchCodec.encode(batch)).accelerometerSamples)
+        assertThrows(IllegalArgumentException::class.java) {
+            batch.copy(
+                accelerometerSamples = motion + AccelerometerSample(1_080_000_000L, 180L, 0f, 0f, 0f)
+            )
+        }
+    }
+
+    @Test
+    fun priorV4BatchDecodesWithUnavailableMotion() {
+        val current = PpgBatch(
+            type = PpgType.IR,
+            timestampsMillis = longArrayOf(100L),
+            rawValues = intArrayOf(8),
+            sessionId = "prior",
+            sessionNonce = "nonce",
+            elapsedMillis = 100L
+        )
+        val encoded = PpgBatchCodec.encode(current)
+        encoded[5] = 4 // V4 has the same identity/PPG fields, but no trailing motion count.
+        val prior = encoded.copyOf(encoded.size - Int.SIZE_BYTES)
+
+        val decoded = PpgBatchCodec.decode(prior)
+        assertEquals(4, decoded.schemaVersion)
+        assertTrue(decoded.accelerometerSamples.isEmpty())
+    }
+
+    @Test
     fun roundTripPreservesBatch() {
         val batch = PpgBatch(
             type = PpgType.GREEN,

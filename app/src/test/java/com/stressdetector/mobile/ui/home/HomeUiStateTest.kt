@@ -5,17 +5,29 @@ import com.stressdetector.mobile.data.ReachabilityProbeStatus
 import com.stressdetector.mobile.data.WatchConnectionStatus
 import com.stressdetector.mobile.data.WearConnectionState
 import com.stressdetector.mobile.data.WearReachabilityPhase
+import com.stressdetector.mobile.domain.FinalizationChannelProgress
 import com.stressdetector.mobile.domain.FinalizationStage
 import com.stressdetector.mobile.domain.ModelGateState
 import com.stressdetector.mobile.domain.ModelGateStatus
 import com.stressdetector.mobile.domain.PredictionAvailability
 import com.stressdetector.mobile.domain.StressSessionFinalizationState
+import com.stressdetector.mobile.signal.MotionAnnotation
+import com.stressdetector.shared.ModelDecisionPolicy
 import com.stressdetector.shared.PermissionStatus
+import com.stressdetector.shared.PpgType
+import com.stressdetector.shared.SignalQualitySummary
+import com.stressdetector.shared.StressPrediction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HomeUiStateTest {
+    @Test
+    fun motionDetailDistinguishesMissingWindowFromMissingAccelerometer() {
+        assertEquals("Tidak ada window yang dievaluasi", motionEvidenceLabel(emptyList()))
+        assertEquals("Akselerometer tidak tersedia untuk window yang dievaluasi", motionEvidenceLabel(listOf(MotionAnnotation())))
+    }
+
     private val readyModelGate = ModelGateState(ModelGateStatus.READY)
     private val granted = PermissionStatus(
         allGranted = true,
@@ -58,6 +70,128 @@ class HomeUiStateTest {
 
         assertEquals(HomeSessionStatus.FINALIZING, state.status)
         assertEquals(null, state.error)
+        assertEquals("Menyelesaikan batch Watch…", state.finalizationStatus?.label)
+        assertEquals(null, state.finalizationStatus?.totalWindows)
+    }
+
+    @Test
+    fun acceptedPpgAndGapUseRealReceiptWhileSessionClockKeepsRunning() {
+        val recording = MobileUiState(
+            modelGate = readyModelGate,
+            isRecording = true,
+            elapsedMillis = 180_000L,
+            progress = 0.6f,
+            totalGreenSamples = 100,
+            totalIrSamples = 80,
+            missingSequenceCount = 2L,
+            connectionState = WearConnectionState(
+                reachabilityPhase = WearReachabilityPhase.STREAMING,
+                lastStreamingEvidenceMillis = 100_000L
+            )
+        )
+
+        val receiving = HomeUiState.from(recording, granted, nowMillis = 103_000L)
+        val stale = HomeUiState.from(recording, granted, nowMillis = 106_000L)
+
+        assertEquals("PPG diterima · ada jeda dalam sesi", receiving.recordingSignalLabel)
+        assertEquals("Data PPG belum diterima lagi", stale.recordingSignalLabel)
+        val disconnected = HomeUiState.from(
+            recording.copy(connectionState = recording.connectionState.copy(reachabilityPhase = WearReachabilityPhase.OFFLINE)),
+            granted,
+            nowMillis = 103_000L
+        )
+        assertEquals("Watch terputus · PPG saat ini tidak tersedia", disconnected.recordingSignalLabel)
+        assertEquals(180_000L, stale.elapsedMillis)
+        assertEquals(0.6f, stale.progress)
+    }
+
+    @Test
+    fun waitingGameRequiresFrozenSnapshotForTheActiveEvaluatingSession() {
+        val evaluating = MobileUiState(
+            sessionId = "session-a",
+            finalizationSnapshotSessionId = "session-a",
+            finalizationState = StressSessionFinalizationState.Evaluating(null, 0, 0),
+            modelGate = readyModelGate
+        )
+
+        assertTrue(HomeUiState.from(evaluating, granted).canPlayWaitingGame)
+        assertTrue(!HomeUiState.from(evaluating.copy(finalizationSnapshotSessionId = "session-b"), granted).canPlayWaitingGame)
+        val draining = HomeUiState.from(evaluating.copy(finalizationState = StressSessionFinalizationState.Draining), granted)
+        val completed = HomeUiState.from(evaluating.copy(finalizationState = StressSessionFinalizationState.Completed), granted)
+        assertTrue(!draining.canPlayWaitingGame)
+        assertTrue(!completed.canPlayWaitingGame)
+    }
+
+    @Test
+    fun completedPredictionDoesNotKeepWaitingGameAvailable() {
+        val prediction = StressPrediction(
+            sensor = PpgType.GREEN,
+            label = "NORMAL",
+            stressProbability = 0.2f,
+            confidence = 0.8f,
+            quality = SignalQualitySummary(true, "good", "usable", 4_500, 0.0, 0.0, 0),
+            generatedAtMillis = 1L,
+            decisionPolicy = ModelDecisionPolicy("test", 0.5f, "test")
+        )
+        val completed = HomeUiState.from(
+            MobileUiState(
+                modelGate = readyModelGate,
+                sessionId = "session-a",
+                finalizationState = StressSessionFinalizationState.Completed,
+                primaryPrediction = prediction,
+                primaryPredictionState = PredictionAvailability.Ready(prediction)
+            ),
+            granted
+        )
+
+        assertEquals(HomeSessionStatus.RESULT_READY, completed.status)
+        assertTrue(!completed.canPlayWaitingGame)
+        assertTrue(
+            !HomeUiState.from(
+                MobileUiState(
+                    modelGate = readyModelGate,
+                    sessionId = "session-b",
+                    finalizationState = StressSessionFinalizationState.InsufficientSignal("quality")
+                ),
+                granted
+            ).canPlayWaitingGame
+        )
+    }
+
+    @Test
+    fun evaluationShowsReportedWindowCountWithoutWeightedPercentage() {
+        val evaluating = StressSessionFinalizationState.Evaluating(
+            channel = PpgType.IR,
+            completedWindows = 2,
+            totalWindows = 7,
+            channels = mapOf(
+                PpgType.GREEN to FinalizationChannelProgress(3, 7),
+                PpgType.IR to FinalizationChannelProgress(2, 7)
+            )
+        )
+
+        val status = HomeUiState.from(
+            MobileUiState(modelGate = readyModelGate, finalizationState = evaluating),
+            granted
+        ).finalizationStatus
+
+        assertEquals("Memeriksa kualitas dan model IR…", status?.label)
+        assertEquals(5, status?.completedWindows)
+        assertEquals(14, status?.totalWindows)
+    }
+
+    @Test
+    fun evaluationUsesReportedProgressBeforePerChannelMapExists() {
+        val status = HomeUiState.from(
+            MobileUiState(
+                modelGate = readyModelGate,
+                finalizationState = StressSessionFinalizationState.Evaluating(PpgType.GREEN, 2, 7)
+            ),
+            granted
+        ).finalizationStatus
+
+        assertEquals(2, status?.completedWindows)
+        assertEquals(7, status?.totalWindows)
     }
 
     @Test
@@ -123,7 +257,23 @@ class HomeUiStateTest {
         )
 
         assertEquals(HomeSessionStatus.INSUFFICIENT_SIGNAL, state.status)
-        assertTrue(state.notice?.contains("ppg_true_gap_detected") == true)
+        assertEquals("Sinyal tidak cukup untuk menentukan hasil. Periksa detail teknis.", state.notice)
+    }
+
+    @Test
+    fun insufficientSignalWithPendingPersistenceOffersManualRetry() {
+        val state = HomeUiState.from(
+            MobileUiState(
+                modelGate = readyModelGate,
+                finalizationState = StressSessionFinalizationState.InsufficientSignal("core_coverage_insufficient"),
+                pendingPersistence = true
+            ),
+            granted
+        )
+
+        assertEquals(HomeSessionStatus.INSUFFICIENT_SIGNAL, state.status)
+        assertTrue(state.canRetryFinalization)
+        assertEquals("Sesi belum tersimpan. Ulangi finalisasi.", state.notice)
     }
 
     @Test

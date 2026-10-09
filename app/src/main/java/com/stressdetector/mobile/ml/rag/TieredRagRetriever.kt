@@ -5,6 +5,9 @@ import com.stressdetector.mobile.domain.engine.EvidenceSourceTier
 import com.stressdetector.mobile.domain.engine.KnowledgeCitation
 import com.stressdetector.mobile.domain.engine.RagRetrievalResult
 import com.stressdetector.mobile.domain.engine.RagRetriever
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /**
  * Single local-first retrieval projection. Web grounding remains outside this boundary and is
@@ -13,6 +16,7 @@ import com.stressdetector.mobile.domain.engine.RagRetriever
 class TieredRagRetriever(private val appRag: RagRetriever, private val bundledLocal: RagRetriever) : RagRetriever {
     override suspend fun retrieveRelevantPassages(query: String, maxResults: Int, minRelevanceThreshold: Float): RagRetrievalResult {
         val appResult = retrieveFrom(appRag, query, maxResults, minRelevanceThreshold, "APP_RAG")
+        if (appResult.hasUsableEvidence()) return appResult.withTier(EvidenceSourceTier.APP_RAG)
         val bundledResult = retrieveFrom(
             bundledLocal,
             query,
@@ -21,10 +25,10 @@ class TieredRagRetriever(private val appRag: RagRetriever, private val bundledLo
             "Bundled local corpus"
         )
         return when {
-            appResult.hasUsableEvidence() -> appResult.withTier(EvidenceSourceTier.APP_RAG)
             bundledResult.hasUsableEvidence() -> bundledResult.withTier(EvidenceSourceTier.BUNDLED_LOCAL)
             else -> RagRetrievalResult.Unavailable(
-                "Tidak ada evidence lokal yang valid dari APP_RAG atau dataset bawaan.",
+                "Tidak ada evidence lokal yang valid. APP_RAG: ${appResult.diagnosticReason()}; " +
+                    "dataset bawaan: ${bundledResult.diagnosticReason()}.",
                 sourceTier = EvidenceSourceTier.NONE
             )
         }
@@ -37,10 +41,21 @@ class TieredRagRetriever(private val appRag: RagRetriever, private val bundledLo
         minRelevanceThreshold: Float,
         label: String
     ): RagRetrievalResult = runCatching {
-        retriever.retrieveRelevantPassages(query, maxResults, minRelevanceThreshold)
+        currentCoroutineContext().ensureActive()
+        retriever.retrieveRelevantPassages(query, maxResults, minRelevanceThreshold).also {
+            currentCoroutineContext().ensureActive()
+        }
     }.getOrElse { error ->
+        if (error is CancellationException) throw error
+        currentCoroutineContext().ensureActive()
         RagRetrievalResult.Unavailable("$label unavailable: ${error.message ?: "retrieval failed"}")
     }
+}
+
+private fun RagRetrievalResult.diagnosticReason(): String = when (this) {
+    is RagRetrievalResult.Unavailable -> reason
+    is RagRetrievalResult.BelowThreshold -> "evidence_below_calibrated_threshold"
+    is RagRetrievalResult.Retrieved -> "no_usable_provenance"
 }
 
 private fun RagRetrievalResult.hasUsableEvidence(): Boolean = this is RagRetrievalResult.Retrieved &&

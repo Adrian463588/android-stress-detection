@@ -1,6 +1,7 @@
 package com.stressdetector.wear.data
 
 import android.content.Context
+import android.util.Log
 import com.stressdetector.shared.PpgBatchPolicy
 import com.stressdetector.shared.PpgTerminalReceipt
 import com.stressdetector.shared.PpgType
@@ -13,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
 
 /** Immutable sample copied from a Samsung callback before background I/O. */
 data class PpgRawSample(
@@ -52,6 +54,7 @@ class PpgCallbackBatch private constructor(val samples: List<PpgRawSample>, val 
 /** Buffers raw Watch values; only canonical phone preprocessing may resample them. */
 class PpgSensorRepository(context: Context, private val onFatalError: (String) -> Unit = {}) {
     private val sender = PpgBatchSender(context)
+    private val accelerometer = WatchAccelerometerCollector(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val ingress = Channel<IngressEvent>(capacity = INGRESS_CAPACITY)
 
@@ -66,6 +69,7 @@ class PpgSensorRepository(context: Context, private val onFatalError: (String) -
     private val timestampNormalizers = PpgType.acquisitionChannels.associateWith {
         SensorTimestampNormalizer(SensorTimestampContract.SAMSUNG_HEALTH_EPOCH_MILLIS)
     }
+    private val sourceGaps = PpgType.acquisitionChannels.associateWith { SourceGapSummary(it.sourceRateHz) }
 
     init {
         scope.launch {
@@ -78,13 +82,15 @@ class PpgSensorRepository(context: Context, private val onFatalError: (String) -
         }
     }
 
+    @Suppress("LongParameterList") // Session identity, two clocks, peer and mode are one acquisition boundary.
     @Synchronized
     fun startSession(
         identity: SessionIdentity,
         startedElapsedRealtimeMillis: Long,
         startedAtEpochMillis: Long,
         phoneNodeId: String?,
-        generation: Long
+        generation: Long,
+        collectMotion: Boolean = false
     ) {
         require(identity.isCanonical) { "Wear PPG requires a canonical SessionIdentity" }
         require(startedAtEpochMillis > 0L) { "startedAtEpochMillis must be a valid epoch timestamp" }
@@ -95,6 +101,12 @@ class PpgSensorRepository(context: Context, private val onFatalError: (String) -
         this.elapsedTimeline = PpgElapsedTimeline(startedAtEpochMillis)
         samples.clear()
         timestampNormalizers.values.forEach(SensorTimestampNormalizer::reset)
+        sourceGaps.values.forEach(SourceGapSummary::clear)
+        if (collectMotion) {
+            accelerometer.start(TimeUnit.MILLISECONDS.toNanos(startedElapsedRealtimeMillis))
+        } else {
+            accelerometer.reset()
+        }
         accepting = true
     }
 
@@ -194,12 +206,15 @@ class PpgSensorRepository(context: Context, private val onFatalError: (String) -
 
     fun flushAll(onComplete: ((Boolean) -> Unit)? = null) {
         accepting = false
+        accelerometer.stop()
         scope.launch {
             ingress.send(IngressEvent.Drain(onComplete ?: {}))
         }
     }
 
     fun expectedSequences(sessionId: String): PpgExpectedSequences = sender.expectedSequences(sessionId)
+
+    fun stopMotionCollection() = accelerometer.stop()
 
     fun awaitTerminalAcknowledgement(receipt: PpgTerminalReceipt, nodeId: String?, onComplete: (Boolean) -> Unit) =
         sender.awaitTerminalAcknowledgement(receipt, nodeId, onComplete = onComplete)
@@ -257,6 +272,7 @@ class PpgSensorRepository(context: Context, private val onFatalError: (String) -
         buffer.values += sample.value
         buffer.elapsedMillis += elapsedMillis
         buffer.lastTimestamp = normalizedTimestamp
+        sourceGaps.getValue(sample.type).observe(normalizedTimestamp)
         WearTrackingState.recordAccepted(sample.type, sample.statusCode)
     }
 
@@ -290,7 +306,8 @@ class PpgSensorRepository(context: Context, private val onFatalError: (String) -
                 elapsedMillis = endElapsed,
                 elapsedStartMillis = startElapsed,
                 elapsedEndMillis = endElapsed,
-                callbackReceivedAtElapsedRealtimeMillis = callbackReceivedAt
+                callbackReceivedAtElapsedRealtimeMillis = callbackReceivedAt,
+                accelerometerSamples = accelerometer.samplesBetween(startElapsed, endElapsed)
             )
             buffer.clear()
         }.onFailure { error ->
@@ -304,7 +321,49 @@ class PpgSensorRepository(context: Context, private val onFatalError: (String) -
         flush(PpgType.GREEN)
         flush(PpgType.IR)
         flush(PpgType.RED)
-        sender.awaitFlush(onComplete = event.onComplete)
+        val telemetry = WearTrackingState.state.value.channelTelemetry
+        val summaries = PpgType.acquisitionChannels.map { type ->
+            val gaps = sourceGaps.getValue(type)
+            val channel = telemetry[type]
+            "channel=${type.assetSuffix} accepted=${channel?.acceptedSampleCount ?: 0} " +
+                "invalidStatus=${channel?.invalidStatusCount ?: 0} " +
+                "firstSourceDeltaMs=${gaps.firstTimestampMillis?.minus(startedAtEpochMillis)} " +
+                "lastSourceDeltaMs=${gaps.lastTimestampMillis?.minus(startedAtEpochMillis)} " +
+                "sourceMaxGapMs=${gaps.maxGapMillis} sourceGapsOverFour=${gaps.gapCount} " +
+                "sendFailures=${channel?.transportGapCount ?: 0}"
+        }
+        sender.awaitFlush { settled ->
+            summaries.forEach { summary -> Log.i(LOG_TAG, "$summary dispatchSettled=$settled") }
+            event.onComplete(settled)
+        }
+    }
+
+    private class SourceGapSummary(private val sourceRateHz: Int) {
+        var firstTimestampMillis: Long? = null
+            private set
+        var lastTimestampMillis: Long? = null
+            private set
+        var maxGapMillis: Long = 0L
+            private set
+        var gapCount: Int = 0
+            private set
+
+        fun observe(timestampMillis: Long) {
+            if (firstTimestampMillis == null) firstTimestampMillis = timestampMillis
+            lastTimestampMillis?.let { previous ->
+                val gap = timestampMillis - previous
+                maxGapMillis = maxOf(maxGapMillis, gap)
+                if (gap > MAX_CONSECUTIVE_INTERVALS * MILLIS_PER_SECOND / sourceRateHz) gapCount++
+            }
+            lastTimestampMillis = timestampMillis
+        }
+
+        fun clear() {
+            firstTimestampMillis = null
+            lastTimestampMillis = null
+            maxGapMillis = 0L
+            gapCount = 0
+        }
     }
 
     private class PpgSampleBuffers {
@@ -341,6 +400,9 @@ class PpgSensorRepository(context: Context, private val onFatalError: (String) -
 
     companion object {
         const val INGRESS_CAPACITY = 500
+        private const val LOG_TAG = "WearPpg"
+        private const val MAX_CONSECUTIVE_INTERVALS = 4L
+        private const val MILLIS_PER_SECOND = 1_000L
     }
 
     private fun monotonicNowMillis(): Long = System.nanoTime() / 1_000_000L

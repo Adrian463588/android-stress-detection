@@ -213,10 +213,52 @@
         {"role":"download","path":"id-tokens.txt","url":"https://huggingface.co/spacewave/sherpa-onnx-streaming-zipformer2-id/resolve/4e5a13cbe3e9cd4e3775447d86178ef51759096f/tokens.txt","sizeBytes":5403,"sha256":"f0b6f5bf602d96f60d79bb17192c51eeffb6189250f132b1dfdf72b130d66968"},
         {"role":"runtime","path":"asr/id/tokens.txt","bundlePath":"asr/id/tokens.txt","sizeBytes":5403,"sha256":"f0b6f5bf602d96f60d79bb17192c51eeffb6189250f132b1dfdf72b130d66968"}
       ]
+    },
+    {
+      "id": "asr-whisper-tiny-int8-encoder",
+      "kind": "SPEECH_COMPONENT",
+      "version": "whisper-tiny-multilingual-int8",
+      "revision": "65176e2deb88badc814a94058666cadccc29b61c",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/tree/65176e2deb88badc814a94058666cadccc29b61c",
+      "license": "MIT",
+      "allowedRedirectHosts": ["huggingface.co", "*.huggingface.co", "hf.co", "*.hf.co"],
+      "files": [
+        {"role":"download","path":"whisper-tiny-encoder.int8.onnx","url":"https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-encoder.int8.onnx","sizeBytes":12937772,"sha256":"d24fb083ae3b1041fc24e97971d60e280c9342201fbb67b0ab428a8b4a51a434"},
+        {"role":"runtime","path":"asr/whisper/tiny-encoder.int8.onnx","bundlePath":"asr/whisper/tiny-encoder.int8.onnx","sizeBytes":12937772,"sha256":"d24fb083ae3b1041fc24e97971d60e280c9342201fbb67b0ab428a8b4a51a434"}
+      ]
+    },
+    {
+      "id": "asr-whisper-tiny-int8-decoder",
+      "kind": "SPEECH_COMPONENT",
+      "version": "whisper-tiny-multilingual-int8",
+      "revision": "65176e2deb88badc814a94058666cadccc29b61c",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/tree/65176e2deb88badc814a94058666cadccc29b61c",
+      "license": "MIT",
+      "allowedRedirectHosts": ["huggingface.co", "*.huggingface.co", "hf.co", "*.hf.co"],
+      "files": [
+        {"role":"download","path":"whisper-tiny-decoder.int8.onnx","url":"https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-decoder.int8.onnx","sizeBytes":89855401,"sha256":"d2fece8dd42771f1df975c6c0445770d0c292bf7547c2cae04a6c0cc57540925"},
+        {"role":"runtime","path":"asr/whisper/tiny-decoder.int8.onnx","bundlePath":"asr/whisper/tiny-decoder.int8.onnx","sizeBytes":89855401,"sha256":"d2fece8dd42771f1df975c6c0445770d0c292bf7547c2cae04a6c0cc57540925"}
+      ]
+    },
+    {
+      "id": "asr-whisper-tiny-int8-tokens",
+      "kind": "SPEECH_COMPONENT",
+      "version": "whisper-tiny-multilingual-int8",
+      "revision": "65176e2deb88badc814a94058666cadccc29b61c",
+      "runtimeVersion": "sherpa-onnx-1.13.4",
+      "sourcePage": "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/tree/65176e2deb88badc814a94058666cadccc29b61c",
+      "license": "MIT",
+      "allowedRedirectHosts": ["huggingface.co", "*.huggingface.co", "hf.co", "*.hf.co"],
+      "files": [
+        {"role":"download","path":"whisper-tiny-tokens.txt","url":"https://huggingface.co/csukuangfj/sherpa-onnx-whisper-tiny/resolve/65176e2deb88badc814a94058666cadccc29b61c/tiny-tokens.txt","sizeBytes":816730,"sha256":"b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126"},
+        {"role":"runtime","path":"asr/whisper/tiny-tokens.txt","bundlePath":"asr/whisper/tiny-tokens.txt","sizeBytes":816730,"sha256":"b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126"}
+      ]
     }
   ],
   "speechBundle": {
-    "bundleVersion": "sherpa-onnx-1.13.4-omnilingual-ctc-v3-supertonic3",
+    "bundleVersion": "sherpa-onnx-1.13.4-omnilingual-ctc-v3-supertonic3-whisper-tiny-v4",
     "runtimeVersion": "1.13.4",
     "sampleRateHz": 16000,
     "languages": ["id", "en"],
@@ -233,7 +275,10 @@
       "asr-indonesian-zipformer2-int8",
       "asr-indonesian-zipformer2-int8-decoder",
       "asr-indonesian-zipformer2-int8-joiner",
-      "asr-indonesian-zipformer2-int8-tokens"
+      "asr-indonesian-zipformer2-int8-tokens",
+      "asr-whisper-tiny-int8-encoder",
+      "asr-whisper-tiny-int8-decoder",
+      "asr-whisper-tiny-int8-tokens"
     ]
   }
 }

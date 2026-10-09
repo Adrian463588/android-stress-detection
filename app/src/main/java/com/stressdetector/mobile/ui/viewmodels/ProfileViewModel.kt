@@ -18,6 +18,8 @@ import com.stressdetector.mobile.domain.voice.VoiceLanguage
 import com.stressdetector.mobile.domain.voice.VoiceSendMode
 import com.stressdetector.mobile.domain.voice.VoiceSettingsRepository
 import com.stressdetector.mobile.lifecycle.DataLifecycleService
+import com.stressdetector.mobile.lifecycle.SafUserBackupService
+import com.stressdetector.mobile.lifecycle.SafUserBackupState
 import com.stressdetector.mobile.ml.artifacts.ArtifactState
 import com.stressdetector.mobile.ml.artifacts.EmbeddingArtifactManager
 import com.stressdetector.mobile.ml.llm.ModelDownloadState
@@ -91,10 +93,13 @@ data class ProfileUiState(
     val voiceReplyEnabled: Boolean = true,
     val modelStorage: ModelStorageState = ModelStorageState(),
     val durableSyncReport: DurableSyncReport? = null,
+    val userBackup: SafUserBackupState = SafUserBackupState(),
     val useStressHistoryInAi: Boolean = true,
     val stressHistoryContextStatus: String? = null
 )
 
+// Existing Profile composition boundary; keep dependencies explicit instead of hiding a service locator.
+@Suppress("LongParameterList")
 class ProfileViewModel(
     private val consentDao: ConsentDao,
     private val modelManager: com.stressdetector.mobile.ml.llm.ModelManager,
@@ -109,7 +114,8 @@ class ProfileViewModel(
     private val durableArtifactCoordinator: DurableArtifactCoordinator,
     private val stressHistoryContextProvider: StressHistoryContextProvider? = null,
     private val documentIngestionService: DocumentIngestionService? = null,
-    private val embeddingArtifactManager: EmbeddingArtifactManager
+    private val embeddingArtifactManager: EmbeddingArtifactManager,
+    private val userBackupService: SafUserBackupService? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -125,6 +131,11 @@ class ProfileViewModel(
 
     init {
         loadConsents()
+        userBackupService?.let { backup ->
+            viewModelScope.launch {
+                backup.state.collect { state -> _uiState.update { it.copy(userBackup = state) } }
+            }
+        }
         viewModelScope.launch(Dispatchers.IO) {
             publishDurableSyncReport(durableArtifactCoordinator.restore())
         }
@@ -539,10 +550,58 @@ class ProfileViewModel(
         }
     }
 
+    // UI error boundary: expose any I/O/validation error, but never consume coroutine cancellation.
+    @Suppress("TooGenericExceptionCaught")
+    fun createSafBackup(passphrase: String) {
+        val backup = userBackupService ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(isLifecycleOperationRunning = true, statusMessage = null) }
+            val secret = passphrase.toCharArray()
+            try {
+                val generation = backup.createBackup(secret)
+                _uiState.update {
+                    it.copy(statusMessage = "Cadangan terenkripsi tersimpan di SAF: $generation. Simpan kata sandi pemulihan Anda.")
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _uiState.update { it.copy(statusMessage = error.message ?: "Cadangan SAF gagal.") }
+            } finally {
+                secret.fill('\u0000')
+                _uiState.update { it.copy(isLifecycleOperationRunning = false) }
+            }
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    fun restoreSafBackup(passphrase: String) {
+        val backup = userBackupService ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(isLifecycleOperationRunning = true, statusMessage = null) }
+            val secret = passphrase.toCharArray()
+            try {
+                val generation = backup.restoreBackup(secret)
+                _uiState.update {
+                    it.copy(statusMessage = "Cadangan $generation dipulihkan. Buka ulang halaman untuk memuat ulang data.")
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _uiState.update { it.copy(statusMessage = error.message ?: "Pemulihan SAF gagal.") }
+            } finally {
+                secret.fill('\u0000')
+                _uiState.update { it.copy(isLifecycleOperationRunning = false) }
+            }
+        }
+    }
+
     fun purgeAllData() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLifecycleOperationRunning = true, statusMessage = null) }
-            runCatching { dataLifecycleService.deleteUserData(PrivacyIdentity.LOCAL_PROFILE_ID) }
+            runCatching {
+                userBackupService?.forgetLocalSecret()
+                dataLifecycleService.deleteUserData(PrivacyIdentity.LOCAL_PROFILE_ID)
+            }
                 .onSuccess {
                     _uiState.update {
                         it.copy(
@@ -654,7 +713,15 @@ class ProfileViewModel(
             _uiState.update {
                 it.copy(isImportingSpeechBundle = true, speechStatusMessage = "Validating Sherpa STT/VAD/diarization bundle...")
             }
-            val result = speechBundleManager.importBundle(uri)
+            val result = speechBundleManager.importBundle(uri) { manifest ->
+                val runtime = checkNotNull(speechRuntime) { "Runtime validasi speech bundle tidak tersedia." }
+                when (val readiness = runtime.preflight(manifest)) {
+                    SpeechRuntimeState.Ready -> Unit
+                    SpeechRuntimeState.Checking -> error("Validasi runtime speech belum selesai.")
+                    is SpeechRuntimeState.Unavailable -> error(readiness.reason)
+                    is SpeechRuntimeState.Failed -> error(readiness.message)
+                }
+            }
             _uiState.update {
                 it.copy(
                     isImportingSpeechBundle = false,
@@ -837,7 +904,8 @@ class ProfileViewModel(
                 durableArtifactCoordinator = AppLocator.durableArtifactCoordinator(context),
                 stressHistoryContextProvider = AppLocator.stressHistoryContextProvider(context),
                 documentIngestionService = AppLocator.documentIngestionService(context),
-                embeddingArtifactManager = AppLocator.embeddingArtifactManager(context)
+                embeddingArtifactManager = AppLocator.embeddingArtifactManager(context),
+                userBackupService = AppLocator.userBackupService(context)
             ) as T
         }
     }

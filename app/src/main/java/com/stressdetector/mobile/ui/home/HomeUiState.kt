@@ -12,6 +12,7 @@ import com.stressdetector.mobile.domain.PredictionWindowStats
 import com.stressdetector.mobile.domain.StressSessionFinalizationState
 import com.stressdetector.mobile.ui.components.TransportUiState
 import com.stressdetector.shared.PermissionStatus
+import com.stressdetector.shared.PpgType
 import com.stressdetector.shared.StressPrediction
 
 enum class HomeSessionStatus {
@@ -26,10 +27,7 @@ enum class HomeSessionStatus {
     ERROR
 }
 
-private const val FINALIZATION_STOP_PROGRESS = 0.05f
-private const val FINALIZATION_DRAIN_PROGRESS = 0.20f
-private const val FINALIZATION_EVALUATION_WEIGHT = 0.70f
-private const val FINALIZATION_PERSIST_PROGRESS = 0.95f
+private const val SIGNAL_STALE_MILLIS = 5_000L
 
 sealed interface HomeEvent {
     object Start : HomeEvent
@@ -57,8 +55,11 @@ data class HomePredictionUiState(
 
 data class HomeUiState(
     val status: HomeSessionStatus,
+    val sessionId: String?,
     val progress: Float,
     val elapsedMillis: Long,
+    val recordingSignalLabel: String,
+    val canPlayWaitingGame: Boolean,
     val greenSamples: Int,
     val irSamples: Int,
     val totalGreenSamples: Int,
@@ -67,12 +68,14 @@ data class HomeUiState(
     val transport: TransportUiState,
     val greenPrediction: HomePredictionUiState,
     val irPrediction: HomePredictionUiState,
+    val greenMotionAnnotations: List<com.stressdetector.mobile.signal.MotionAnnotation> = emptyList(),
+    val irMotionAnnotations: List<com.stressdetector.mobile.signal.MotionAnnotation> = emptyList(),
     val permissions: PermissionStatus,
     val modelGate: ModelGateState,
     val notice: String?,
     val error: String?,
     val canRetryFinalization: Boolean,
-    val finalizationProgress: HomeFinalizationProgress? = null
+    val finalizationStatus: HomeFinalizationStatus? = null
 ) {
     val canStartSession: Boolean
         get() = permissions.allGranted && modelGate.isReady && connection.canStartSession()
@@ -138,13 +141,22 @@ data class HomeUiState(
             greenPrediction.prediction.label != irPrediction.prediction.label
 
     companion object {
-        fun from(state: MobileUiState, permissions: PermissionStatus): HomeUiState {
+        fun from(state: MobileUiState, permissions: PermissionStatus, nowMillis: Long = System.currentTimeMillis()): HomeUiState {
             val green = state.greenUiState()
             val ir = state.irUiState()
+            val status = statusFor(state, permissions, green, ir)
+            val processingFrozenSnapshot = state.finalizationState is StressSessionFinalizationState.Evaluating ||
+                state.finalizationState == StressSessionFinalizationState.Persisting
             return HomeUiState(
-                status = statusFor(state, permissions, green, ir),
+                status = status,
+                sessionId = state.sessionId,
                 progress = state.progress,
                 elapsedMillis = state.elapsedMillis,
+                recordingSignalLabel = recordingSignalLabel(state, nowMillis),
+                canPlayWaitingGame = status == HomeSessionStatus.FINALIZING &&
+                    state.sessionId != null &&
+                    state.finalizationSnapshotSessionId == state.sessionId &&
+                    processingFrozenSnapshot,
                 greenSamples = state.totalGreenSamples,
                 irSamples = state.totalIrSamples,
                 totalGreenSamples = state.totalGreenSamples,
@@ -153,14 +165,17 @@ data class HomeUiState(
                 transport = state.transportUiState(),
                 greenPrediction = green,
                 irPrediction = ir,
+                greenMotionAnnotations = state.greenMotionAnnotations,
+                irMotionAnnotations = state.irMotionAnnotations,
                 permissions = permissions,
                 modelGate = state.modelGate,
-                notice = finalizationNotice(state.finalizationState) ?: state.sessionNotice,
+                notice = homeNotice(state),
                 error = state.lastError,
-                canRetryFinalization = state.finalizationState is StressSessionFinalizationState.Failed ||
+                canRetryFinalization = state.pendingPersistence ||
+                    state.finalizationState is StressSessionFinalizationState.Failed ||
                     state.finalizationState is StressSessionFinalizationState.TimedOut ||
                     (state.finalizationState as? StressSessionFinalizationState.ResultReady)?.persisted == false,
-                finalizationProgress = finalizationProgress(state.finalizationState)
+                finalizationStatus = finalizationStatus(state.finalizationState)
             )
         }
 
@@ -251,36 +266,56 @@ data class HomeUiState(
         private fun bothChannelsRejected(green: HomePredictionUiState, ir: HomePredictionUiState): Boolean =
             green.availability is PredictionAvailability.Rejected &&
                 ir.availability is PredictionAvailability.Rejected
-
-        private val StressSessionFinalizationState.isActive: Boolean
-            get() = this is StressSessionFinalizationState.Stopping ||
-                this is StressSessionFinalizationState.Draining ||
-                this is StressSessionFinalizationState.Evaluating ||
-                this is StressSessionFinalizationState.Persisting
-
-        private fun finalizationNotice(state: StressSessionFinalizationState): String? = when (state) {
-            StressSessionFinalizationState.Idle,
-            StressSessionFinalizationState.Completed -> null
-            StressSessionFinalizationState.Stopping -> "Menghentikan pengambilan data Watch…"
-            StressSessionFinalizationState.Draining -> "Menyelesaikan batch Watch yang sudah diterima…"
-            is StressSessionFinalizationState.Evaluating -> when (state.channel) {
-                null -> "Menyiapkan evaluasi sinyal…"
-                else ->
-                    "Mengevaluasi ${state.channel.assetSuffix} " +
-                        "(${state.completedWindows}/${state.totalWindows} window)…"
-            }
-            StressSessionFinalizationState.Persisting -> "Menyimpan hasil sesi…"
-            is StressSessionFinalizationState.ResultReady -> state.warning?.let {
-                "Hasil tersedia; penyimpanan belum selesai: $it"
-            } ?: "Hasil sesi tersedia."
-            is StressSessionFinalizationState.InsufficientSignal -> "Sinyal belum cukup: ${state.reason}"
-            is StressSessionFinalizationState.Failed -> "Finalisasi gagal: ${state.reason}"
-            is StressSessionFinalizationState.TimedOut -> "Finalisasi melebihi batas waktu: ${state.stage.name}"
-        }
     }
 }
 
-private fun finalizationProgress(state: StressSessionFinalizationState): HomeFinalizationProgress? = when (state) {
+private val StressSessionFinalizationState.isActive: Boolean
+    get() = this is StressSessionFinalizationState.Stopping ||
+        this is StressSessionFinalizationState.Draining ||
+        this is StressSessionFinalizationState.Evaluating ||
+        this is StressSessionFinalizationState.Persisting
+
+private fun homeNotice(state: MobileUiState): String? = when {
+    state.finalizationState.isActive -> null
+    state.pendingPersistence -> "Sesi belum tersimpan. Ulangi finalisasi."
+    else -> finalizationNotice(state.finalizationState) ?: state.sessionNotice
+}
+
+private fun finalizationNotice(state: StressSessionFinalizationState): String? = when (state) {
+    StressSessionFinalizationState.Idle,
+    StressSessionFinalizationState.Completed -> null
+    StressSessionFinalizationState.Stopping -> "Menghentikan pengambilan data Watch…"
+    StressSessionFinalizationState.Draining -> "Menyelesaikan batch Watch yang sudah diterima…"
+    is StressSessionFinalizationState.Evaluating -> when (state.channel) {
+        null -> "Menyiapkan evaluasi sinyal…"
+        else -> "Mengevaluasi ${state.channel.assetSuffix} (${state.completedWindows}/${state.totalWindows} window)…"
+    }
+    StressSessionFinalizationState.Persisting -> "Menyimpan hasil sesi…"
+    is StressSessionFinalizationState.ResultReady -> state.warning?.let {
+        "Hasil tersedia; penyimpanan belum selesai: $it"
+    } ?: "Hasil sesi tersedia."
+    is StressSessionFinalizationState.InsufficientSignal -> "Sinyal tidak cukup untuk menentukan hasil. Periksa detail teknis."
+    is StressSessionFinalizationState.Failed -> "Finalisasi gagal: ${state.reason}"
+    is StressSessionFinalizationState.TimedOut -> "Finalisasi melebihi batas waktu: ${state.stage.name}"
+}
+
+private fun recordingSignalLabel(state: MobileUiState, nowMillis: Long): String {
+    val phase = state.connectionState.reachabilityPhase
+    val lastBatchAge = nowMillis - state.connectionState.lastStreamingEvidenceMillis
+    return when {
+        !state.isRecording -> ""
+        phase == WearReachabilityPhase.OFFLINE || phase == WearReachabilityPhase.PROTOCOL_ERROR ->
+            "Watch terputus · PPG saat ini tidak tersedia"
+        state.totalGreenSamples == 0 && state.totalIrSamples == 0 -> "Menunggu data PPG dari Watch"
+        lastBatchAge !in 0L..SIGNAL_STALE_MILLIS -> "Data PPG belum diterima lagi"
+        state.missingSequenceCount > 0L -> "PPG diterima · ada jeda dalam sesi"
+        state.totalGreenSamples > 0 && state.totalIrSamples > 0 -> "PPG Green dan IR diterima"
+        state.totalGreenSamples > 0 -> "PPG Green diterima · IR menunggu"
+        else -> "PPG IR diterima · Green menunggu"
+    }
+}
+
+private fun finalizationStatus(state: StressSessionFinalizationState): HomeFinalizationStatus? = when (state) {
     StressSessionFinalizationState.Idle,
     StressSessionFinalizationState.Completed,
     is StressSessionFinalizationState.ResultReady,
@@ -288,27 +323,30 @@ private fun finalizationProgress(state: StressSessionFinalizationState): HomeFin
     is StressSessionFinalizationState.Failed,
     is StressSessionFinalizationState.TimedOut -> null
     StressSessionFinalizationState.Stopping ->
-        HomeFinalizationProgress(FINALIZATION_STOP_PROGRESS, "Menghentikan Watch…")
+        HomeFinalizationStatus("Menghentikan Watch…")
     StressSessionFinalizationState.Draining ->
-        HomeFinalizationProgress(FINALIZATION_DRAIN_PROGRESS, "Menyelesaikan batch Watch…")
+        HomeFinalizationStatus("Menyelesaikan batch Watch…")
     is StressSessionFinalizationState.Evaluating -> {
-        val completed = state.channels.values.sumOf { it.completedWindows }
+        val completed = if (state.channels.isEmpty()) {
+            state.completedWindows
+        } else {
+            state.channels.values.sumOf { it.completedWindows }
+        }
         val total = state.channels.values.sumOf { it.totalWindows }
             .takeIf { it > 0 } ?: state.totalWindows
-        val fraction = if (total > 0) completed.toFloat() / total else 0f
-        HomeFinalizationProgress(
-            progress = (
-                FINALIZATION_DRAIN_PROGRESS +
-                    fraction.coerceIn(0f, 1f) * FINALIZATION_EVALUATION_WEIGHT
-                ).coerceIn(0f, 1f),
+        HomeFinalizationStatus(
             label = when (state.channel) {
-                null -> "Menyiapkan evaluasi sinyal…"
-                else -> "Mengevaluasi ${state.channel.assetSuffix}…"
-            }
+                null -> "Memeriksa core dan menyiapkan sinyal…"
+                PpgType.GREEN -> "Memeriksa kualitas dan model Green…"
+                PpgType.IR -> "Memeriksa kualitas dan model IR…"
+                PpgType.RED -> "Memeriksa kualitas dan model Red…"
+            },
+            completedWindows = completed.takeIf { total > 0 },
+            totalWindows = total.takeIf { it > 0 }
         )
     }
     StressSessionFinalizationState.Persisting ->
-        HomeFinalizationProgress(FINALIZATION_PERSIST_PROGRESS, "Menyimpan hasil sesi…")
+        HomeFinalizationStatus("Menyimpan hasil sesi…")
 }
 
-data class HomeFinalizationProgress(val progress: Float, val label: String)
+data class HomeFinalizationStatus(val label: String, val completedWindows: Int? = null, val totalWindows: Int? = null)

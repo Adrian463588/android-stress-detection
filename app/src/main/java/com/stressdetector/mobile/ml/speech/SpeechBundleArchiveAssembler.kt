@@ -132,8 +132,19 @@ class SpeechBundleArchiveAssembler(private val gson: Gson = Gson()) {
                 files = fileChecksums,
                 fileSizesBytes = fileSizes,
                 sources = descriptor.components.associate { it.id to it.upstreamSource },
-                licenses = descriptor.components.associate { it.id to it.license }
+                licenses = descriptor.components.associate { it.id to it.license },
+                whisperStt = descriptor.whisperStt?.let { profile ->
+                    WhisperSttManifest(
+                        encoder = profile.encoderPath,
+                        decoder = profile.decoderPath,
+                        tokens = profile.tokensPath,
+                        revision = profile.revision,
+                        languages = profile.languages,
+                        task = profile.task
+                    )
+                }
             )
+            validateSpeechSttContract(manifest, descriptor)
             writeZip(destination, manifest, materializedFiles, onProgress)
             return manifest
         } finally {

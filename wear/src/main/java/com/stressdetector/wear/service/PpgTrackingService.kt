@@ -276,7 +276,8 @@ class PpgTrackingService : Service() {
             startedElapsedRealtimeMillis = trackingStartedElapsedRealtimeMillis,
             startedAtEpochMillis = trackingStartedAtMillis,
             phoneNodeId = active.peerNodeId,
-            generation = active.generation
+            generation = active.generation,
+            collectMotion = active.mode == WearSessionMode.HOME_STRESS
         )
         WearTrackingState.beginSession(active.sessionId, active.mode, sourceNodeId = active.peerNodeId)
         // The SDK is reported READY only after the service returned usable
@@ -421,6 +422,7 @@ class PpgTrackingService : Service() {
     }
 
     override fun onDestroy() {
+        repository.stopMotionCollection()
         handler.removeCallbacks(progressTicker)
         val interrupted = sessionState != null && !stopLifecycle.ignoresConnectionEnded
         if (interrupted) {

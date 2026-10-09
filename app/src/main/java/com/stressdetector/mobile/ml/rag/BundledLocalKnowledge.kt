@@ -4,6 +4,7 @@ import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.annotations.SerializedName
+import com.stressdetector.mobile.data.db.DocumentChunkEntity
 import com.stressdetector.mobile.domain.engine.EvidenceSourceTier
 import com.stressdetector.mobile.domain.engine.KnowledgeCitation
 import com.stressdetector.mobile.domain.engine.RagRetrievalResult
@@ -14,7 +15,10 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.security.MessageDigest
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /** A manifest entry for an approved, text-based knowledge asset shipped with the app. */
@@ -63,7 +67,7 @@ class AssetBundledLocalCorpus(
                     "bundled_manifest_duplicate_document"
                 }
             }
-        }
+        }.onFailure { if (it is CancellationException) throw it }
     }
 
     override suspend fun read(document: BundledLocalDocument): Result<ByteArray> = withContext(Dispatchers.IO) {
@@ -76,7 +80,7 @@ class AssetBundledLocalCorpus(
                 "bundled_document_checksum_mismatch"
             }
             bytes
-        }
+        }.onFailure { if (it is CancellationException) throw it }
     }
 
     private fun BundledLocalManifestDocument.toDocument(): BundledLocalDocument {
@@ -125,19 +129,23 @@ class AssetBundledLocalCorpus(
 
 /**
  * Conservative lexical fallback for an approved bundled corpus. A source is admitted only after
- * the manifest checksum is verified and the query has a meaningful lexical match.
+ * the manifest checksum is verified and the injected benchmark policy accepts the ranked evidence.
  */
-class BundledLocalRagRetriever(private val corpus: BundledLocalCorpus, private val clock: () -> Long = { System.currentTimeMillis() }) :
-    RagRetriever {
+class BundledLocalRagRetriever(
+    private val corpus: BundledLocalCorpus,
+    private val clock: () -> Long = { System.currentTimeMillis() },
+    private val policy: LocalRagRetrievalPolicy = LocalRagRetrievalPolicy(),
+    private val ranker: HybridRetrievalRanker = HybridRetrievalRanker()
+) : RagRetriever {
+    @Suppress("UNUSED_PARAMETER")
     override suspend fun retrieveRelevantPassages(query: String, maxResults: Int, minRelevanceThreshold: Float): RagRetrievalResult =
         withContext(Dispatchers.IO) {
-            val queryTerms = LocalTextRanker.tokens(query)
-                .filterNot(BUNDLED_QUERY_STOP_WORDS::contains)
-                .distinct()
+            val queryTerms = LocalTextRanker.tokens(query).filterNot(BUNDLED_QUERY_STOP_WORDS::contains).distinct()
             if (queryTerms.isEmpty()) {
                 return@withContext RagRetrievalResult.Unavailable("Bundled local query has no searchable terms")
             }
             val documents = corpus.loadDocuments().getOrElse { error ->
+                if (error is CancellationException) throw error
                 return@withContext RagRetrievalResult.Unavailable(
                     "Bundled local corpus unavailable: ${error.message ?: "manifest invalid"}"
                 )
@@ -148,59 +156,99 @@ class BundledLocalRagRetriever(private val corpus: BundledLocalCorpus, private v
 
             val normalizedQuery = queryTerms.joinToString(" ")
             val candidates = documents.mapNotNull { document ->
+                currentCoroutineContext().ensureActive()
                 if (!document.sourceSha256.matches(SHA256)) return@mapNotNull null
-                val bytes = corpus.read(document).getOrNull() ?: return@mapNotNull null
+                val bytes = corpus.read(document).getOrElse { error ->
+                    if (error is CancellationException) throw error
+                    return@mapNotNull null
+                }
                 if (sha256(bytes) != document.sourceSha256.lowercase(Locale.ROOT)) return@mapNotNull null
                 val content = bytes.toString(Charsets.UTF_8).take(MAX_DOCUMENT_TEXT_CHARS)
                 val passage = LocalTextRanker.bestPassage(normalizedQuery, content, MAX_CITATION_TEXT)
                     ?: return@mapNotNull null
                 val score = LocalTextRanker.score(normalizedQuery, passage.text)
-                if (score < MIN_RELEVANCE_SCORE) return@mapNotNull null
+                if (score <= 0f) return@mapNotNull null
                 BundledCandidate(document, passage.text, score)
             }.sortedWith(compareByDescending<BundledCandidate> { it.score }.thenBy { it.document.documentId })
 
-            if (candidates.isEmpty()) {
+            val lexicalCandidates = candidates.map(::toLexicalCandidate)
+            val ranked = ranker.rank(
+                query = normalizedQuery,
+                queryVector = null,
+                candidates = lexicalCandidates.map { it.first },
+                lexicalLimit = policy.lexicalCandidateLimit,
+                resultLimit = minOf(maxResults.coerceAtLeast(1), policy.maxEvidenceChunks),
+                maxPerDocument = policy.maxPerDocument,
+                maxPerPage = policy.maxPerPage,
+                lexicalCandidates = lexicalCandidates.take(policy.lexicalCandidateLimit)
+            )
+            currentCoroutineContext().ensureActive()
+            if (ranked.isEmpty() ||
+                !policy.thresholdPolicy.accepts(
+                    RetrievalThresholdContext(query, LocalRetrievalMode.LEXICAL_ONLY, ranked)
+                )
+            ) {
                 return@withContext RagRetrievalResult.BelowThreshold(
-                    bestScore = null,
+                    bestScore = ranked.firstOrNull()?.fusedScore,
                     method = RetrievalMethod.LEXICAL_ONLY,
                     sourceTier = EvidenceSourceTier.BUNDLED_LOCAL
                 )
             }
 
-            val retrievedAt = clock()
-            val citations = candidates.take(maxResults.coerceIn(1, MAX_RESULTS)).map { candidate ->
-                val passageHash = sha256(candidate.text.toByteArray(Charsets.UTF_8))
-                KnowledgeCitation(
-                    citationId = "bundled-${candidate.document.documentId}-${passageHash.take(HASH_PREFIX_LENGTH)}",
-                    sourceTitle = candidate.document.title,
-                    section = candidate.document.sourceLocator ?: "Bundled local passage",
-                    text = candidate.text,
-                    relevanceScore = candidate.score,
-                    sourceFileName = candidate.document.assetPath,
-                    sourceLocator = candidate.document.sourceLocator,
-                    retrievedAtMillis = retrievedAt,
-                    contentHash = passageHash,
-                    chunkId = "${candidate.document.documentId}:$passageHash",
-                    documentId = candidate.document.documentId,
-                    sourceSha256 = candidate.document.sourceSha256,
-                    sourceTier = EvidenceSourceTier.BUNDLED_LOCAL
-                )
-            }
             RagRetrievalResult.Retrieved(
-                citations = citations,
+                citations = buildCitations(ranked, documents),
                 method = RetrievalMethod.LEXICAL_ONLY,
                 sourceTier = EvidenceSourceTier.BUNDLED_LOCAL
             )
         }
 
+    private fun toLexicalCandidate(candidate: BundledCandidate): Pair<RetrievalCandidate, Float> {
+        val passageHash = sha256(candidate.text.toByteArray(Charsets.UTF_8))
+        return RetrievalCandidate(
+            DocumentChunkEntity(
+                chunkId = "${candidate.document.documentId}:$passageHash",
+                documentId = candidate.document.documentId,
+                chunkIndex = 0,
+                textContent = candidate.text,
+                embeddingBlob = null,
+                sourceTitle = candidate.document.title,
+                sourceLocator = candidate.document.sourceLocator
+            ),
+            vector = null
+        ) to candidate.score
+    }
+
+    private fun buildCitations(ranked: List<RankedRetrievalCandidate>, documents: List<BundledLocalDocument>): List<KnowledgeCitation> {
+        val retrievedAt = clock()
+        val documentById = documents.associateBy(BundledLocalDocument::documentId)
+        return ranked.map { scored ->
+            val chunk = scored.candidate.chunk
+            val document = documentById.getValue(chunk.documentId)
+            val passageHash = sha256(chunk.textContent.toByteArray(Charsets.UTF_8))
+            KnowledgeCitation(
+                citationId = "bundled-${document.documentId}-${passageHash.take(HASH_PREFIX_LENGTH)}",
+                sourceTitle = document.title,
+                section = document.sourceLocator ?: "Bundled local passage",
+                text = chunk.textContent,
+                relevanceScore = scored.fusedScore,
+                sourceFileName = document.assetPath,
+                sourceLocator = document.sourceLocator,
+                retrievedAtMillis = retrievedAt,
+                contentHash = passageHash,
+                chunkId = chunk.chunkId,
+                documentId = document.documentId,
+                sourceSha256 = document.sourceSha256,
+                sourceTier = EvidenceSourceTier.BUNDLED_LOCAL
+            )
+        }
+    }
+
     private data class BundledCandidate(val document: BundledLocalDocument, val text: String, val score: Float)
 
     private companion object {
-        const val MAX_RESULTS = 4
         const val HASH_PREFIX_LENGTH = 16
         const val MAX_DOCUMENT_TEXT_CHARS = 250_000
         const val MAX_CITATION_TEXT = 1_200
-        const val MIN_RELEVANCE_SCORE = 0.45f
         val SHA256 = Regex("^[a-fA-F0-9]{64}$")
         val BUNDLED_QUERY_STOP_WORDS = setOf(
             "apa",
@@ -234,7 +282,7 @@ private data class BundledLocalManifestDocument(
     @SerializedName("source_locator") val sourceLocator: String? = null
 )
 
-private fun InputStream.readBounded(maxBytes: Int): ByteArray {
+internal fun InputStream.readBounded(maxBytes: Int, sizeLimitError: String = "bundled_document_size_limit_exceeded"): ByteArray {
     val output = ByteArrayOutputStream()
     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
     var total = 0
@@ -242,7 +290,7 @@ private fun InputStream.readBounded(maxBytes: Int): ByteArray {
         val count = read(buffer)
         if (count < 0) break
         total += count
-        require(total <= maxBytes) { "bundled_document_size_limit_exceeded" }
+        require(total <= maxBytes) { sizeLimitError }
         output.write(buffer, 0, count)
     }
     return output.toByteArray()

@@ -99,8 +99,7 @@ class HomeSessionFinalizer(private val dao: StressSessionDao, private val eviden
                 confidence = primary?.confidence?.takeIf(Float::isFinite) ?: 0f,
                 qualityTier = quality.tier,
                 stressProbability = primary?.stressProbability
-                    ?.takeIf { it.isFinite() && it in 0f..1f }
-                    ?: Float.NaN,
+                    ?.takeIf { it.isFinite() && it in 0f..1f },
                 greenSampleCount = snapshot.greenSampleCount,
                 irSampleCount = snapshot.irSampleCount,
                 errorReason = primary?.quality?.takeIf { !it.isUsable }?.reason

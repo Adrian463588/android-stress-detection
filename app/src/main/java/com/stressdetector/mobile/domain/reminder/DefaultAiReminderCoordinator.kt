@@ -74,6 +74,7 @@ class DefaultAiReminderCoordinator(private val dependencies: AiReminderCoordinat
     }
 
     override fun setEnabled(enabled: Boolean) {
+        if (!enabled) settings.setEnabled(false)
         scope.launch {
             if (enabled && !canEnable()) {
                 settings.setEnabled(false)
@@ -90,6 +91,7 @@ class DefaultAiReminderCoordinator(private val dependencies: AiReminderCoordinat
     }
 
     override fun setReminderConsent(granted: Boolean) {
+        if (!granted) settings.setEnabled(false)
         scope.launch {
             consentDao.insertConsent(
                 UserConsentEntity(

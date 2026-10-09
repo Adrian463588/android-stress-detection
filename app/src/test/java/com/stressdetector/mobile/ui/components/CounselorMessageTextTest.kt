@@ -6,6 +6,48 @@ import org.junit.Test
 
 class CounselorMessageTextTest {
     @Test
+    fun exactCitationBeforeNextNumberedItemKeepsSeparateReadableItems() {
+        val blocks = parseCounselorMarkdown("1.Ambil jeda. [W1|web-1]2.Prioritaskan istirahat. [W2|web-2]3.Atur batasan.")
+        assertEquals(
+            listOf(
+                CounselorTextBlock.ListItem("1.", "Ambil jeda. [W1|web-1]"),
+                CounselorTextBlock.ListItem("2.", "Prioritaskan istirahat. [W2|web-2]"),
+                CounselorTextBlock.ListItem("3.", "Atur batasan.")
+            ),
+            blocks
+        )
+    }
+
+    @Test
+    fun citationBeforeDecimalDoesNotInventAList() {
+        assertEquals(
+            listOf(CounselorTextBlock.Paragraph("Nilai [W1|web-1]1.25 tetap desimal.")),
+            parseCounselorMarkdown("Nilai [W1|web-1]1.25 tetap desimal.")
+        )
+    }
+
+    @Test
+    fun numberedAdviceAfterColonDoesNotMergeWithItsIntroduction() {
+        val blocks = parseCounselorMarkdown("Coba langkah berikut:1.Tulis perasaan.2.Catat kebutuhan.")
+        assertEquals(
+            listOf(
+                CounselorTextBlock.Paragraph("Coba langkah berikut:"),
+                CounselorTextBlock.ListItem("1.", "Tulis perasaan."),
+                CounselorTextBlock.ListItem("2.", "Catat kebutuhan.")
+            ),
+            blocks
+        )
+    }
+
+    @Test
+    fun decimalNumbersAreNotInventedListItems() {
+        assertEquals(
+            listOf(CounselorTextBlock.Paragraph("Versi:1.2.0; durasi 2.5 menit.")),
+            parseCounselorMarkdown("Versi:1.2.0; durasi 2.5 menit.")
+        )
+    }
+
+    @Test
     fun joinsReadableParagraphsAndSeparatesInlineNumberedLists() {
         val blocks = parseCounselorMarkdown(
             "Saya sulit tidur.Meskipun perlu jeda.1.**Ciptakan Rutinitas Relaksasi:** " +

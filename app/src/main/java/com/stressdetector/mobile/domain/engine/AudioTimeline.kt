@@ -6,7 +6,7 @@ import com.google.gson.reflect.TypeToken
 /** Maps the session clock (which includes pause/dropout gaps) to WAV time. */
 class AudioTimeline(gaps: List<AudioGap>) {
     private val gaps: List<AudioGap> = gaps
-        .filter { it.startOffsetMs >= 0L && it.durationMs > 0L }
+        .filter { !it.recordedPcmPresent && it.startOffsetMs >= 0L && it.durationMs > 0L }
         .sortedBy(AudioGap::startOffsetMs)
         .fold(mutableListOf<AudioGap>()) { normalized, gap ->
             val previous = normalized.lastOrNull()

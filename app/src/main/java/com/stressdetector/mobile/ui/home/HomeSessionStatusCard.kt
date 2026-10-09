@@ -55,8 +55,6 @@ fun HomeSessionStatusCard(state: HomeUiState, onEvent: (HomeEvent) -> Unit, modi
 private fun HomeSessionStatus.isProgressVisible(): Boolean = this == HomeSessionStatus.RECORDING || this == HomeSessionStatus.FINALIZING
 
 private fun HomeUiState.shouldShowSessionData(): Boolean = when (status) {
-    HomeSessionStatus.RECORDING,
-    HomeSessionStatus.FINALIZING,
     HomeSessionStatus.RESULT_READY,
     HomeSessionStatus.INSUFFICIENT_SIGNAL -> true
     HomeSessionStatus.ERROR ->
@@ -68,6 +66,8 @@ private fun HomeUiState.shouldShowSessionData(): Boolean = when (status) {
     HomeSessionStatus.PERMISSION_REQUIRED,
     HomeSessionStatus.MODEL_UNAVAILABLE,
     HomeSessionStatus.PREREQUISITE_REQUIRED,
+    HomeSessionStatus.RECORDING,
+    HomeSessionStatus.FINALIZING,
     HomeSessionStatus.READY -> false
 }
 
@@ -106,5 +106,9 @@ private fun HomeUiState.startActionLabel(shouldRefreshConnection: Boolean): Stri
 private fun HomeUiState.hasTechnicalDetails(): Boolean = greenPrediction.coreDiagnostics != null ||
     irPrediction.coreDiagnostics != null ||
     modelGate.reason != null ||
+    status == HomeSessionStatus.RECORDING ||
+    status == HomeSessionStatus.FINALIZING ||
+    greenSamples > 0 ||
+    irSamples > 0 ||
     greenPrediction.availability !is PredictionAvailability.WarmingUp ||
     irPrediction.availability !is PredictionAvailability.WarmingUp

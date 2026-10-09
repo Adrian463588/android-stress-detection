@@ -5,10 +5,15 @@ import com.stressdetector.mobile.data.db.DivergenceEventEntity
 /** Immutable event boundary captured when a live Verbatim session begins draining. */
 internal data class SessionStopCutoff(val sessionId: String, val generation: Long, val elapsedMillis: Long)
 
-internal fun SessionStopCutoff.accepts(segment: SpeechSegment, timeline: SessionTimeline): Boolean = timeline.sessionId == sessionId &&
-    timeline.generation == generation &&
-    segment.sessionId == sessionId &&
-    timeline.audioOffsetToSessionElapsed(segment.endOffsetMs) <= elapsedMillis
+internal fun SessionStopCutoff.accepts(segment: SpeechSegment, timeline: SessionTimeline): Boolean =
+    acceptsAudioOffset(segment.sessionId, segment.endOffsetMs, timeline)
+
+internal fun SessionStopCutoff.acceptsAudioOffset(eventSessionId: String, endOffsetMs: Long, timeline: SessionTimeline): Boolean =
+    endOffsetMs >= 0 &&
+        timeline.sessionId == sessionId &&
+        timeline.generation == generation &&
+        eventSessionId == sessionId &&
+        timeline.audioOffsetToSessionElapsed(endOffsetMs) <= elapsedMillis
 
 internal fun SessionStopCutoff.filter(events: List<DivergenceEventEntity>): List<DivergenceEventEntity> = events.mapNotNull { event ->
     if (event.sessionId != sessionId) return@mapNotNull null

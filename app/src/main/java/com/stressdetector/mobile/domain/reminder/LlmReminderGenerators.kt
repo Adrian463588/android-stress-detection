@@ -234,16 +234,32 @@ object ReminderOutputGuard {
         message.contains("[S", ignoreCase = true) || message.contains("[W", ignoreCase = true) ->
             "REMINDER_CITATION_NOT_ALLOWED"
         FORBIDDEN_CLAIM.containsMatchIn(message) -> "REMINDER_UNSAFE_CLAIM"
-        explicitGroundingAction.isNullOrBlank() && UNRECORDED_ACTION.containsMatchIn(message) ->
+        explicitGroundingAction.isNullOrBlank() && hasUnrecordedActionClaim(message) ->
             "REMINDER_UNRECORDED_ACTION_CLAIM"
         else -> null
     }
+
+    private fun hasUnrecordedActionClaim(message: String): Boolean = UNRECORDED_ACTION_CONTEXT.containsMatchIn(message) ||
+        message.splitToSequence(SENTENCE_BOUNDARY).any { sentence ->
+            val clause = sentence.trim()
+            val actions = FABRICATED_ACTION.findAll(clause).count()
+            actions > 0 && !(actions == 1 && clause.endsWith('?') && NEUTRAL_ACTION_QUESTION.containsMatchIn(clause))
+        }
 
     private val FORBIDDEN_CLAIM = Regex(
         "(?i)(diagnos|mendiagnosis|meresep|obat|kebohongan|bohong|lie detected|deception|pasti sembuh|" +
             "mengidap|menderita|terdiagnosis)"
     )
-    private val UNRECORDED_ACTION = Regex(
-        "(?i)(tugas|latihan|grounding).*(kemarin|yang lalu)|sudah (melakukan|mengerjakan)"
+    private val UNRECORDED_ACTION_CONTEXT = Regex(
+        "(?i)(?:tugas|latihan|grounding|terapi).{0,80}(?:kemarin|yang lalu)|" +
+            "(?:kemarin|yang lalu).{0,80}(?:tugas|latihan|grounding|terapi)"
+    )
+    private val FABRICATED_ACTION = Regex(
+        "(?i)(?:sudah|telah).{0,24}(?:melakukan|mengerjakan|mencoba|menjalankan|menyelesaikan)|" +
+            "(?:you|kamu|anda).{0,24}(?:completed|finished|practiced)"
+    )
+    private val SENTENCE_BOUNDARY = Regex("(?<=[.!?])")
+    private val NEUTRAL_ACTION_QUESTION = Regex(
+        "(?i)^(?:(?:apakah\\s+(?:(?:kamu|anda)\\s+)?)?(?:sudah|telah)\\b|(?:have|did)\\s+you\\b)"
     )
 }

@@ -1,6 +1,7 @@
 package com.stressdetector.mobile.domain
 
 import com.stressdetector.mobile.data.WindowSnapshot
+import com.stressdetector.shared.AccelerometerSample
 import com.stressdetector.shared.PpgType
 import com.stressdetector.shared.PredictionWindowConfig
 import org.junit.Assert.assertEquals
@@ -21,7 +22,11 @@ class CorePpgWindowSlicerTest {
             rawValues = IntArray(elapsed.size) { it },
             sessionElapsedStartMillis = 0L,
             sessionElapsedEndMillis = 300_000L,
-            elapsedTimestampsMillis = elapsed
+            elapsedTimestampsMillis = elapsed,
+            accelerometerSamples = listOf(
+                AccelerometerSample(11_000_000_000L, 10_000L, 0f, 9.8f, 0f),
+                AccelerometerSample(32_000_000_000L, 31_000L, 0f, 9.8f, 0f)
+            )
         )
 
         val result = slicer.slice(source)
@@ -30,6 +35,7 @@ class CorePpgWindowSlicerTest {
         assertEquals(30_000L, result.coreWindow!!.elapsedTimestampsMillis.first())
         assertEquals(269_000L, result.coreWindow!!.elapsedTimestampsMillis.last())
         assertEquals(240, result.coreWindow!!.size)
+        assertEquals(listOf(31_000L), result.coreWindow!!.accelerometerSamples.map { it.elapsedMillis })
         assertEquals(7, result.expectedModelWindows)
         assertNull(result.rejectionReason)
     }

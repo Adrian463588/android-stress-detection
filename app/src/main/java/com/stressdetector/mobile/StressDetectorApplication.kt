@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import com.stressdetector.mobile.di.AppLocator
 import com.stressdetector.mobile.domain.reminder.AI_REMINDER_CHANNEL_ID
 
 class StressDetectorApplication : Application() {
@@ -54,5 +55,6 @@ class StressDetectorApplication : Application() {
             setShowBadge(true)
         }
         manager.createNotificationChannel(aiReminderChannel)
+        AppLocator.userBackupService(this).startAutoBackup()
     }
 }

@@ -49,8 +49,8 @@ class WebHttpFetcher(
             // not perform a second DNS resolution vulnerable to rebinding.
             val approvedAddresses = SecureWebUrlPolicy.resolvePublicAddresses(currentUrl)
                 ?: error("Host sumber web tidak menyelesaikan ke alamat publik.")
-            val response = execute(currentUrl, allowXml, approvedAddresses)
-            response.use {
+            coroutineContext.ensureActive()
+            val fetched = newCall(currentUrl, allowXml, approvedAddresses).readCancellable {
                 if (it.isRedirect) {
                     require(redirectAttempt < MAX_REDIRECTS) { "Terlalu banyak redirect web." }
                     val location = it.header("Location") ?: error("Redirect web tidak memiliki tujuan.")
@@ -60,87 +60,103 @@ class WebHttpFetcher(
                     require(currentUrl.host == approvedHost) {
                         "Redirect keluar dari domain yang disetujui pengguna."
                     }
-                    return@use
+                    null
+                } else {
+                    require(it.isSuccessful) { "Sumber web menolak permintaan (${it.code})." }
+                    val body = it.body ?: error("Respons web kosong.")
+                    val contentType = body.contentType()?.let { type -> type.toString().lowercase() }
+                    require(
+                        contentType == null ||
+                            contentType.contains("text/html") ||
+                            contentType.contains("application/xhtml+xml") ||
+                            (allowXml && (contentType.contains("xml") || contentType.contains("rss")))
+                    ) {
+                        "Sumber web bukan HTML, RSS, atau sitemap yang didukung."
+                    }
+                    FetchedWebDocument(
+                        finalUrl = requireNotNull(SecureWebUrlPolicy.normalize(it.request.url.toString())) {
+                            "Redirect halaman tidak aman."
+                        },
+                        html = readBoundedWebBody(body, maxResponseBytes),
+                        contentType = contentType
+                    )
                 }
-                require(it.isSuccessful) { "Sumber web menolak permintaan (${it.code})." }
-                val body = it.body ?: error("Respons web kosong.")
-                val contentType = body.contentType()?.let { type -> type.toString().lowercase() }
-                require(
-                    contentType == null ||
-                        contentType.contains("text/html") ||
-                        contentType.contains("application/xhtml+xml") ||
-                        (allowXml && (contentType.contains("xml") || contentType.contains("rss")))
-                ) {
-                    "Sumber web bukan HTML, RSS, atau sitemap yang didukung."
-                }
-                return@withContext FetchedWebDocument(
-                    finalUrl = requireNotNull(SecureWebUrlPolicy.normalize(it.request.url.toString())) {
-                        "Redirect halaman tidak aman."
-                    },
-                    html = readBody(body),
-                    contentType = contentType
-                )
             }
+            if (fetched != null) return@withContext fetched
         }
         error("Redirect web tidak dapat diselesaikan.")
     }
 
-    private suspend fun execute(url: HttpUrl, allowXml: Boolean, approvedAddresses: List<InetAddress>): Response =
-        suspendCancellableCoroutine { continuation ->
-            val pinnedClient = redirectControlledClient.newBuilder()
-                .dns(object : Dns {
-                    override fun lookup(hostname: String): List<InetAddress> {
-                        if (!hostname.equals(url.host, ignoreCase = true)) {
-                            throw UnknownHostException("Unexpected host during web request")
-                        }
-                        return approvedAddresses
+    private fun newCall(url: HttpUrl, allowXml: Boolean, approvedAddresses: List<InetAddress>): Call {
+        val pinnedClient = redirectControlledClient.newBuilder()
+            .dns(object : Dns {
+                override fun lookup(hostname: String): List<InetAddress> {
+                    if (!hostname.equals(url.host, ignoreCase = true)) {
+                        throw UnknownHostException("Unexpected host during web request")
                     }
-                })
-                .build()
-            val call = pinnedClient.newCall(
-                Request.Builder()
-                    .url(url)
-                    .header("Accept", if (allowXml) ACCEPT_XML_OR_HTML else ACCEPT_HTML)
-                    .header("User-Agent", USER_AGENT)
-                    .build()
-            )
-            continuation.invokeOnCancellation { call.cancel() }
-            call.enqueue(object : okhttp3.Callback {
-                override fun onFailure(call: Call, error: IOException) {
-                    if (!continuation.isCompleted) continuation.resumeWithException(error)
-                }
-
-                override fun onResponse(call: Call, response: Response) {
-                    if (!continuation.isCompleted) continuation.resume(response) else response.close()
+                    return approvedAddresses
                 }
             })
-        }
-
-    private fun readBody(body: okhttp3.ResponseBody): String {
-        require(body.contentLength() <= maxResponseBytes) { "Respons web terlalu besar." }
-        val output = ByteArrayOutputStream()
-        body.byteStream().use { input ->
-            val buffer = ByteArray(BUFFER_SIZE)
-            var total = 0L
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                total += read
-                require(total <= maxResponseBytes) { "Respons web terlalu besar." }
-                output.write(buffer, 0, read)
-            }
-        }
-        return output.toString(Charsets.UTF_8.name())
+            .build()
+        return pinnedClient.newCall(
+            Request.Builder()
+                .url(url)
+                .header("Accept", if (allowXml) ACCEPT_XML_OR_HTML else ACCEPT_HTML)
+                .header("User-Agent", USER_AGENT)
+                .build()
+        )
     }
 
     private companion object {
         const val MAX_REDIRECTS = 3
-        const val BUFFER_SIZE = 16 * 1024
         const val USER_AGENT = "StressDetector-AI-Counselor/1.0"
         const val ACCEPT_HTML = "text/html,application/xhtml+xml"
         const val ACCEPT_XML_OR_HTML = "text/html,application/xhtml+xml,application/rss+xml,application/atom+xml,application/xml,text/xml"
     }
 }
+
+/** Keep cancellation attached through both headers and body consumption. */
+internal suspend fun <T> Call.readCancellable(read: (Response) -> T): T = suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation { cancel() }
+    enqueue(object : okhttp3.Callback {
+        override fun onFailure(call: Call, error: IOException) {
+            if (continuation.isActive) continuation.resumeWithException(error)
+        }
+
+        override fun onResponse(call: Call, response: Response) {
+            try {
+                val value = response.use {
+                    check(!call.isCanceled()) { "web_request_cancelled" }
+                    read(it)
+                }
+                if (continuation.isActive) continuation.resume(value)
+            } catch (error: IOException) {
+                if (continuation.isActive) continuation.resumeWithException(error)
+            } catch (error: IllegalArgumentException) {
+                if (continuation.isActive) continuation.resumeWithException(error)
+            } catch (error: IllegalStateException) {
+                if (continuation.isActive) continuation.resumeWithException(error)
+            }
+        }
+    })
+}
+
+internal fun readBoundedWebBody(body: okhttp3.ResponseBody, maxBytes: Long): String {
+    require(body.contentLength() <= maxBytes) { "Respons web terlalu besar." }
+    val output = ByteArrayOutputStream()
+    body.byteStream().use { input ->
+        val buffer = ByteArray(WEB_READ_BUFFER_BYTES)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            require(output.size().toLong() + count <= maxBytes) { "Respons web terlalu besar." }
+            output.write(buffer, 0, count)
+        }
+    }
+    return output.toString(Charsets.UTF_8.name())
+}
+
+private const val WEB_READ_BUFFER_BYTES = 16 * 1024
 
 /** Small per-domain limiter. It bounds crawler pressure without using an external service. */
 class DomainRateLimiter(

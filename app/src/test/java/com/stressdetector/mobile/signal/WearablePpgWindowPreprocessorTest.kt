@@ -2,6 +2,7 @@ package com.stressdetector.mobile.signal
 
 import com.stressdetector.mobile.data.FakePpgBatchFactory
 import com.stressdetector.mobile.data.WindowSnapshot
+import com.stressdetector.shared.AccelerometerSample
 import com.stressdetector.shared.PpgFilterContract
 import com.stressdetector.shared.PpgType
 import kotlin.math.sin
@@ -10,6 +11,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WearablePpgWindowPreprocessorTest {
+    @Test
+    fun observedMotionAnnotatesWindowWithoutChangingPreparedPpg() {
+        val batch = FakePpgBatchFactory.inferenceWindowBatch(PpgType.GREEN)
+        val base = WindowSnapshot(batch.type, batch.timestampsMillis, batch.rawValues)
+        val samples = (0 until batch.rawValues.size).map { index ->
+            val elapsed = index * 40L
+            AccelerometerSample(1_000_000_000L + elapsed * 1_000_000L, elapsed, 0f, 9.8f, 0f)
+        }
+        val withMotionResult = preprocessor(PpgType.GREEN).prepare(base.copy(accelerometerSamples = samples))
+        val withMotion = (withMotionResult as PpgPreprocessResult.Ready).window
+        val withoutMotion = (preprocessor(PpgType.GREEN).prepare(base) as PpgPreprocessResult.Ready).window
+
+        assertEquals("time_windowed_rolling_variance_robust_mad", withMotion.motionAnnotation.motionMethod)
+        assertEquals(samples.size, withMotion.motionAnnotation.sampleCount)
+        assertEquals(withoutMotion.filteredValuesSha256, withMotion.filteredValuesSha256)
+        assertEquals(withoutMotion.rawValuesSha256, withMotion.rawValuesSha256)
+    }
+
     private fun preprocessor(type: PpgType): WearablePpgWindowPreprocessor = WearablePpgWindowPreprocessor(
         PpgPreprocessingContract(
             filterContract = PpgFilterContract.forChannel(type.assetSuffix)
@@ -27,6 +46,8 @@ class WearablePpgWindowPreprocessorTest {
         assertEquals(0, ready.window.interpolatedSampleCount)
         assertEquals(0, ready.window.interpolatedMask.count { it })
         assertTrue(ready.window.filteredValues.all(Double::isFinite))
+        assertEquals("unavailable", ready.window.motionAnnotation.motionAnnotation)
+        assertEquals("annotation_only_no_accelerometer", ready.window.motionAnnotation.motionMethod)
     }
 
     @Test

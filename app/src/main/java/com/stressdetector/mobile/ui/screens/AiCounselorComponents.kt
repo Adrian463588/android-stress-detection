@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -22,6 +25,10 @@ import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -93,6 +100,11 @@ internal fun CounselorDialogs(model: CounselorScreenModel) {
         WebSearchModeDialog(
             mode = state.webSearchMode,
             onModeSelected = { mode ->
+                if (mode == com.stressdetector.mobile.domain.search.WebSearchMode.Persistent) {
+                    model.runtime.viewModel.setAutomaticWebSearchEnabled(true)
+                } else {
+                    model.runtime.viewModel.setAutomaticWebSearchEnabled(false)
+                }
                 model.runtime.viewModel.setWebSearchMode(mode)
                 dialogs.onWebSearchModeChanged(false)
             },
@@ -108,21 +120,43 @@ internal fun CounselorDialogs(model: CounselorScreenModel) {
 private fun WebConsentDialog(model: CounselorScreenModel) {
     val state = model.runtime.state
     val viewModel = model.runtime.viewModel
+    WebQueryConsentDialog(
+        initialQuery = state.pendingWebQuery.orEmpty(),
+        onConfirm = viewModel::confirmWebConsent,
+        onDismiss = viewModel::dismissWebConsent,
+        errorMessage = state.statusMessage?.takeUnless { it.startsWith("Sumber lokal") }
+    )
+}
+
+@Composable
+internal fun WebQueryConsentDialog(initialQuery: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit, errorMessage: String? = null) {
+    var query by rememberSaveable(initialQuery) { mutableStateOf(initialQuery) }
     AlertDialog(
-        onDismissRequest = viewModel::dismissWebConsent,
-        title = { Text("Izinkan Web Search?") },
+        onDismissRequest = onDismiss,
+        title = { Text("Cari sumber web?") },
         text = {
-            Text(
-                state.pendingWebQuery?.let {
-                    "Pertanyaan berikut akan dipakai untuk mencari maksimal tiga sumber HTTPS secara otomatis " +
-                        "setelah persetujuan:\n\n$it\n\nChat, transcript, riwayat stress, persona, serta " +
-                        "dokumen privat tidak dikirim. Server tetap dapat melihat permintaan jaringan dan alamat perangkat."
-                } ?: "AI akan mencari dan membaca maksimal tiga sumber HTTPS secara otomatis setelah Anda " +
-                    "menyetujui akses jaringan. Chat, transcript, riwayat, dan dokumen privat tetap di perangkat."
-            )
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Hanya pertanyaan publik di bawah yang dikirim untuk mencari maksimal tiga sumber HTTPS.")
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("Pertanyaan publik") },
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("Hapus nama, riwayat pribadi, transcript, dan isi dokumen privat.") }
+                )
+                Text(
+                    "Riwayat stres dan persona tidak disertakan. Penyedia web tetap dapat melihat query dan alamat jaringan perangkat.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
         },
-        confirmButton = { TextButton(onClick = viewModel::confirmWebConsent) { Text("Izinkan") } },
-        dismissButton = { TextButton(onClick = viewModel::dismissWebConsent) { Text("Batal") } }
+        confirmButton = { TextButton(onClick = { onConfirm(query) }, enabled = query.isNotBlank()) { Text("Izinkan dan cari") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Batal") } }
     )
 }
 
@@ -186,12 +220,13 @@ internal fun CounselorLifecycleEffects(model: CounselorScreenModel) {
             if (state.voiceSendMode == VoiceSendMode.REVIEW) model.composer.onInputChanged(transcript)
         }
     }
-    LaunchedEffect(state.messages.size, state.messages.lastOrNull()?.content) {
+    LaunchedEffect(state.messages.size, state.messages.lastOrNull()?.content, state.statusMessage, state.phase) {
         if (state.messages.isNotEmpty()) {
+            androidx.compose.runtime.withFrameNanos { }
             if (motion.enabled) {
-                model.layout.listState.animateScrollToItem(state.messages.lastIndex)
+                model.layout.listState.animateScrollToItem((model.layout.listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
             } else {
-                model.layout.listState.scrollToItem(state.messages.lastIndex)
+                model.layout.listState.scrollToItem((model.layout.listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
             }
         }
     }

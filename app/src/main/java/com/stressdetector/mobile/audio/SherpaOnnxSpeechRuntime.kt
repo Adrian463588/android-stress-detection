@@ -3,10 +3,7 @@ package com.stressdetector.mobile.audio
 import android.os.Build
 import com.k2fsa.sherpa.onnx.FastClusteringConfig
 import com.k2fsa.sherpa.onnx.FeatureConfig
-import com.k2fsa.sherpa.onnx.OfflineModelConfig
-import com.k2fsa.sherpa.onnx.OfflineOmnilingualAsrCtcModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
-import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OfflineSpeakerDiarization
 import com.k2fsa.sherpa.onnx.OfflineSpeakerDiarizationConfig
 import com.k2fsa.sherpa.onnx.OfflineSpeakerSegmentationModelConfig
@@ -18,6 +15,7 @@ import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OnlineStream
 import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
 import com.k2fsa.sherpa.onnx.SileroVadModelConfig
+import com.k2fsa.sherpa.onnx.SpeakerEmbeddingExtractor
 import com.k2fsa.sherpa.onnx.SpeakerEmbeddingExtractorConfig
 import com.k2fsa.sherpa.onnx.Vad
 import com.k2fsa.sherpa.onnx.VadModelConfig
@@ -39,7 +37,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-/** Official Sherpa runtime for Omnilingual CTC, Silero VAD, and native diarization. */
+/** Local Whisper/legacy ASR, Silero VAD, and independent native speaker evidence. */
 class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManager, private val enableDiarization: Boolean = true) :
     LocalSpeechRuntime {
     private val _state = MutableStateFlow<SpeechRuntimeState>(
@@ -48,10 +46,23 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
     override val state: StateFlow<SpeechRuntimeState> = _state.asStateFlow()
 
     private var recognizer: OfflineRecognizer? = null
+    private var offlineRecognizerLanguage: String? = null
+    override val decoderDescription: String?
+        get() = loadedManifest?.let { manifest ->
+            val finalDecoder = if (manifest.whisperStt !=
+                null
+            ) {
+                "Whisper tiny INT8 · transcribe · $sessionLanguage"
+            } else {
+                "Legacy ${if (sessionLanguage == "id") "Zipformer Indonesia" else "Omnilingual CTC"} · Whisper belum diprovision"
+            }
+            if (sessionLanguage == "id") "Partial: Zipformer · Final: $finalDecoder · lokal" else "Partial/final: $finalDecoder · lokal"
+        }
     private var indonesianRecognizer: OnlineRecognizer? = null
     private var indonesianStream: OnlineStream? = null
     private var vad: Vad? = null
     private var diarizer: OfflineSpeakerDiarization? = null
+    private var speakerExtractor: SpeakerEmbeddingExtractor? = null
     private var sessionStartUtcMillis = 0L
     private var sessionId = ""
     private var sessionLanguage = "id"
@@ -67,14 +78,13 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
     private var englishPendingSamples = FloatArray(0)
     private var englishPendingStartOffsetMs = 0L
     private var englishUtteranceId: String? = null
-    private val speakerLabels = mutableMapOf<Int, String>()
-    private var nextSpeakerLabelIndex = 0
+    private var lastEnglishPartialSamples = 0
     private val diarizationAssigner = StableDiarizationAssigner(maxSpeakers = 2)
 
     override suspend fun preflight(): SpeechRuntimeState = preflightInternal(null)
 
     /** Validates the just-activated candidate before the manager commits it. */
-    internal suspend fun preflight(candidateManifest: SpeechBundleManifest): SpeechRuntimeState = preflightInternal(candidateManifest)
+    override suspend fun preflight(candidateManifest: SpeechBundleManifest): SpeechRuntimeState = preflightInternal(candidateManifest)
 
     private suspend fun preflightInternal(candidateManifest: SpeechBundleManifest?): SpeechRuntimeState = runtimeMutex.withLock {
         withContext(Dispatchers.IO) {
@@ -137,7 +147,9 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
                                 "cpu"
                             )
                             clustering = FastClusteringConfig().apply {
-                                numClusters = manifest.diarization.speakerCount
+                                // Two speakers is a capacity, not evidence that
+                                // every window contains two different voices.
+                                numClusters = -1
                                 threshold = 0.5f
                             }
                             minDurationOn = 0.3f
@@ -147,12 +159,27 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
                 } else {
                     null
                 }
+                if (enableDiarization) {
+                    speakerExtractor = SpeakerEmbeddingExtractor(
+                        config = SpeakerEmbeddingExtractorConfig(
+                            File(runtimeRoot, manifest.diarization.embedding).absolutePath,
+                            1,
+                            false,
+                            "cpu"
+                        )
+                    )
+                }
                 loadedManifest = manifest
                 materializedRoot = runtimeRoot
+                if (manifest.whisperStt != null) {
+                    recognizer = OfflineRecognizer(assetManager = null, config = offlineSpeechConfig(manifest, runtimeRoot, "id"))
+                    recognizer?.createStream()?.release()
+                    offlineRecognizerLanguage = "id"
+                }
                 check(nativePreflightIsReady()) { "Sherpa VAD initialization failed." }
-                // ASR is loaded in beginSession() for the selected language. This
-                // avoids loading Omnilingual CTC and Indonesian streaming ASR at
-                // the same time during Profile preflight.
+                // Validate candidate Whisper model loading before activation.
+                // No synthetic waveform or fabricated decoding is used here.
+                // Legacy/streaming ASR is still loaded at beginSession().
                 SpeechRuntimeState.Ready
             }.onSuccess {
                 loadedFingerprint = fingerprint
@@ -186,8 +213,6 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
         }
         vad?.reset()
         diarizationWindow.reset()
-        speakerLabels.clear()
-        nextSpeakerLabelIndex = 0
         diarizationAssigner.reset()
         indonesianPendingSamples = FloatArray(0)
         indonesianPendingStartOffsetMs = 0L
@@ -195,6 +220,7 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
         englishPendingSamples = FloatArray(0)
         englishPendingStartOffsetMs = 0L
         englishUtteranceId = null
+        lastEnglishPartialSamples = 0
     }
 
     override suspend fun detectSpeech(samples: FloatArray): Boolean = withContext(Dispatchers.Default) {
@@ -206,10 +232,16 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
 
     override suspend fun transcribe(samples: FloatArray, startOffsetMs: Long, vadAlreadyAccepted: Boolean): List<SpeechSegment> =
         withContext(Dispatchers.Default) {
+            if (samples.isEmpty()) return@withContext emptyList()
+            if (!vadAlreadyAccepted) {
+                val activeVad = checkNotNull(vad) { "Local VAD is unavailable." }
+                activeVad.acceptWaveform(samples)
+                if (!activeVad.isSpeechDetected()) return@withContext emptyList()
+            }
             if (sessionLanguage == "id") {
                 return@withContext transcribeIndonesian(samples, startOffsetMs)
             }
-            transcribeEnglishPartial(samples, startOffsetMs, vadAlreadyAccepted)
+            transcribeEnglishPartial(samples, startOffsetMs)
         }
 
     override suspend fun finishUtterance(): List<SpeechSegment> = withContext(Dispatchers.Default) {
@@ -237,8 +269,6 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
         sessionId = ""
         diarizationWindow.reset()
         diarizationAssigner.reset()
-        speakerLabels.clear()
-        nextSpeakerLabelIndex = 0
         indonesianUtteranceId = null
         indonesianStream?.release()
         indonesianStream = null
@@ -246,13 +276,18 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
         indonesianRecognizer = null
         recognizer?.release()
         recognizer = null
+        offlineRecognizerLanguage = null
         vad?.release()
         vad = null
         diarizer?.release()
         diarizer = null
+        speakerExtractor?.release()
+        speakerExtractor = null
     }
 
-    private fun nativePreflightIsReady(): Boolean = vad != null && (!enableDiarization || diarizer != null)
+    private fun nativePreflightIsReady(): Boolean = vad != null &&
+        (!enableDiarization || (diarizer != null && speakerExtractor != null)) &&
+        (loadedManifest?.whisperStt == null || recognizer != null)
 
     private fun ensureRecognizerForLanguage(languageCode: String) {
         val manifest = checkNotNull(loadedManifest) {
@@ -261,6 +296,15 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
         val runtimeRoot = checkNotNull(materializedRoot) {
             "Sherpa runtime files belum tersedia."
         }
+        if (manifest.whisperStt != null || languageCode == "en") {
+            if (offlineRecognizerLanguage != languageCode) {
+                recognizer?.release()
+                recognizer = null
+                offlineRecognizerLanguage = null
+                recognizer = OfflineRecognizer(assetManager = null, config = offlineSpeechConfig(manifest, runtimeRoot, languageCode))
+                offlineRecognizerLanguage = languageCode
+            }
+        }
         when (languageCode) {
             "id" -> if (indonesianRecognizer == null) {
                 val indonesian = checkNotNull(manifest.indonesianStt) {
@@ -268,31 +312,9 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
                 }
                 indonesianRecognizer = createIndonesianRecognizer(indonesian, runtimeRoot, manifest)
             }
-            "en" -> if (recognizer == null) {
-                recognizer = createEnglishRecognizer(runtimeRoot, manifest)
-            }
+            "en" -> Unit
             else -> error("Unsupported speech session language: $languageCode")
         }
-    }
-
-    private fun createEnglishRecognizer(runtimeRoot: File, manifest: SpeechBundleManifest): OfflineRecognizer {
-        val model = OfflineModelConfig().apply {
-            omnilingual = OfflineOmnilingualAsrCtcModelConfig(
-                File(runtimeRoot, manifest.stt.model).absolutePath
-            )
-            tokens = File(runtimeRoot, manifest.stt.tokens).absolutePath
-            modelType = manifest.stt.modelType
-            numThreads = 2
-            provider = "cpu"
-        }
-        return OfflineRecognizer(
-            assetManager = null,
-            config = OfflineRecognizerConfig().apply {
-                featConfig = FeatureConfig(manifest.sampleRateHz, 80, 0.0f)
-                modelConfig = model
-                decodingMethod = "greedy_search"
-            }
-        )
     }
 
     private fun createIndonesianRecognizer(
@@ -338,41 +360,41 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
     }
 
     /**
-     * Omnilingual CTC is offline, so decode the bounded active utterance for a
+     * English ASR is offline, so decode at bounded one-second intervals for a
      * replaceable partial. The same ID is finalized at VAD endpoint after
      * diarization; no live event claims a final speaker identity.
      */
-    private fun transcribeEnglishPartial(samples: FloatArray, startOffsetMs: Long, vadAlreadyAccepted: Boolean): List<SpeechSegment> {
-        val activeRecognizer = recognizer ?: return emptyList()
-        if (samples.isEmpty()) return emptyList()
-        if (!vadAlreadyAccepted) {
-            val activeVad = vad ?: return emptyList()
-            activeVad.acceptWaveform(samples)
-            if (!activeVad.isSpeechDetected()) return emptyList()
-        }
+    private fun transcribeEnglishPartial(samples: FloatArray, startOffsetMs: Long): List<SpeechSegment> {
+        val activeRecognizer = checkNotNull(recognizer) { "English speech recognizer is unavailable." }
+        require(samples.isNotEmpty())
         if (englishPendingSamples.isEmpty()) englishPendingStartOffsetMs = startOffsetMs
         if (englishUtteranceId == null) {
             englishUtteranceId = "${sessionId.ifBlank { sessionStartUtcMillis.toString() }}-$startOffsetMs"
         }
         englishPendingSamples += samples
-        val text = decodeEnglish(activeRecognizer, englishPendingSamples)
-        if (text.isBlank()) return emptyList()
+        if (englishPendingSamples.size - lastEnglishPartialSamples < MIN_OFFLINE_PARTIAL_SAMPLES) return emptyList()
+        lastEnglishPartialSamples = englishPendingSamples.size
+        val text = decodeOffline(activeRecognizer, englishPendingSamples)
         val endOffsetMs = englishPendingStartOffsetMs + englishPendingSamples.size * 1_000L / SAMPLE_RATE_HZ
-        return listOf(
-            SpeechSegment(
-                id = checkNotNull(englishUtteranceId),
-                speakerId = "Unknown",
-                startOffsetMs = englishPendingStartOffsetMs,
-                endOffsetMs = endOffsetMs,
-                startTimestampUtc = sessionStartUtcMillis + englishPendingStartOffsetMs,
-                endTimestampUtc = sessionStartUtcMillis + endOffsetMs,
-                rawText = text,
-                confidence = SpeechSegmentQuality.score(englishPendingSamples, text),
-                language = sessionLanguage,
-                sessionId = sessionId,
-                isFinal = false
+        return if (text.isBlank()) {
+            emptyList()
+        } else {
+            listOf(
+                SpeechSegment(
+                    id = checkNotNull(englishUtteranceId),
+                    speakerId = "Unknown",
+                    startOffsetMs = englishPendingStartOffsetMs,
+                    endOffsetMs = endOffsetMs,
+                    startTimestampUtc = sessionStartUtcMillis + englishPendingStartOffsetMs,
+                    endTimestampUtc = sessionStartUtcMillis + endOffsetMs,
+                    rawText = text,
+                    confidence = SpeechSegmentQuality.score(englishPendingSamples, text),
+                    language = sessionLanguage,
+                    sessionId = sessionId,
+                    isFinal = false
+                )
             )
-        )
+        }
     }
 
     private fun finishEnglishUtterance(): List<SpeechSegment> {
@@ -384,28 +406,13 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
         englishPendingSamples = FloatArray(0)
         englishPendingStartOffsetMs = 0L
         englishUtteranceId = null
-        val text = decodeEnglish(activeRecognizer, pending)
+        lastEnglishPartialSamples = 0
+        val text = decodeOffline(activeRecognizer, pending)
         if (text.isBlank()) return emptyList()
-        val endOffsetMs = startOffsetMs + pending.size * 1_000L / SAMPLE_RATE_HZ
-        val speaker = if (enableDiarization) speakerFor(pending, startOffsetMs) else null
-        return listOf(
-            SpeechSegment(
-                id = utteranceId,
-                speakerId = speaker?.let(::speakerLabelFor) ?: "Unknown",
-                startOffsetMs = startOffsetMs,
-                endOffsetMs = endOffsetMs,
-                startTimestampUtc = sessionStartUtcMillis + startOffsetMs,
-                endTimestampUtc = sessionStartUtcMillis + endOffsetMs,
-                rawText = text,
-                confidence = SpeechSegmentQuality.score(pending, text),
-                language = sessionLanguage,
-                sessionId = sessionId,
-                isFinal = true
-            )
-        )
+        return finalSegments(pending, startOffsetMs, utteranceId, text) { decodeOffline(activeRecognizer, it) }
     }
 
-    private fun decodeEnglish(activeRecognizer: OfflineRecognizer, samples: FloatArray): String {
+    private fun decodeOffline(activeRecognizer: OfflineRecognizer, samples: FloatArray): String {
         val stream: OfflineStream = activeRecognizer.createStream()
         return try {
             stream.acceptWaveform(samples, SAMPLE_RATE_HZ)
@@ -465,41 +472,89 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
         englishPendingStartOffsetMs = 0L
         englishUtteranceId = null
 
-        stream.inputFinished()
-        while (activeRecognizer.isReady(stream)) activeRecognizer.decode(stream)
-        val result = activeRecognizer.getResult(stream)
-        val text = result.text.trim()
-        val endOffsetMs = startOffsetMs + pending.size * 1_000L / SAMPLE_RATE_HZ
-        activeRecognizer.reset(stream)
+        val legacyText = try {
+            stream.inputFinished()
+            while (activeRecognizer.isReady(stream)) activeRecognizer.decode(stream)
+            activeRecognizer.getResult(stream).text.trim()
+        } finally {
+            // reset() does not reset the feature extractor's InputFinished.
+            // Never feed a second utterance into that terminal native stream.
+            indonesianStream = null
+            stream.release()
+            indonesianStream = activeRecognizer.createStream()
+        }
+        val whisper = loadedManifest?.whisperStt?.let { checkNotNull(recognizer) { "Verified Whisper decoder is unavailable." } }
+        val text = if (whisper != null) decodeOffline(whisper, pending) else legacyText
         if (text.isBlank()) return emptyList()
 
-        val speaker = if (enableDiarization) speakerFor(pending, startOffsetMs) else null
-        return listOf(
-            SpeechSegment(
-                id = utteranceId,
-                speakerId = speaker?.let(::speakerLabelFor) ?: "Unknown",
-                startOffsetMs = startOffsetMs,
-                endOffsetMs = endOffsetMs,
-                startTimestampUtc = sessionStartUtcMillis + startOffsetMs,
-                endTimestampUtc = sessionStartUtcMillis + endOffsetMs,
-                rawText = text,
-                // Sherpa does not expose calibrated ASR posteriors. Store a
-                // quality-derived evidence score, never a fabricated probability.
-                confidence = SpeechSegmentQuality.score(pending, text),
-                language = sessionLanguage,
-                sessionId = sessionId,
-                isFinal = true
-            )
-        )
+        return finalSegments(pending, startOffsetMs, utteranceId, text) { crop ->
+            if (whisper != null) decodeOffline(whisper, crop) else decodeIndonesianCrop(activeRecognizer, crop)
+        }
     }
 
-    @Suppress("ReturnCount")
-    private fun speakerFor(samples: FloatArray, startOffsetMs: Long): Int? {
-        val activeDiarizer = diarizer ?: return null
+    private fun decodeIndonesianCrop(activeRecognizer: OnlineRecognizer, samples: FloatArray): String {
+        val stream = activeRecognizer.createStream()
+        return try {
+            stream.acceptWaveform(samples, SAMPLE_RATE_HZ)
+            stream.inputFinished()
+            while (activeRecognizer.isReady(stream)) activeRecognizer.decode(stream)
+            activeRecognizer.getResult(stream).text.trim()
+        } finally {
+            stream.release()
+        }
+    }
+
+    private fun finalSegments(
+        samples: FloatArray,
+        startOffsetMs: Long,
+        utteranceId: String,
+        text: String,
+        decode: (FloatArray) -> String
+    ): List<SpeechSegment> {
+        val endOffsetMs = startOffsetMs + samples.size * 1_000L / SAMPLE_RATE_HZ
+        val turns = if (enableDiarization) diarizedTurns(samples, startOffsetMs) else emptyList()
+        val planned = DiarizedUtterancePlanner.plan(turns, startOffsetMs, endOffsetMs)
+        val decoded = planned.mapNotNull { turn ->
+            val first = ((turn.startOffsetMs - startOffsetMs) * SAMPLE_RATE_HZ / MILLIS_PER_SECOND).toInt().coerceIn(0, samples.size)
+            val last = ((turn.endOffsetMs - startOffsetMs) * SAMPLE_RATE_HZ / MILLIS_PER_SECOND).toInt().coerceIn(first, samples.size)
+            val crop = samples.copyOfRange(first, last)
+            val turnText = if (planned.size == 1) text else decode(crop)
+            if (turnText.isBlank()) null else turn to (crop to turnText)
+        }
+        // A blank turn crop must not erase observed speech from the real whole
+        // ASR result. Preserve its text with unresolved speaker identity.
+        if (decoded.size != planned.size) {
+            val unresolved = StableDiarizationSegment(startOffsetMs, endOffsetMs, -1, null)
+            return listOf(finalSegment(utteranceId, unresolved, samples, text))
+        }
+        return decoded.mapIndexed { index, (turn, result) ->
+            finalSegment(
+                if (index == 0) utteranceId else "$utteranceId-turn-$index",
+                turn,
+                result.first,
+                result.second
+            )
+        }
+    }
+
+    private fun finalSegment(id: String, turn: StableDiarizationSegment, samples: FloatArray, text: String): SpeechSegment = SpeechSegment(
+        id = id,
+        speakerId = turn.stableSpeakerIndex?.let(::speakerLabelFor) ?: "Unknown",
+        startOffsetMs = turn.startOffsetMs,
+        endOffsetMs = turn.endOffsetMs,
+        startTimestampUtc = sessionStartUtcMillis + turn.startOffsetMs,
+        endTimestampUtc = sessionStartUtcMillis + turn.endOffsetMs,
+        rawText = text,
+        confidence = SpeechSegmentQuality.score(samples, text),
+        language = sessionLanguage,
+        sessionId = sessionId,
+        isFinal = true
+    )
+
+    private fun diarizedTurns(samples: FloatArray, startOffsetMs: Long): List<StableDiarizationSegment> {
+        val activeDiarizer = diarizer ?: return emptyList()
         diarizationWindow.append(samples, startOffsetMs)
         val windowStartMs = diarizationWindow.startOffsetMs
-        val chunkStartMs = startOffsetMs.coerceAtLeast(windowStartMs)
-        val chunkEndMs = chunkStartMs + samples.size * 1_000L / SAMPLE_RATE_HZ
         val current = activeDiarizer.process(diarizationWindow.samples)
             .map { segment ->
                 DiarizationSegment(
@@ -509,58 +564,50 @@ class SherpaOnnxSpeechRuntime(private val bundleManager: SpeechModelBundleManage
                 )
             }
             .filter { it.endOffsetMs > it.startOffsetMs }
-        if (current.isEmpty()) return null
-
-        val stabilized = diarizationAssigner.assign(current)
-        return stabilized
-            .maxByOrNull { overlapMs(it.startOffsetMs, it.endOffsetMs, chunkStartMs, chunkEndMs) }
-            ?.takeIf { overlapMs(it.startOffsetMs, it.endOffsetMs, chunkStartMs, chunkEndMs) > 0L }
-            ?.stableSpeakerIndex
+        val exclusive = DiarizedUtterancePlanner.exclusiveSpeakerSpans(current).groupBy(DiarizationSegment::rawCluster)
+        val embeddings = current.map(DiarizationSegment::rawCluster).distinct().associateWith { cluster ->
+            nativeEmbedding(exclusive[cluster].orEmpty(), windowStartMs)
+        }
+        return diarizationAssigner.assign(current, embeddings)
     }
 
-    private fun speakerLabelFor(cluster: Int): String {
-        val normalized = cluster.coerceIn(0, 1)
-        return speakerLabels.getOrPut(normalized) {
-            val label = "Speaker_$nextSpeakerLabelIndex"
-            nextSpeakerLabelIndex = (nextSpeakerLabelIndex + 1).coerceAtMost(1)
-            label
+    private fun nativeEmbedding(segments: List<DiarizationSegment>, windowStartMs: Long): FloatArray {
+        val extractor = speakerExtractor ?: return FloatArray(0)
+        val windowPcm = diarizationWindow.samples
+        val pcm = FloatArray(MAX_EMBEDDING_SAMPLES)
+        var written = 0
+        segments.forEach { segment ->
+            val first = ((segment.startOffsetMs - windowStartMs) * SAMPLE_RATE_HZ / MILLIS_PER_SECOND).toInt()
+                .coerceIn(0, windowPcm.size)
+            val last = ((segment.endOffsetMs - windowStartMs) * SAMPLE_RATE_HZ / MILLIS_PER_SECOND).toInt()
+                .coerceIn(first, windowPcm.size)
+            val count = minOf(last - first, pcm.size - written)
+            windowPcm.copyInto(pcm, written, first, first + count)
+            written += count
+        }
+        return if (written < SAMPLE_RATE_HZ) FloatArray(0) else computeEmbedding(extractor, pcm.copyOf(written))
+    }
+
+    private fun computeEmbedding(extractor: SpeakerEmbeddingExtractor, pcm: FloatArray): FloatArray {
+        val stream = extractor.createStream()
+        return try {
+            stream.acceptWaveform(pcm, SAMPLE_RATE_HZ)
+            stream.inputFinished()
+            if (extractor.isReady(stream)) extractor.compute(stream) else FloatArray(0)
+        } finally {
+            stream.release()
         }
     }
 
-    private fun overlapMs(startA: Long, endA: Long, startB: Long, endB: Long): Long =
-        (minOf(endA, endB) - maxOf(startA, startB)).coerceAtLeast(0L)
-
-    private class RollingSpeakerWindow {
-        var samples: FloatArray = FloatArray(0)
-            private set
-        var startOffsetMs: Long = 0L
-            private set
-
-        fun reset() {
-            samples = FloatArray(0)
-            startOffsetMs = 0L
-        }
-
-        fun append(chunk: FloatArray, chunkStartOffsetMs: Long) {
-            if (samples.isEmpty() || chunkStartOffsetMs - (startOffsetMs + samples.size * 1000L / SAMPLE_RATE_HZ) > MAX_GAP_MS) {
-                samples = FloatArray(0)
-                startOffsetMs = chunkStartOffsetMs
-            }
-            samples = samples + chunk
-            val excess = samples.size - MAX_SAMPLES
-            if (excess > 0) {
-                samples = samples.copyOfRange(excess, samples.size)
-                startOffsetMs += excess * 1000L / SAMPLE_RATE_HZ
-            }
-        }
-
-        companion object {
-            const val MAX_SAMPLES = SAMPLE_RATE_HZ * 15
-            const val MAX_GAP_MS = 250L
-        }
+    private fun speakerLabelFor(identity: Int): String {
+        require(identity in 0..1)
+        return "Speaker_$identity"
     }
 
     companion object {
+        private const val MIN_OFFLINE_PARTIAL_SAMPLES = 16_000
+        private const val MAX_EMBEDDING_SAMPLES = 8 * 16_000
+        private const val MILLIS_PER_SECOND = 1_000L
         const val SAMPLE_RATE_HZ = 16_000
     }
 }

@@ -33,6 +33,10 @@ sealed class SecureStorageException(message: String, cause: Throwable? = null) :
 
 interface EncryptedStorageService {
     fun writeEncryptedFile(userId: String, fileName: String, data: InputStream): EncryptedFileRef
+
+    /** Create-only move of a staged file encrypted with the same installation key. */
+    fun moveNewEncryptedFile(userId: String, source: String, target: String): EncryptedFileRef =
+        throw UnsupportedOperationException("Create-only encrypted publication is not supported by this provider")
     fun readEncryptedFile(userId: String, relativePath: String): InputStream
     fun copyEncryptedFile(userId: String, relativePath: String, output: OutputStream) {
         readEncryptedFile(userId, relativePath).use { input -> input.copyTo(output) }
@@ -44,6 +48,15 @@ interface EncryptedStorageService {
 
 class AndroidEncryptedStorageService(context: Context, private val keyManager: KeyManager) : EncryptedStorageService {
     private val root = File(context.applicationContext.filesDir, "sensitive")
+
+    override fun moveNewEncryptedFile(userId: String, source: String, target: String): EncryptedFileRef {
+        val staged = resolveUserFile(userId, source)
+        require(staged.isFile) { "Staged encrypted artifact is missing" }
+        val destination = resolveUserFile(userId, target)
+        destination.parentFile?.mkdirs()
+        AtomicFilePublisher.moveNew(staged, destination)
+        return EncryptedFileRef(target, destination.length())
+    }
 
     override fun writeEncryptedFile(userId: String, fileName: String, data: InputStream): EncryptedFileRef {
         val destination = resolveUserFile(userId, fileName)

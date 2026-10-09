@@ -13,6 +13,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -111,6 +113,7 @@ fun ProfileScreen(
     var showTechnicalDetails by rememberSaveable { mutableStateOf(false) }
     var showVoiceSettings by rememberSaveable { mutableStateOf(false) }
     var showSherpaSources by rememberSaveable { mutableStateOf(false) }
+    var backupAction by remember { mutableStateOf<ProfileBackupAction?>(null) }
     var destructiveAction by remember { mutableStateOf<ProfileDestructiveAction?>(null) }
     val motion = LocalAppMotion.current
 
@@ -360,7 +363,7 @@ fun ProfileScreen(
             )
             val speechActionForSheet = speechAction
             ArtifactSettingsRow(
-                title = "Sherpa speech bundle",
+                title = "Sherpa + Whisper offline",
                 status = speechStatusLabel(
                     readiness = state.speechBundleReadiness,
                     capabilitiesReady = state.speechCapabilities.indonesianSttReady,
@@ -469,9 +472,19 @@ fun ProfileScreen(
         }
         ProfileDetail.DATA -> ProfileDetailSheet(
             title = "Data dan keamanan",
-            subtitle = "Ekspor tidak menghapus database atau artifact offline.",
+            subtitle = "Cadangan SAF terenkripsi bisa dipulihkan setelah instal ulang dengan kata sandi Anda.",
             onDismiss = { detailSheet = null }
         ) {
+            ProfileBackupSection(
+                state = state.userBackup,
+                connected = state.modelStorage.connected,
+                operationRunning = state.isLifecycleOperationRunning,
+                actions = ProfileBackupActions(
+                    onConnect = { modelFolderLauncher.launch(null) },
+                    onBackup = { backupAction = ProfileBackupAction.BACKUP },
+                    onRestore = { backupAction = ProfileBackupAction.RESTORE }
+                )
+            )
             Button(
                 onClick = viewModel::exportAllData,
                 enabled = !state.isLifecycleOperationRunning,
@@ -568,8 +581,13 @@ fun ProfileScreen(
     if (showSherpaSources) {
         AlertDialog(
             onDismissRequest = { showSherpaSources = false },
-            title = { Text("Siapkan Sherpa") },
-            text = { Text("Pilih sumber lokal atau unduh hanya jika bundle benar-benar belum tersedia.") },
+            title = { Text("Siapkan atau perbarui Sherpa") },
+            text = {
+                Text(
+                    "Tambahkan Whisper lokal melalui bundle terbaru. " +
+                        "Salinan lama tetap dipakai sampai pembaruan tervalidasi; rekaman dan data sesi tidak dihapus."
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -588,6 +606,14 @@ fun ProfileScreen(
                     modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET_DP.dp)
                 ) { Text("Impor ZIP lokal") }
             }
+        )
+    }
+
+    backupAction?.let { action ->
+        ProfileBackupDialog(
+            action = action,
+            onConfirm = if (action == ProfileBackupAction.BACKUP) viewModel::createSafBackup else viewModel::restoreSafBackup,
+            onDismiss = { backupAction = null }
         )
     }
 
@@ -736,9 +762,10 @@ private fun ProfileDetailSheet(title: String, subtitle: String, onDismiss: () ->
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ProfileStatusRow(label: String, status: String, emphasized: Boolean) {
-    Row(
+internal fun ProfileStatusRow(label: String, status: String, emphasized: Boolean) {
+    FlowRow(
         modifier = Modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) {
@@ -746,7 +773,7 @@ private fun ProfileStatusRow(label: String, status: String, emphasized: Boolean)
                 stateDescription = status
             },
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.Micro)
     ) {
         Text(label, style = MaterialTheme.typography.bodyMedium)
         Text(
@@ -1163,13 +1190,20 @@ private fun speechContextualAction(
     downloadState.isBusy() -> ArtifactAction("Batalkan", "Batalkan proses Sherpa", onCancel)
     downloadState is SpeechBundleDownloadState.Failed && downloadState.retryable ->
         ArtifactAction("Coba lagi", "Coba lagi Sherpa", onRetry)
-    readiness is SpeechBundleReadiness.Ready -> null
+    readiness is SpeechBundleReadiness.Ready -> readySpeechAction(readiness, onPrepare)
     recovery?.state == DurableArtifactRecoveryState.READY ->
         ArtifactAction("Pulihkan", "Pulihkan Sherpa", onSync)
     !storageConnected ->
         ArtifactAction("Hubungkan", "Hubungkan folder Sherpa", onConnect)
     else -> ArtifactAction("Siapkan", "Siapkan Sherpa", onPrepare)
 }
+
+private fun readySpeechAction(readiness: SpeechBundleReadiness.Ready, onPrepare: () -> Unit): ArtifactAction? =
+    if (readiness.manifest.whisperStt == null) {
+        ArtifactAction("Perbarui", "Tambahkan Whisper lokal tanpa menghapus sesi", onPrepare)
+    } else {
+        null
+    }
 
 private fun embeddingContextualAction(
     state: ArtifactState,
@@ -1402,7 +1436,7 @@ private enum class ProfileDestructiveAction(val title: String, val message: Stri
     ),
     DELETE_SPEECH(
         "Hapus salinan Sherpa?",
-        "Runtime speech app-private akan dihapus. Mirror SAF tidak dihapus otomatis."
+        "Runtime speech app-private dan mirror speech di SAF akan dihapus. Rekaman dan data sesi tetap ada."
     ),
     DISCARD_GEMMA_PARTIAL("Hapus partial Gemma?", "Progres download parsial akan hilang."),
     DISCARD_SPEECH_PARTIAL("Hapus partial Sherpa?", "Progres download parsial akan hilang."),
