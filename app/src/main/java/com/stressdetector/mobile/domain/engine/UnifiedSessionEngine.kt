@@ -691,7 +691,8 @@ class UnifiedSessionEngine(
                     divergenceEvents = linkedDivergences,
                     monitorStatus = currentMonitorStatus,
                     annotations = annotationRepository.getAnnotationsForSession(sessionId),
-                    ppgArchive = ppgArchiveResult
+                    ppgArchive = ppgArchiveResult,
+                    audioStartSessionElapsedMillis = timeline?.audioStartElapsedMillisOrNull()
                 )
             }
         }.onFailure { error ->
@@ -714,12 +715,12 @@ class UnifiedSessionEngine(
         }
         val processingError = completedStop.processingError
         processingError?.let { error ->
-            currentMonitorStatus = ("$currentMonitorStatus; STT_DEGRADED: $error")
+            currentMonitorStatus = ("$currentMonitorStatus; AUDIO_PROCESSING_DEGRADED: $error")
                 .take(MAX_MONITOR_STATUS_LENGTH)
             _monitorStatus.value = currentMonitorStatus
         }
         val evidenceComplete = artifacts != null && transcriptPersisted.isSuccess && eventsPersisted.isSuccess
-        val persistenceComplete = evidenceComplete && processingError == null
+        val persistenceComplete = evidenceComplete && processingError == null && artifacts.warnings.isEmpty()
         val sessionEnd = runCatching {
             repository.endSession(
                 sessionId,
@@ -727,7 +728,7 @@ class UnifiedSessionEngine(
                 persistedAudioPath(audio, artifacts),
                 artifactFolderPath = artifacts?.folderPath.orEmpty(),
                 summaryStatus = when {
-                    processingError != null -> "ERROR_STT_PROCESSING"
+                    processingError != null -> "ERROR_AUDIO_PROCESSING"
                     else -> artifacts?.summaryStatus ?: "ERROR_FINALIZATION_FAILED"
                 },
                 audioGaps = completedStop.audioGaps,
@@ -743,7 +744,8 @@ class UnifiedSessionEngine(
         } else {
             val reasons = buildList {
                 finalizationFailure?.let { add("artifacts:${it.message ?: "failed"}") }
-                processingError?.let { add("stt:$it") }
+                processingError?.let { add("audio_processing:$it") }
+                addAll(artifacts?.warnings.orEmpty())
                 addAll(persistenceFailures)
             }
             val message = "Session finalization completed with retained evidence: ${reasons.joinToString().ifBlank { "unknown error" }}"
@@ -955,6 +957,7 @@ class UnifiedSessionEngine(
             biosignal = projectedBiosignal,
             acousticAnalysis = latestAcousticAnalysis,
             livePitch = livePitchHistory,
+            audioStartSessionElapsedMs = currentTimeline?.audioStartElapsedMillisOrNull(),
             transcript = transcript,
             backlogFrames = transcript.processing.backlogFrames,
             audioGaps = transcript.processing.audioGaps,

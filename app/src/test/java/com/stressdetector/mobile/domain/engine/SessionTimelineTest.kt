@@ -2,6 +2,7 @@ package com.stressdetector.mobile.domain.engine
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SessionTimelineTest {
@@ -14,8 +15,10 @@ class SessionTimelineTest {
             monotonicNowMillis = { monotonic }
         )
 
+        assertNull(timeline.audioStartElapsedMillisOrNull())
         monotonic = 3_000L
         timeline.markAudioStarted()
+        assertEquals(2_000L, timeline.audioStartElapsedMillisOrNull())
         monotonic = 8_000L
         timeline.bindPpgClock(ppgElapsedMillis = 1_000L)
 

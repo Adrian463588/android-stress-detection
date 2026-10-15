@@ -155,7 +155,8 @@ internal class LivePitchProcessor(
         status,
         voicedFrameCount = evidence?.voicedFrameCount ?: 0,
         frameCount = evidence?.frameCount ?: 0,
-        reason = reason
+        reason = reason,
+        waveform = com.stressdetector.mobile.domain.engine.pcmPeakEnvelope(window.samples)
     )
 
     private companion object {

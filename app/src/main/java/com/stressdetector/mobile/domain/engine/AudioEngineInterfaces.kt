@@ -35,7 +35,11 @@ data class SpeechSegment(
     /** Optional user-edited text; rawText remains the immutable STT output. */
     val editedText: String? = null,
     /** Actual eGeMAPS LLD observations; null for older sessions/partials. */
-    val prosody: VerbatimProsodyEvidence? = null
+    val prosody: VerbatimProsodyEvidence? = null,
+    /** Optional for old sessions; raw decoder results retain their own actual PCM bounds. */
+    val decoderEvidence: SpeechDecoderEvidence? = null,
+    /** Fail-closed archive restoration; absence of decoder metadata is not a verified decode. */
+    val recognitionEvidenceUnavailableReason: String? = null
 ) {
     /** Never present an inferred speaker identity before endpoint diarization. */
     val displaySpeakerLabel: String
@@ -43,6 +47,17 @@ data class SpeechSegment(
 
     val displayText: String
         get() = editedText ?: rawText
+
+    /** Non-blank explicit edits are reviewed as USER_EDITED evidence; raw results remain available. */
+    val recognitionReviewReason: String?
+        get() = if (editedText?.isNotBlank() == true) {
+            null
+        } else {
+            recognitionEvidenceUnavailableReason ?: SpeechRecognitionReview.reason(rawText, decoderEvidence)
+        }
+
+    val hasFinalReviewEvidence: Boolean
+        get() = isFinal && (displayText.isNotBlank() || decoderEvidence != null || recognitionEvidenceUnavailableReason != null)
 }
 
 /**

@@ -158,20 +158,7 @@ class UnifiedSessionRepository(private val database: StressDatabase) : VerbatimS
         session?.let {
             VerbatimSessionDetail(
                 summary = toSummary(it),
-                transcript = segments.map { segment ->
-                    SpeechSegment(
-                        id = segment.segmentId,
-                        speakerId = segment.speakerId,
-                        startOffsetMs = segment.startOffsetMs,
-                        endOffsetMs = segment.endOffsetMs,
-                        startTimestampUtc = it.startedAtMillis + segment.startOffsetMs,
-                        endTimestampUtc = it.startedAtMillis + segment.endOffsetMs,
-                        rawText = segment.rawText,
-                        editedText = segment.cleanedText?.takeIf { it != segment.rawText },
-                        confidence = segment.confidence,
-                        language = segment.language
-                    )
-                },
+                transcript = segments.map { segment -> segment.toSpeechSegment(it.startedAtMillis) },
                 divergenceEvents = events
             )
         }
@@ -226,6 +213,20 @@ class UnifiedSessionRepository(private val database: StressDatabase) : VerbatimS
         audioGaps = AudioGapCodec.decode(session.audioGapsJson)
     )
 }
+
+internal fun TranscriptSegmentEntity.toSpeechSegment(sessionStartedAtMillis: Long): SpeechSegment = SpeechSegment(
+    id = segmentId,
+    speakerId = speakerId,
+    startOffsetMs = startOffsetMs,
+    endOffsetMs = endOffsetMs,
+    startTimestampUtc = sessionStartedAtMillis + startOffsetMs,
+    endTimestampUtc = sessionStartedAtMillis + endOffsetMs,
+    rawText = rawText,
+    editedText = cleanedText?.takeIf { it != rawText },
+    confidence = confidence,
+    language = language,
+    sessionId = sessionId
+)
 
 internal fun sessionStatusForFinalization(finalizationStatus: String): String = when (finalizationStatus) {
     "COMPLETED" -> "COMPLETED"

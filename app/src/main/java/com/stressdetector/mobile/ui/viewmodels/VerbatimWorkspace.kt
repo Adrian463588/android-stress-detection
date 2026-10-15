@@ -18,7 +18,7 @@ internal class VerbatimWorkspace(val state: UnifiedSessionUiState) {
     val canManageStoredSessions =
         !capturing && !state.isFinalizing && !state.isSavingTranscript && !state.isExporting && !state.isDeletingSession
     val canMutateArchive = archiveReady && canManageStoredSessions
-    val canExportText = canMutateArchive && state.transcriptSegments.any { it.isFinal && it.displayText.isNotBlank() }
+    val canExportText = canMutateArchive && state.transcriptSegments.any { it.hasFinalReviewEvidence }
     val canExportZip = canMutateArchive && !state.selectedSession?.summary?.artifactFolderPath.isNullOrBlank()
     val canPrepareAudio = archiveReady && !state.isDeletingSession
     val canReviewAudio = canPrepareAudio &&

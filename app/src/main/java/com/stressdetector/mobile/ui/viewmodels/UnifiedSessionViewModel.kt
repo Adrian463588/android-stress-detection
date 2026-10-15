@@ -12,6 +12,8 @@ import com.stressdetector.mobile.domain.engine.AnnotationRepository
 import com.stressdetector.mobile.domain.engine.AudioCaptureState
 import com.stressdetector.mobile.domain.engine.AudioInputSource
 import com.stressdetector.mobile.domain.engine.AudioIntelligenceEngine
+import com.stressdetector.mobile.domain.engine.AudioSignalTracePage
+import com.stressdetector.mobile.domain.engine.AudioTimelineReviewMarker
 import com.stressdetector.mobile.domain.engine.DomainAnnotation
 import com.stressdetector.mobile.domain.engine.LiveBiosignalEngine
 import com.stressdetector.mobile.domain.engine.LiveBiosignalSnapshot
@@ -26,10 +28,12 @@ import com.stressdetector.mobile.domain.engine.UnifiedSessionEngine
 import com.stressdetector.mobile.domain.engine.UnifiedSessionLiveSnapshot
 import com.stressdetector.mobile.domain.engine.UniqueSessionNameGenerator
 import com.stressdetector.mobile.domain.engine.VerbatimArtifactService
+import com.stressdetector.mobile.domain.engine.VerbatimAudioSignalTrace
 import com.stressdetector.mobile.domain.engine.VerbatimPlaybackCoordinator
 import com.stressdetector.mobile.domain.engine.VerbatimSessionDetail
 import com.stressdetector.mobile.domain.engine.VerbatimSessionRepository
 import com.stressdetector.mobile.domain.engine.VerbatimSessionSummary
+import com.stressdetector.mobile.domain.engine.verbatimSignalMarkers
 import com.stressdetector.mobile.domain.interaction.IdempotentActionGate
 import com.stressdetector.mobile.ml.storage.ModelStorageManager
 import com.stressdetector.mobile.ml.storage.ModelStorageState
@@ -80,6 +84,9 @@ data class UnifiedSessionUiState(
     val liveBiosignal: LiveBiosignalSnapshot = LiveBiosignalSnapshot(),
     val acousticAnalysis: AcousticAnalysisSnapshot? = null,
     val livePitch: List<com.stressdetector.mobile.domain.engine.LivePitchObservation> = emptyList(),
+    val audioStartSessionElapsedMs: Long? = null,
+    val signalTracePage: AudioSignalTracePage? = null,
+    val isSignalTraceLoading: Boolean = false,
     val elapsedSeconds: Long = 0L,
     val isModelReady: Boolean = false,
     val speechRuntimeState: SpeechRuntimeState = SpeechRuntimeState.Checking,
@@ -125,6 +132,15 @@ data class UnifiedSessionUiState(
     val reviewCues: List<com.stressdetector.mobile.domain.engine.VerbatimCue> by lazy {
         cueAnalyses.values.flatMap { it.cues }
             .sortedWith(compareBy({ it.startOffsetMs }, { it.startChar }, { it.id }))
+    }
+    val signalMarkers: List<AudioTimelineReviewMarker> by lazy {
+        val page = signalTracePage
+        val end = page?.endOffsetMs ?: livePitch.lastOrNull()?.endOffsetMs ?: 0L
+        val liveStart = maxOf(livePitch.firstOrNull()?.startOffsetMs ?: 0L, end - VerbatimAudioSignalTrace.PAGE_MILLIS)
+        val start = page?.startOffsetMs ?: liveStart
+        selectedSessionId?.let {
+            transcriptSegments.verbatimSignalMarkers(it, divergenceEvents, audioStartSessionElapsedMs, start until end, annotations)
+        }.orEmpty()
     }
     val canStartNewSession: Boolean
         get() = !isSessionActive &&
@@ -236,6 +252,8 @@ class UnifiedSessionViewModel(
 
     private var timerJob: kotlinx.coroutines.Job? = null
     private var selectedSessionJob: Job? = null
+    private var signalTraceJob: Job? = null
+    private var signalTraceRequestId = 0L
     private var playbackLoadJob: Job? = null
     private var preparedSessionKey: String? = null
     private var loadingSessionKey: String? = null
@@ -489,6 +507,7 @@ class UnifiedSessionViewModel(
                     liveBiosignal = safeBiosignal,
                     acousticAnalysis = live.acousticAnalysis,
                     livePitch = live.livePitch,
+                    audioStartSessionElapsedMs = live.audioStartSessionElapsedMs,
                     sessionGeneration = live.generation,
                     divergenceEvents = safeBiosignal.divergenceEvents
                 )
@@ -634,6 +653,8 @@ class UnifiedSessionViewModel(
         // Prevent a History collector from overwriting this live generation.
         selectedSessionJob?.cancel()
         selectedSessionJob = null
+        signalTraceJob?.cancel()
+        signalTraceRequestId++
         _uiState.update {
             it.copy(
                 selectedSessionId = sessionId,
@@ -645,6 +666,9 @@ class UnifiedSessionViewModel(
                 liveBiosignal = LiveBiosignalSnapshot(sessionId = sessionId),
                 acousticAnalysis = null,
                 livePitch = emptyList(),
+                audioStartSessionElapsedMs = null,
+                signalTracePage = null,
+                isSignalTraceLoading = false,
                 finalizationEvidencePersisted = null,
                 finalizationWarnings = emptyList(),
                 savedFolderPath = null,
@@ -804,10 +828,12 @@ class UnifiedSessionViewModel(
     fun addManualAnnotation(text: String) {
         val state = _uiState.value
         val normalized = text.trim()
-        if (!VerbatimWorkspace(state).canAnnotate || normalized.isBlank()) return
+        val audioOrigin = state.audioStartSessionElapsedMs
+        val clockReady = !state.isSessionActive || audioOrigin != null
+        if (!VerbatimWorkspace(state).canAnnotate || normalized.isBlank() || !clockReady) return
         val sessionId = state.selectedSessionId ?: return
         val timestampMs = if (state.isSessionActive) {
-            unifiedSessionEngine.currentElapsedMillis()
+            (unifiedSessionEngine.currentElapsedMillis() - checkNotNull(audioOrigin)).coerceAtLeast(0L)
         } else {
             state.playbackPositionMillis
         }
@@ -822,7 +848,11 @@ class UnifiedSessionViewModel(
             runCatching { unifiedSessionEngine.saveAnnotation(annotation) }
                 .onSuccess {
                     _uiState.update { current ->
-                        current.copy(annotations = (current.annotations + annotation).sortedBy { it.timestampMs })
+                        if (current.selectedSessionId != sessionId) {
+                            current
+                        } else {
+                            current.copy(annotations = (current.annotations + annotation).sortedBy { it.timestampMs })
+                        }
                     }
                 }
                 .onFailure { error ->
@@ -864,6 +894,8 @@ class UnifiedSessionViewModel(
             return
         }
         selectedSessionJob?.cancel()
+        signalTraceJob?.cancel()
+        signalTraceRequestId++
         _uiState.update {
             it.copy(
                 selectedSessionId = sessionId,
@@ -875,6 +907,9 @@ class UnifiedSessionViewModel(
                 liveBiosignal = LiveBiosignalSnapshot(sessionId = sessionId),
                 acousticAnalysis = null,
                 livePitch = emptyList(),
+                audioStartSessionElapsedMs = null,
+                signalTracePage = null,
+                isSignalTraceLoading = false,
                 savedFolderPath = null,
                 playbackFilePath = null,
                 playbackState = PlaybackState.Preparing,
@@ -889,7 +924,7 @@ class UnifiedSessionViewModel(
         loadingSessionKey = null
         selectedSessionJob = viewModelScope.launch {
             var evidenceKey: String? = null
-            var prosodyBySegment = emptyMap<String, com.stressdetector.mobile.domain.engine.VerbatimProsodyEvidence>()
+            var archivedEvidence = emptyMap<String, SpeechSegment>()
             sessionRepository.observeSession(sessionId).collect { detail ->
                 if (_uiState.value.selectedSessionId != sessionId || _uiState.value.isSessionActive) {
                     return@collect
@@ -902,6 +937,9 @@ class UnifiedSessionViewModel(
                             transcriptSegments = emptyList(),
                             divergenceEvents = emptyList(),
                             annotations = emptyList(),
+                            signalTracePage = null,
+                            audioStartSessionElapsedMs = null,
+                            isSignalTraceLoading = false,
                             savedFolderPath = null,
                             playbackFilePath = null,
                             playbackState = PlaybackState.Idle,
@@ -913,14 +951,23 @@ class UnifiedSessionViewModel(
                     return@collect
                 }
                 val archiveKey = "${detail.summary.artifactFolderPath}|${detail.summary.finalizationStatus}"
+                val archiveChanged = evidenceKey != archiveKey
                 if (evidenceKey != archiveKey) {
                     val restored = withContext(Dispatchers.IO) {
-                        artifactService.restoreProsody(PrivacyIdentity.LOCAL_PROFILE_ID, detail)
+                        artifactService.restoreTranscriptEvidence(PrivacyIdentity.LOCAL_PROFILE_ID, detail)
                     }
-                    prosodyBySegment = restored.transcript.mapNotNull { segment -> segment.prosody?.let { segment.id to it } }.toMap()
+                    archivedEvidence = restored.transcript.associateBy { it.id }
                     evidenceKey = archiveKey
                 }
-                val reviewed = detail.copy(transcript = detail.transcript.map { it.copy(prosody = prosodyBySegment[it.id]) })
+                val reviewed = detail.copy(
+                    transcript = detail.transcript.map {
+                        it.copy(
+                            prosody = archivedEvidence[it.id]?.prosody,
+                            decoderEvidence = archivedEvidence[it.id]?.decoderEvidence,
+                            recognitionEvidenceUnavailableReason = archivedEvidence[it.id]?.recognitionEvidenceUnavailableReason
+                        )
+                    }
+                )
                 _uiState.update {
                     it.copy(
                         selectedSessionId = sessionId,
@@ -931,11 +978,49 @@ class UnifiedSessionViewModel(
                         savedFolderPath = detail.summary.artifactFolderPath.ifBlank { detail.summary.audioFilePath }
                     )
                 }
+                if (archiveChanged) loadSignalTracePage(detail.summary, 0L)
                 val audioKey = "${detail.summary.sessionId}|${detail.summary.audioFilePath}|${detail.summary.artifactFolderPath}"
                 // Failed-with-evidence archives may still contain usable audio. The loader verifies it;
                 // missing/corrupt artifacts become an explicit playback error rather than endless Preparing.
                 if (audioKey != preparedSessionKey && audioKey != loadingSessionKey) {
                     loadPlayback(detail.summary)
+                }
+            }
+        }
+    }
+
+    fun moveSignalPage(direction: Int) {
+        val state = _uiState.value
+        if (!VerbatimWorkspace(state).canManageStoredSessions || state.isSignalTraceLoading || direction !in listOf(-1, 1)) return
+        val page = state.signalTracePage
+        val summary = state.selectedSession?.summary
+        if (page != null && summary != null) moveSignalPage(page, summary, direction)
+    }
+
+    private fun moveSignalPage(page: AudioSignalTracePage, summary: VerbatimSessionSummary, direction: Int) {
+        val lastEnd = page.recordingEndOffsetMs
+        val lastStart = ((lastEnd - 1L).coerceAtLeast(0L) / VerbatimAudioSignalTrace.PAGE_MILLIS) * VerbatimAudioSignalTrace.PAGE_MILLIS
+        val start = (page.startOffsetMs + direction * VerbatimAudioSignalTrace.PAGE_MILLIS).coerceIn(0L, lastStart)
+        if (start != page.startOffsetMs) loadSignalTracePage(summary, start)
+    }
+
+    private fun loadSignalTracePage(summary: VerbatimSessionSummary, startOffsetMs: Long) {
+        signalTraceJob?.cancel()
+        val requestId = ++signalTraceRequestId
+        _uiState.update { it.copy(isSignalTraceLoading = true) }
+        signalTraceJob = viewModelScope.launch {
+            val page = withContext(Dispatchers.IO) {
+                artifactService.readSignalTrace(PrivacyIdentity.LOCAL_PROFILE_ID, summary, startOffsetMs)
+            }
+            _uiState.update { state ->
+                if (requestId != signalTraceRequestId || state.selectedSessionId != summary.sessionId || state.isSessionActive) {
+                    state
+                } else {
+                    state.copy(
+                        signalTracePage = page,
+                        audioStartSessionElapsedMs = page.manifest?.audioStartSessionElapsedMs,
+                        isSignalTraceLoading = false
+                    )
                 }
             }
         }
@@ -1074,7 +1159,7 @@ class UnifiedSessionViewModel(
     fun prepareTranscriptExport(): String? {
         val state = _uiState.value
         val detail = state.selectedSession
-        val hasFinalTranscript = detail?.transcript?.any { it.isFinal && it.displayText.isNotBlank() } == true
+        val hasFinalTranscript = detail?.transcript?.any(SpeechSegment::hasFinalReviewEvidence) == true
         val blocked = when {
             state.isSavingTranscript -> "Tunggu sampai edit transkrip selesai disimpan sebelum ekspor TXT."
             !VerbatimWorkspace(state).canExportText || !hasFinalTranscript -> "Pilih sesi dengan transkrip final untuk ekspor TXT."
@@ -1133,12 +1218,12 @@ class UnifiedSessionViewModel(
             playbackCoordinator.stop()
             val deleted = runCatching {
                 when {
-                    folder.isNotBlank() -> artifactService.deleteSession(PrivacyIdentity.LOCAL_PROFILE_ID, folder)
+                    folder.isNotBlank() -> artifactService.deleteSession(PrivacyIdentity.LOCAL_PROFILE_ID, folder, sessionId)
                     session.audioFilePath.isNotBlank() -> artifactService.deleteArtifact(
                         PrivacyIdentity.LOCAL_PROFILE_ID,
                         session.audioFilePath
                     )
-                    else -> true
+                    else -> artifactService.deleteSession(PrivacyIdentity.LOCAL_PROFILE_ID, "", sessionId)
                 }
             }.getOrDefault(false)
             val repositoryDeleted = deleted && sessionRepository.deleteSession(sessionId).isSuccess
@@ -1151,25 +1236,16 @@ class UnifiedSessionViewModel(
                 playbackCoordinator.clearCache(sessionId)
             }
             _uiState.update {
+                val clearingSelection = sessionFullyDeleted && it.selectedSessionId == sessionId
                 it.copy(
                     savedFolderPath = if (sessionFullyDeleted) null else folder,
-                    selectedSessionId = if (sessionFullyDeleted && it.selectedSessionId == sessionId) null else it.selectedSessionId,
-                    selectedSession = if (sessionFullyDeleted && it.selectedSessionId == sessionId) null else it.selectedSession,
-                    transcriptSegments = if (sessionFullyDeleted &&
-                        it.selectedSessionId == sessionId
-                    ) {
-                        emptyList()
-                    } else {
-                        it.transcriptSegments
-                    },
-                    divergenceEvents = if (sessionFullyDeleted &&
-                        it.selectedSessionId == sessionId
-                    ) {
-                        emptyList()
-                    } else {
-                        it.divergenceEvents
-                    },
-                    annotations = if (sessionFullyDeleted && it.selectedSessionId == sessionId) emptyList() else it.annotations,
+                    selectedSessionId = if (clearingSelection) null else it.selectedSessionId,
+                    selectedSession = if (clearingSelection) null else it.selectedSession,
+                    transcriptSegments = if (clearingSelection) emptyList() else it.transcriptSegments,
+                    divergenceEvents = if (clearingSelection) emptyList() else it.divergenceEvents,
+                    annotations = if (clearingSelection) emptyList() else it.annotations,
+                    signalTracePage = if (clearingSelection) null else it.signalTracePage,
+                    audioStartSessionElapsedMs = if (clearingSelection) null else it.audioStartSessionElapsedMs,
                     playbackFilePath = null,
                     playbackState = if (sessionFullyDeleted) PlaybackState.Idle else it.playbackState,
                     playbackPositionMillis = if (sessionFullyDeleted) 0L else it.playbackPositionMillis,
@@ -1190,7 +1266,8 @@ class UnifiedSessionViewModel(
                     if (session.artifactFolderPath.isNotBlank()) {
                         artifactService.deleteSession(
                             PrivacyIdentity.LOCAL_PROFILE_ID,
-                            session.artifactFolderPath
+                            session.artifactFolderPath,
+                            session.sessionId
                         )
                     } else if (session.audioFilePath.isNotBlank()) {
                         artifactService.deleteArtifact(
@@ -1198,7 +1275,7 @@ class UnifiedSessionViewModel(
                             session.audioFilePath
                         )
                     } else {
-                        true
+                        artifactService.deleteSession(PrivacyIdentity.LOCAL_PROFILE_ID, "", session.sessionId)
                     }
                 }.getOrDefault(false)
             }
@@ -1215,6 +1292,8 @@ class UnifiedSessionViewModel(
                     transcriptSegments = if (deleted) emptyList() else it.transcriptSegments,
                     divergenceEvents = if (deleted) emptyList() else it.divergenceEvents,
                     annotations = if (deleted) emptyList() else it.annotations,
+                    signalTracePage = if (deleted) null else it.signalTracePage,
+                    audioStartSessionElapsedMs = if (deleted) null else it.audioStartSessionElapsedMs,
                     playbackFilePath = if (deleted) null else it.playbackFilePath,
                     playbackState = if (deleted) PlaybackState.Idle else it.playbackState,
                     playbackPositionMillis = if (deleted) 0L else it.playbackPositionMillis,

@@ -2,9 +2,7 @@ package com.stressdetector.mobile.domain.engine
 
 import android.content.Context
 import android.net.Uri
-import com.google.gson.JsonParseException
 import com.stressdetector.mobile.security.EncryptedStorageService
-import com.stressdetector.mobile.security.SecureStorageException
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -12,6 +10,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlinx.coroutines.CancellationException
 
 /** User-action-only review/export/delete boundary for finalized encrypted session artifacts. */
 class VerbatimArtifactService(
@@ -75,41 +74,89 @@ class VerbatimArtifactService(
     }
 
     /** One existing encrypted snapshot; no database migration or reconstructed acoustic evidence. */
-    fun restoreProsody(userId: String, session: VerbatimSessionDetail): VerbatimSessionDetail {
+    // Untrusted archive/provider boundary: failures quarantine native evidence explicitly; cancellation propagates.
+    @Suppress("TooGenericExceptionCaught")
+    fun restoreTranscriptEvidence(userId: String, session: VerbatimSessionDetail): VerbatimSessionDetail {
         val folder = session.summary.artifactFolderPath
         if (folder.isBlank()) return session
         val result = try {
             requireSafeFolder(folder)
-            encryptedStorage.readEncryptedFile(userId, "$folder/live_transcript.jsonl.enc").bufferedReader().use { input ->
-                Result.success(VerbatimProsodyArchive.parse(session.summary.sessionId, input.lineSequence()))
+            val path = "$folder/live_transcript.jsonl.enc"
+            val prosody = encryptedStorage.readEncryptedFile(userId, path).bufferedReader().use { input ->
+                VerbatimProsodyArchive.parse(session.summary.sessionId, input.lineSequence())
             }
-        } catch (error: SecureStorageException) {
-            Result.failure(error)
-        } catch (error: JsonParseException) {
-            Result.failure(error)
-        } catch (error: IllegalArgumentException) {
-            Result.failure(error)
-        } catch (error: IllegalStateException) {
+            val decoder = encryptedStorage.readEncryptedFile(userId, path).bufferedReader().use { input ->
+                VerbatimProsodyArchive.parseDecoderEvidence(session.summary.sessionId, input.lineSequence())
+            }
+            Result.success(prosody to decoder)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
             Result.failure(error)
         }
-        val evidence = result.getOrElse { error ->
-            session.transcript.associate { segment ->
-                segment.id to VerbatimProsodyEvidence(unavailableReason = "Arsip openSMILE unavailable: ${error.message}")
-            }
+        val archiveFailure = result.exceptionOrNull()?.let { "Arsip bukti native unavailable: ${it.message}" }
+        val evidence = result.getOrElse {
+            emptyMap<String, VerbatimProsodyEvidence>() to emptyMap()
         }
-        return session.copy(transcript = session.transcript.map { it.copy(prosody = evidence[it.id]) })
+        return session.copy(
+            transcript = session.transcript.map { segment ->
+                val decoder = evidence.second[segment.id]
+                val reason =
+                    archiveFailure ?: decoderRestorationReason(decoder, segment, session.summary.sessionId, evidence.second.isNotEmpty())
+                segment.copy(
+                    prosody = if (reason == null) evidence.first[segment.id] else VerbatimProsodyEvidence(unavailableReason = reason),
+                    decoderEvidence = decoder.takeIf { reason == null },
+                    recognitionEvidenceUnavailableReason = reason
+                )
+            }
+        )
     }
 
-    fun deleteSession(userId: String, folderPath: String): Boolean {
-        requireSafeFolder(folderPath)
+    fun readSignalTrace(userId: String, session: VerbatimSessionSummary, startOffsetMs: Long = 0L): AudioSignalTracePage {
+        require(startOffsetMs in 0..Long.MAX_VALUE - VerbatimAudioSignalTrace.PAGE_MILLIS)
+        val root = if (session.artifactFolderPath.startsWith("verbatim_sessions/") && !session.artifactFolderPath.endsWith(".enc")) {
+            "${session.artifactFolderPath}/audio_signal"
+        } else {
+            "verbatim/${session.sessionId}/audio_signal"
+        }
+        return runCatching {
+            VerbatimAudioSignalTrace(encryptedStorage).readPage(userId, root, session.sessionId, startOffsetMs)
+        }.getOrElse { error ->
+            if (error is CancellationException) throw error
+            AudioSignalTracePage(
+                session.sessionId,
+                startOffsetMs,
+                startOffsetMs + VerbatimAudioSignalTrace.PAGE_MILLIS,
+                error = "Jejak waveform/pitch tidak tersedia atau tidak valid; audio asli tetap dapat ditinjau."
+            )
+        }
+    }
+
+    fun deleteSession(userId: String, folderPath: String, sessionId: String? = null): Boolean {
+        require(sessionId == null || sessionId.matches(Regex("[A-Za-z0-9_-]+")))
+        require(folderPath.isNotBlank() || sessionId != null) { "Missing session artifact identity." }
+        if (folderPath.isNotBlank()) requireSafeFolder(folderPath)
+        val capturePrefix = sessionId?.let { "verbatim/$it/" }
         val files = encryptedStorage.listEncryptedFiles(userId)
-            .filter { it.relativePath.startsWith("$folderPath/") }
+            .filter {
+                isOwnedArchiveArtifact(it.relativePath, folderPath) ||
+                    capturePrefix != null &&
+                    it.relativePath.startsWith(capturePrefix)
+            }
         val deleted = files.map { file -> encryptedStorage.deleteEncryptedFile(userId, file.relativePath) }
         return deleted.all { it }
     }
 
-    fun deleteArtifact(userId: String, relativePath: String): Boolean =
-        encryptedStorage.deleteEncryptedFile(userId, normalizeAudioPath(relativePath))
+    fun deleteArtifact(userId: String, relativePath: String): Boolean {
+        val audioPath = normalizeAudioPath(relativePath)
+        if (audioPath.matches(Regex("verbatim/[A-Za-z0-9_-]+/audio\\.wav\\.enc"))) {
+            val prefix = audioPath.removeSuffix("audio.wav.enc") + "audio_signal/"
+            val deleted = encryptedStorage.listEncryptedFiles(userId).filter { it.relativePath.startsWith(prefix) }
+                .map { encryptedStorage.deleteEncryptedFile(userId, it.relativePath) }
+            if (deleted.any { !it }) return false
+        }
+        return encryptedStorage.deleteEncryptedFile(userId, audioPath)
+    }
 
     /** Accepts the pre-history-migration path shape but never forwards it to storage. */
     private fun normalizeAudioPath(path: String): String {
@@ -134,11 +181,48 @@ class VerbatimArtifactService(
                 folderPath.substringAfter("verbatim_sessions/").isNotBlank()
         ) { "Invalid session artifact folder." }
     }
-
-    private fun cacheKey(path: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(path.toByteArray(StandardCharsets.UTF_8))
-        .joinToString("") { byte -> "%02x".format(byte) }
 }
+
+private fun isOwnedArchiveArtifact(path: String, folder: String): Boolean = when {
+    folder.isBlank() -> false
+    path == folder -> folder.endsWith(".enc")
+    else -> path.startsWith("$folder/") || isOwnedStagingArtifact(path, folder)
+}
+
+private fun isOwnedStagingArtifact(path: String, folder: String): Boolean {
+    val prefix = "$folder.__staging_"
+    val nonceAndFile = path.removePrefix(prefix)
+    return path.startsWith(prefix) &&
+        nonceAndFile.matches(
+            Regex("[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}/.+")
+        )
+}
+
+private fun decoderRestorationReason(
+    decoder: SpeechDecoderEvidence?,
+    segment: SpeechSegment,
+    sessionId: String,
+    archiveHasDecoderEvidence: Boolean
+): String? {
+    val expected = archiveHasDecoderEvidence || segment.decoderEvidence != null || segment.recognitionEvidenceUnavailableReason != null
+    return when {
+        decoder == null && expected -> segment.recognitionEvidenceUnavailableReason ?: "Bukti decoder ujaran hilang; tinjau audio."
+        decoder != null && !decoder.matches(segment, sessionId) -> "Arsip bukti decoder tidak cocok dengan transkrip sesi; tinjau audio."
+        else -> null
+    }
+}
+
+private fun SpeechDecoderEvidence.matches(segment: SpeechSegment, sessionId: String): Boolean {
+    val selected = crop ?: wholeUtterance
+    return segment.sessionId == sessionId &&
+        selected.rawText == segment.rawText &&
+        selected.startOffsetMs == segment.startOffsetMs &&
+        selected.endOffsetMs == segment.endOffsetMs
+}
+
+private fun cacheKey(path: String): String = MessageDigest.getInstance("SHA-256")
+    .digest(path.toByteArray(StandardCharsets.UTF_8))
+    .joinToString("") { byte -> "%02x".format(byte) }
 
 /** Validates the decrypted playback artifact before exposing it to MediaPlayer. */
 internal object WavFileValidator {

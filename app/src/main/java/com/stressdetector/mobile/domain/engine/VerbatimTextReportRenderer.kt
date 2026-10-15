@@ -23,7 +23,9 @@ class VerbatimTextReportRenderer(private val analyzer: VerbatimCueAnalyzer = Ver
         appendLine("Teks raw ASR dipertahankan di aplikasi. Teks bertanda [EDIT] adalah koreksi pengguna.")
         appendLine("Cue = temuan leksikal untuk ditinjau, bukan bukti desepsi/diagnosis.")
         appendLine("Waktu cue adalah rentang ujaran, bukan timestamp per kata. Dengarkan audio untuk konfirmasi.")
-        appendLine("Transkrip/cue: offset sejak mulai audio; marker/catatan: elapsed sesi. Jeda dicatat; origin clock bisa berbeda.")
+        appendLine(
+            "Transkrip/cue dan catatan baru: offset audio termasuk jeda; marker sensor: elapsed sesi. Clock catatan lama dapat berbeda."
+        )
         appendLine("Analisis leksikal: ${VerbatimCueAnalyzer.VERSION}")
         appendLine()
     }
@@ -32,13 +34,16 @@ class VerbatimTextReportRenderer(private val analyzer: VerbatimCueAnalyzer = Ver
         appendLine("TRANSKRIP")
         val transcript = segments.filter(SpeechSegment::isFinal).distinctBy(SpeechSegment::id)
             .sortedWith(compareBy(SpeechSegment::startOffsetMs, SpeechSegment::id))
-        require(transcript.any { it.displayText.isNotBlank() }) { "Transkrip final belum tersedia untuk ekspor TXT." }
+        require(transcript.any { it.hasFinalReviewEvidence }) {
+            "Transkrip final belum tersedia untuk ekspor TXT."
+        }
         transcript.forEach { segment ->
             val analysis = analyzer.analyze(segment)
             appendLine(
                 "[${time(segment.startOffsetMs)}–${time(segment.endOffsetMs)}] ${segment.displaySpeakerLabel}" +
                     if (segment.editedText != null) " [EDIT]" else ""
             )
+            segment.recognitionReviewReason?.let { appendLine("  [TINJAUAN ASR] $it") }
             appendLine(analysis.text)
             analysis.cues.forEach { cue ->
                 appendLine(
@@ -46,6 +51,7 @@ class VerbatimTextReportRenderer(private val analyzer: VerbatimCueAnalyzer = Ver
                         "${cue.source}; ${cue.ruleId}: ${cue.explanation}"
                 )
             }
+            segment.decoderEvidence?.let { appendDecoderEvidence(it) }
             segment.prosody?.let { evidence ->
                 val pitch = evidence.pitchHz?.let { "F0 rerata geometrik ujaran ${number(it)} Hz" }
                     ?: "pitch unavailable: ${VerbatimTranscriptText.clean(evidence.unavailableReason ?: "voiced frame tidak memadai") }"
@@ -55,6 +61,22 @@ class VerbatimTextReportRenderer(private val analyzer: VerbatimCueAnalyzer = Ver
             }
             appendLine()
         }
+    }
+
+    private fun StringBuilder.appendDecoderEvidence(evidence: SpeechDecoderEvidence) {
+        appendLine("  [Bukti decoder] ${evidence.status}; kebijakan=${SpeechRecognitionReview.VERSION}")
+        appendDecoderResult("Ujaran utuh", evidence.wholeUtterance)
+        evidence.crop?.let { appendDecoderResult("Crop", it) }
+        evidence.precedingPartial?.let { appendDecoderResult("Partial terakhir, bukan teks final", it) }
+        evidence.streamingFinal?.let { appendDecoderResult("Final streaming", it) }
+    }
+
+    private fun StringBuilder.appendDecoderResult(label: String, result: SpeechDecoderResult) {
+        appendLine(
+            "  $label [${time(result.startOffsetMs)}–${time(result.endOffsetMs)}]; " +
+                "backend=${result.backend}; revision=${result.modelRevision}"
+        )
+        appendLine(result.rawText)
     }
 
     private fun StringBuilder.appendMarkers(events: List<DivergenceEventEntity>, transcript: List<SpeechSegment>) {

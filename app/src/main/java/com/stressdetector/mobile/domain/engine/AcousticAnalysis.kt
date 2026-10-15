@@ -18,6 +18,20 @@ enum class SessionMarkerType {
     MANUAL
 }
 
+/** Bounded measured peaks. Invalid PCM is unavailable, not a zero-filled waveform. */
+fun pcmPeakEnvelope(samples: FloatArray, maxPoints: Int = MAX_AUDIO_ENVELOPE_POINTS): List<Float> {
+    require(maxPoints in 1..MAX_AUDIO_ENVELOPE_POINTS)
+    if (samples.isEmpty() || samples.any { !it.isFinite() || abs(it) > 1f }) return emptyList()
+    val count = minOf(maxPoints, samples.size)
+    return List(count) { bucket ->
+        val start = bucket * samples.size / count
+        val end = (bucket + 1) * samples.size / count
+        var peak = 0f
+        for (index in start until end) peak = maxOf(peak, abs(samples[index]))
+        peak
+    }
+}
+
 data class AcousticAudioFrame(val sessionId: String, val samples: FloatArray, val startOffsetMs: Long, val durationMs: Long)
 
 data class AcousticAnalysisSnapshot(
@@ -181,7 +195,7 @@ class AcousticFrameAnalyzer(private val config: AcousticAnalysisConfig = Acousti
             markerEpisodeId = markerDecision.episodeId,
             markerEpisodeStartOffsetMs = markerDecision.episodeStartOffsetMs,
             evidenceConfidence = qualityScore,
-            waveform = downsampleEnvelope(samples)
+            waveform = pcmPeakEnvelope(samples)
         )
     }
 
@@ -253,28 +267,10 @@ class AcousticFrameAnalyzer(private val config: AcousticAnalysisConfig = Acousti
         return (finiteRatio * clippingPenalty).coerceIn(0f, 1f)
     }
 
-    private fun downsampleEnvelope(samples: FloatArray): List<Float> {
-        if (samples.isEmpty()) return emptyList()
-        val outputSize = minOf(MAX_WAVEFORM_POINTS, samples.size)
-        return ArrayList<Float>(outputSize).also { envelope ->
-            for (bucket in 0 until outputSize) {
-                val start = bucket * samples.size / outputSize
-                val end = ((bucket + 1) * samples.size / outputSize).coerceAtLeast(start + 1)
-                var maxMagnitude = 0f
-                for (index in start until end) {
-                    val sample = samples[index]
-                    if (sample.isFinite()) maxMagnitude = maxOf(maxMagnitude, abs(sample))
-                }
-                envelope += maxMagnitude.coerceIn(0f, 1f)
-            }
-        }
-    }
-
     private companion object {
         const val MIN_RMS = 1.0e-6
         const val CLIP_THRESHOLD = 0.98f
         const val MIN_MARKER_QUALITY = 0.5f
-        const val MAX_WAVEFORM_POINTS = 64
     }
 
     private data class MarkerDecision(

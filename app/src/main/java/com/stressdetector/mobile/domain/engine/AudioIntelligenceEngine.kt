@@ -42,6 +42,7 @@ data class UnifiedSessionLiveSnapshot(
     val biosignal: LiveBiosignalSnapshot = LiveBiosignalSnapshot(),
     val acousticAnalysis: AcousticAnalysisSnapshot? = null,
     val livePitch: List<LivePitchObservation> = emptyList(),
+    val audioStartSessionElapsedMs: Long? = null,
     val transcript: LiveTranscriptState = LiveTranscriptState(),
     val backlogFrames: Int = 0,
     val audioGaps: List<AudioGap> = emptyList(),
@@ -79,7 +80,9 @@ data class RecordedAudio(
     val endedAtUtcMillis: Long,
     val durationMs: Long,
     val sampleRateHz: Int,
-    val audioGaps: List<AudioGap> = emptyList()
+    val audioGaps: List<AudioGap> = emptyList(),
+    /** Optional encrypted measured waveform/F0 archive; null for historical recordings. */
+    val signalTraceRoot: String? = null
 )
 
 data class AudioCaptureStart(val startedAtUtcMillis: Long, val startedAtMonotonicMillis: Long)
@@ -89,7 +92,7 @@ data class AudioRecordingStopResult(
     val finalTranscript: List<SpeechSegment>,
     val audioGaps: List<AudioGap> = emptyList(),
     val droppedFrameCount: Long = 0L,
-    /** Non-fatal STT/VAD/diarization evidence; finalization must not call it success. */
+    /** Non-fatal STT/VAD/diarization/signal-archive evidence; finalization must not hide degradation. */
     val processingError: String? = null
 )
 

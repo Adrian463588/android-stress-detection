@@ -82,7 +82,7 @@ class VerbatimProsodyMarkerDetector(
         val identityReady = segment.isFinal && segment.speakerId in SPEAKERS
         val qualityReady = segment.confidence >= MIN_AUDIO_QUALITY &&
             evidence.voicedFrameCount.toDouble() / evidence.frameCount >= MIN_VOICED_RATIO
-        return identityReady && qualityReady
+        return identityReady && qualityReady && segment.recognitionReviewReason == null
     }
 
     private fun advance(segment: SpeechSegment, evidence: VerbatimProsodyEvidence, pitch: Double): VerbatimProsodyMarker? {

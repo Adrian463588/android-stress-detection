@@ -86,6 +86,17 @@ class VerbatimCueAnalyzerTest {
         }
     }
 
+    @Test
+    fun `questionable raw ASR cannot become a linguistic cue but explicit edits can`() {
+        val raw = "mungkin mungkin mungkin mungkin"
+        val original = segment(raw)
+        assertTrue(analyzer.analyze(original).cues.isEmpty())
+        assertEquals(raw, original.rawText)
+        val edited = analyzer.analyze(original.copy(editedText = "Saya tidak yakin."))
+        assertEquals(VerbatimCueType.UNCERTAINTY, edited.cues.single().type)
+        assertEquals(VerbatimCueSource.USER_EDITED, edited.cues.single().source)
+    }
+
     private fun segment(text: String) = SpeechSegment(
         id = "utterance", speakerId = "Speaker_0", startOffsetMs = 1_200L, endOffsetMs = 4_800L,
         startTimestampUtc = 1_200L, endTimestampUtc = 4_800L, rawText = text, confidence = 1f, sessionId = "session"

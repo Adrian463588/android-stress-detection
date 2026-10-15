@@ -99,6 +99,7 @@ class RealAudioIntelligenceEngine(
     private var pauseStartedAtElapsedNanos: Long? = null
     private var importedSourceFile: File? = null
     private var capturedPcmDurationMs: Long = 0L
+    private var signalTraceRoot: String? = null
 
     @Volatile private var captureActive = false
 
@@ -431,7 +432,8 @@ class RealAudioIntelligenceEngine(
                 durationMs = capturedPcmDurationMs.takeIf { it > 0L }
                     ?: (endedAt - startedAtUtcMillis).coerceAtLeast(0L),
                 sampleRateHz = SAMPLE_RATE_HZ,
-                audioGaps = _speechProcessingState.value.audioGaps
+                audioGaps = _speechProcessingState.value.audioGaps,
+                signalTraceRoot = signalTraceRoot
             )
             _captureState.value = AudioCaptureState.Stopped(recorded)
             AudioOperationResult.Success(
@@ -457,6 +459,7 @@ class RealAudioIntelligenceEngine(
             importedSourceFile?.delete()
             importedSourceFile = null
             capturedPcmDurationMs = 0L
+            signalTraceRoot = null
             writerJob = null
         }
     }
@@ -695,7 +698,18 @@ class RealAudioIntelligenceEngine(
             }
         }
 
+        val traceWriter = runCatching {
+            com.stressdetector.mobile.domain.engine.VerbatimAudioSignalTrace(encryptedStorage)
+                .writer(checkNotNull(currentUserId), sessionId)
+        }.onFailure { recordProcessingError(it) }.getOrNull()
+        signalTraceRoot = traceWriter?.root
         val pitchProcessor = LivePitchProcessor(sessionId, scope, prosodyExtractor::analyze) { observation ->
+            traceWriter?.let { writer ->
+                runCatching { writer.append(observation) }.onFailure {
+                    writer.markFailure("Sebagian jejak waveform/pitch gagal disimpan.")
+                    recordProcessingError(it)
+                }
+            }
             _livePitchFlow.emit(observation)
         }
 
@@ -802,6 +816,7 @@ class RealAudioIntelligenceEngine(
             captureHandoff.close()
             captureHandoffJob.join()
             pitchProcessor.close()
+            runCatching { traceWriter?.finish() }.onFailure { recordProcessingError(it) }
             if (!workQueue.offer(SpeechTranscriptionWork.FlushCapture)) {
                 recordProcessingError(IllegalStateException("Speech capture drain could not be queued."))
             }
@@ -815,6 +830,8 @@ class RealAudioIntelligenceEngine(
             utteranceSpool.cleanup()
         } catch (error: Exception) {
             pitchProcessor.cancel()
+            traceWriter?.markFailure("Perekaman terhenti sebelum jejak audio selesai.")
+            runCatching { traceWriter?.finish() }.onFailure { recordProcessingError(it) }
             captureHandoff.close()
             captureHandoffJob.cancelAndJoin()
             workQueue.close()
