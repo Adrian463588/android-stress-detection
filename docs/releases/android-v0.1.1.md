@@ -30,7 +30,7 @@ Local gates: 879 JVM tests, zero failures/errors; all-module ktlint/detekt;
 Phone/Wear Android lint; native and both APK builds; app instrumentation
 compilation/assembly. Android lint retains 73 phone warnings/2 hints and 9 Watch
 warnings; no physical instrumentation was run. See
-[versioned SHA-256 checksums](android-v0.1.1/SHA256SUMS.txt).
+[versioned SHA-256 checksums](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/SHA256SUMS.txt).
 
 The attached `app-production-debug.apk` is the phone build;
 `wear-production-debug.apk` is the matching-source companion. `SHA256SUMS.txt`
@@ -54,4 +54,4 @@ Do not make the repository/assets public without checking participant consent
 and the Samsung Health Sensor SDK/openSMILE distribution terms separately.
 Speech/LLM model provisioning remains through Profile/SAF, then local inference.
 
-See [local gates, behavior contract and manual checklist](../evidence/verbatim-audio-20261015/acceptance.md).
+See [local gates, behavior contract and manual checklist](https://github.com/Adrian463588/android-stress-detection/blob/android-v0.1.1/docs/evidence/verbatim-audio-20261015/acceptance.md).

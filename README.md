@@ -10,7 +10,7 @@ diagnosis medis.
 - Marker cue, akustik/prosodi, catatan dan PPG opsional dapat ditinjau dengan bukti serta aksi dengar pada arsip.
 - Perbaikan pemotongan diarization, final ASR kosong, antrean VAD dan review pengulangan ASR; teks asli tidak dihapus.
 - Trace ikut ZIP serta backup SAF terenkripsi. Arsip lama tanpa trace menampilkan unavailable.
-- Whisper v4 tetap decoder final Indonesia/Inggris; diarization tetap memakai segmentasi/embedding native, bukan Whisper saja.
+- Bundle speech v4 memakai Whisper untuk teks final Indonesia/Inggris; diarization tetap memakai segmentasi/embedding native, bukan Whisper saja.
 
 [Kontrak, hasil verifikasi dan checklist manual](docs/evidence/verbatim-audio-20261015/acceptance.md).
 Belum ada pengujian fisik APK ini; gambar di bawah berasal dari versi historis.
@@ -32,7 +32,7 @@ historis 0.1.0; versi companion dibangun ulang, tanpa mengklaim pairing/PPG fisi
 
 ### Perbaikan AI+ lokal — 6 Oktober 2026
 
-Perubahan development terbaru **belum memperbarui APK pada tautan rilis**.
+Pada pengujian 6 Oktober berikut, perubahan development saat itu **belum memperbarui APK pada tautan rilis**.
 APK production-debug lokal dipasang in-place pada HP `2412DPC0AG`
 (`QSWSEMRKNFZ9LJRC`) tanpa uninstall atau penghapusan data.
 
