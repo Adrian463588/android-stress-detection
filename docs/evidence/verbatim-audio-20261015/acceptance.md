@@ -149,4 +149,64 @@ and this description corrected before publication.
 - [Pinned Sherpa VAD implementation](https://github.com/k2-fsa/sherpa-onnx/blob/v1.13.4/sherpa-onnx/csrc/voice-activity-detector.cc): drain completed queue without resetting ongoing VAD state.
 - [Sherpa diarization API](https://github.com/k2-fsa/sherpa-onnx/blob/master/sherpa-onnx/c-api/docs/speaker-diarization.dox): separate segmentation, embedding and clustering.
 - [BMAD](https://github.com/bmad-code-org/BMAD-METHOD), [OpenSpec](https://github.com/Fission-AI/OpenSpec): local spec/BDD/review artifacts; no runtime or cloud build dependency.
+- [GitHub Spec Kit](https://github.com/github/spec-kit): reference for the specify → plan → tasks → implement → converge cycle; no new tooling dependency was added.
 - [RTK](https://github.com/rtk-ai/rtk), [Ponytail](https://github.com/dietrichgebert/ponytail), [Caveman](https://github.com/juliusbrussee/caveman): authoring guidance only.
+
+## Follow-up verification — 2026-10-17, Phone v0.1.2
+
+### BDD regression
+
+Given a persisted marker with an unrecognized channel and marker type, when the
+finalizer links it to a final transcript utterance, then it links only by the
+recorded time window and retains the original metadata. It is never converted
+to `GREEN` or `MODEL_AROUSAL`. Regression: `TranscriptTimelineLinkerTest`.
+
+### Local gates
+
+- Python: `ruff check .`, `ruff format --check .`; **430 passed, 3 skipped** in pytest.
+- Android JVM: app **783**, inference **31**, Wear **30**, shared **36**;
+  **880 total, 0 failures, 0 errors, 0 skipped**.
+- `ktlintCheck`, `detekt`, phone `lintProductionDebug`, Wear
+  `lintProductionDebug`, Android-test Kotlin compilation and production APK/test
+  APK assembly passed. Native Sherpa/openSMILE/runtime-contract checks passed.
+- Instrumentation coverage was explicitly selected to avoid capture or storage
+  mutation; it does not turn fixture values into audio/runtime evidence.
+
+### Preservation-safe device check
+
+Device: Samsung SM-G988B (ADB target supplied by the user):
+
+- `adb install --user 0 -r -d app-production-debug.apk` returned `Success`.
+- Installed package reports `com.stressdetector`, versionCode **3**, versionName
+  **0.1.2**. Package UID, data directory, and first-install time were unchanged.
+- SHA-256 of `stress_sessions.db` and `knowledge_base_secure.db` matched before
+  and immediately after replacement. No uninstall, `pm clear`, backup/restore,
+  or session-artifact cleanup was used.
+- Airplane mode was enabled. Launcher reached `MainActivity`; the app process
+  remained alive and no `AndroidRuntime` error appeared in the checked log window.
+- Selected device instrumentation: **25 passed** across
+  `VerbatimPitchPanelTest`, `VerbatimReviewCuesTest`,
+  `VerbatimWorkspaceControlsTest`, and `AppNavigationResponsiveTest`.
+  These are presentation/callback tests with isolated fixtures, not microphone
+  or model accuracy tests.
+
+APK: **252,548,527 bytes**, SHA-256
+`e42071aaa904fdaec6d9e6f05f43a3b1444ab3e78c57121676157e79c16ab07c`.
+Checksums are also attached to the private `android-v0.1.2` prerelease.
+
+### Acceptance still pending
+
+- No microphone session was recorded. Indonesian/English WER/CER, diarization
+  DER, real F0/marker behavior, pause/resume, stop/finalize, playback and TXT
+  export are not claimed passed.
+- Whisper bundle provisioning through Profile/SAF and restore-after-reinstall
+  were not exercised in this check.
+- No paired Galaxy Watch was used; BPM baseline/divergence and PPG channel
+  isolation remain unverified on hardware.
+- This was one compact-phone presentation run, not acceptance for tablet,
+  landscape, TalkBack, or large-font system settings.
+- The smoke launch in airplane mode does not prove complete offline inference.
+
+The earlier 0.1.1 verification table above remains historical; this follow-up
+supersedes its “instrumentation compiled but not run” status only for the four
+selected UI classes listed here.

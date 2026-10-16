@@ -4,29 +4,32 @@ Aplikasi pendamping yang merekam PPG dari Galaxy Watch dan menghitung hasil stre
 secara lokal di HP. Hasilnya adalah **bantuan pengambilan keputusan**, bukan
 diagnosis medis.
 
-## Preview pengembangan Verbatim+ v0.1.1
+## Preview pengembangan Verbatim+ v0.1.2
 
 - Waveform amplitudo PCM dan pitch openSMILE F0 terpisah, live dan arsip per 60 detik.
 - Marker cue, akustik/prosodi, catatan dan PPG opsional dapat ditinjau dengan bukti serta aksi dengar pada arsip.
 - Perbaikan pemotongan diarization, final ASR kosong, antrean VAD dan review pengulangan ASR; teks asli tidak dihapus.
 - Trace ikut ZIP serta backup SAF terenkripsi. Arsip lama tanpa trace menampilkan unavailable.
 - Bundle speech v4 memakai Whisper untuk teks final Indonesia/Inggris; diarization tetap memakai segmentasi/embedding native, bukan Whisper saja.
+- Marker tersimpan dengan metadata channel/taxonomy tak dikenal tetap dipertahankan tanpa fallback ke Green atau arousal.
 
 [Kontrak, hasil verifikasi dan checklist manual](docs/evidence/verbatim-audio-20261015/acceptance.md).
-Belum ada pengujian fisik APK ini; gambar di bawah berasal dari versi historis.
+APK 0.1.2 sudah dipasang dengan replacement aman dan menjalani smoke/UI test non-rekaman pada perangkat; belum ada uji mikrofon atau akurasi pengenalan. Gambar di bawah berasal dari versi historis.
 Preview debug internal, bukan klaim akurasi forensik, diagnosis atau pendeteksi kebohongan.
 
 ### Riwayat unduhan
 
+- [Unduh Phone v0.1.2 preview](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.2/app-production-debug.apk).
+- [Rilis v0.1.2 dan keterbatasannya](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.2), [checksum SHA-256](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.2/SHA256SUMS-0.1.2.txt).
+- [Unduh companion Watch v0.1.1](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/wear-production-debug.apk) — tidak berubah pada rilis ini.
 - [Unduh Phone v0.1.1 preview](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/app-production-debug.apk).
-- [Unduh Galaxy Watch v0.1.1 preview](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/wear-production-debug.apk).
 - [Rilis v0.1.1 dan keterbatasannya](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.1), [checksum SHA-256](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/SHA256SUMS.txt).
 - [Rilis historis Android](https://github.com/Adrian463588/android-stress-detection/releases).
 - [Phone dan Watch v0.1.0](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.0).
 
-Unduhan repo private memerlukan akun yang diberi akses. Gunakan build Phone dan
-Watch 0.1.1 dari rilis yang sama. Source Watch/shared sudah berbeda dari tag
-historis 0.1.0; versi companion dibangun ulang, tanpa mengklaim pairing/PPG fisik lulus.
+Unduhan repo private memerlukan akun yang diberi akses. Phone 0.1.2 tetap memakai
+protocol yang sama dengan companion Watch 0.1.1; pairing dan PPG fisik belum
+divalidasi pada rilis ini.
 
 ## Evidence historis v0.1.0
 

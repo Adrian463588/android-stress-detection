@@ -630,44 +630,7 @@ class UnifiedSessionEngine(
             .sortedWith(compareBy({ it.episodeStartElapsedMillis }, { it.eventId }))
         val linkedDivergences = finalDivergences.map { event ->
             val linkedId = TranscriptTimelineLinker.link(
-                event = DivergenceEvent(
-                    id = event.eventId,
-                    sessionId = event.sessionId,
-                    timestampMs = event.timestampMs,
-                    currentStressProbability = event.currentProbability,
-                    baselineStressProbability = event.baselineProbability,
-                    divergenceDelta = event.delta,
-                    isElevatedArousal = true,
-                    channel = runCatching { com.stressdetector.shared.PpgType.valueOf(event.channel) }
-                        .getOrDefault(com.stressdetector.shared.PpgType.GREEN),
-                    markerElapsedMillis = event.markerElapsedMillis,
-                    episodeStartElapsedMillis = event.episodeStartElapsedMillis,
-                    episodeEndElapsedMillis = event.episodeEndElapsedMillis,
-                    contextWindowStartElapsedMillis = event.contextWindowStartElapsedMillis,
-                    contextWindowEndElapsedMillis = event.contextWindowEndElapsedMillis,
-                    confidence = event.confidence,
-                    signalQuality = event.signalQuality,
-                    sourceWindowId = event.sourceWindowId,
-                    transcriptSegmentId = event.transcriptSegmentId,
-                    markerType = runCatching { PhysiologicalMarkerType.valueOf(event.markerType) }
-                        .getOrDefault(PhysiologicalMarkerType.MODEL_AROUSAL),
-                    bpm = event.bpm,
-                    baselineBpm = event.baselineBpm,
-                    peakBpm = event.peakBpm,
-                    bpmDelta = event.bpmDelta,
-                    bpmTrend = event.bpmTrend,
-                    sourceChannels = event.sourceChannels
-                        .split(',')
-                        .mapNotNull { name -> runCatching { com.stressdetector.shared.PpgType.valueOf(name) }.getOrNull() }
-                        .toSet()
-                        .ifEmpty {
-                            setOf(
-                                runCatching { com.stressdetector.shared.PpgType.valueOf(event.channel) }
-                                    .getOrDefault(com.stressdetector.shared.PpgType.GREEN)
-                            )
-                        },
-                    markerConfigVersion = event.markerConfigVersion
-                ),
+                event = event,
                 transcript = finalizedTranscript,
                 toleranceMillis = TRANSCRIPT_LINK_TOLERANCE_MILLIS,
                 timeline = timeline
