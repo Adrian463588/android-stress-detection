@@ -1,6 +1,11 @@
-# Uji perangkat HP dan Galaxy Watch
+# Uji perangkat Phone dan Galaxy Watch
 
-Panduan ini untuk APK `productionDebug` v0.1.0 dengan model internal dari run `20260916T132736Z`. Model ONNX berada di HP; Watch hanya merekam dan mengirim PPG. Instalasi dan unit test **bukan** bukti bahwa jalur sensor nyata sudah lolos.
+Pasangan APK terbaru di repo adalah Phone **v0.1.5** dan Watch **v0.1.1**
+(companion tidak berubah pada rilis Phone ini), dengan model internal dari run
+`20260916T132736Z`. Model ONNX berada di Phone; Watch merekam dan mengirim PPG.
+Instalasi dan unit test **bukan** bukti bahwa jalur sensor nyata sudah lolos.
+Lihat [README](../README.md) untuk download/checksum dan
+[catatan rilis v0.1.5](releases/android-v0.1.5.md) untuk bukti serta gap.
 
 ## Sebelum mulai
 

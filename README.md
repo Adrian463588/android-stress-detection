@@ -1,375 +1,235 @@
-# Stress Detector untuk Android dan Galaxy Watch
+# Stress Detector — Android dan Wear OS
 
-Aplikasi pendamping yang merekam PPG dari Galaxy Watch dan menghitung hasil stres
-secara lokal di HP. Hasilnya adalah **bantuan pengambilan keputusan**, bukan
-diagnosis medis.
+Aplikasi pendamping untuk merekam PPG dari Galaxy Watch dan menjalankan analisis lokal di Android. Hasilnya adalah dukungan keputusan untuk ditinjau, bukan diagnosis, alat klinis tervalidasi, atau pendeteksi kebohongan.
 
-## Unduhan terbaru — Stress Detector Phone v0.1.5
+[Unduh Phone v0.1.5](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/app-production-debug.apk) · [Unduh Watch v0.1.1](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/wear-production-debug.apk) · [Semua rilis](https://github.com/Adrian463588/android-stress-detection/releases)
 
-APK Phone terbaru untuk demo internal adalah `0.1.5` (versionCode 6). Ini
-debug build untuk evaluasi, bukan aplikasi klinis atau rilis Play Store.
+> **Status distribusi:** Phone v0.1.5 adalah prerelease debug untuk evaluasi internal, bukan rilis Play Store. Repository privat; unduhan memerlukan akun GitHub dengan akses. Watch v0.1.1 adalah companion terbaru dan tidak berubah pada rilis Phone v0.1.5.
 
-- [Unduh APK Phone v0.1.5](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/app-production-debug.apk)
-- [Rilis v0.1.5 dan catatan batas pengujian](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.5)
-- [Checksum SHA-256 v0.1.5](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/SHA256SUMS-0.1.5.txt)
-- Companion Galaxy Watch tetap v0.1.1 karena tidak ada perubahan Watch pada rilis ini: [Unduh Watch](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/wear-production-debug.apk).
+## Ringkasan proyek
 
-v0.1.5 menyelaraskan preprocessing PPG Android dengan cadence model yang
-terverifikasi. Replay rekaman sebelumnya lulus parity untuk tujuh window Green
-dan tujuh IR; pada sesi baru Green menghasilkan Normal, sedangkan IR abstain
-karena gap sinyal. Full-channel acceptance masih `NO_GO` karena timestamp
-diagnostik Red berkonflik. Hasil tidak dipaksa dan model/threshold tidak diubah.
-Lihat [catatan versi dan evidence](docs/releases/android-v0.1.5.md).
+Phone menjadi pusat UI, pemrosesan, hasil, riwayat, AI+, dan Verbatim+. Watch menyediakan pengukuran PPG aktual. Model stres di Android memakai satu kanal PPG per model; ECG hanya digunakan sebagai referensi validasi pada pipeline penelitian, bukan input model aplikasi.
 
-Repo ini privat; unduhan memerlukan akun GitHub yang diberi akses.
+Model yang dikemas dikunci ke run **20260916T132736Z**. Green dan IR dievaluasi terpisah; Red hanya diagnostik. Jika data atau kualitas sinyal tidak cukup, aplikasi harus abstain alih-alih mengarang nilai atau hasil.
+
+## Unduhan terbaru
+
+| Aplikasi | Versi | Package | SHA-256 | Unduhan |
+| --- | --- | --- | --- | --- |
+| Phone | 0.1.5 · versionCode 6 | com.stressdetector | 073531f002e8f9a41fd600a0629b43916331c0bac0ccb68cff7abafae9f838d3 | [APK](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/app-production-debug.apk) |
+| Watch | 0.1.1 · versionCode 2 | com.stressdetector | 3ea5fd86c13105244350eab8ea7713cc793df0fbde8d1ba626f3b09a8bc8cf96 | [APK](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/wear-production-debug.apk) |
+
+- [Catatan rilis v0.1.5](docs/releases/android-v0.1.5.md)
+- [File checksum rilis](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/SHA256SUMS-0.1.5.txt)
+- [Halaman rilis v0.1.5](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.5)
+
+Angka checksum di atas dibandingkan dengan digest aset GitHub pada 18 Oktober 2026. Repository privat berarti pengunduh tanpa akses tidak dapat mengambil APK.
 
 ### Riwayat versi
 
-| Komponen | Versi | Status | Unduhan/catatan |
+| Tag | Phone | Watch | Status |
 | --- | --- | --- | --- |
-| Phone | **0.1.5** | Terbaru, debug preview | [APK](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/app-production-debug.apk) · [Rilis](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.5) |
-| Galaxy Watch | 0.1.1 | Companion untuk Phone 0.1.5; tidak berubah | [APK](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/wear-production-debug.apk) |
-| Phone | 0.1.2 | Historis | [APK](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.2/app-production-debug.apk) · [Rilis](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.2) |
-| Phone + Watch | 0.1.1 / 0.1.0 | Historis | [Semua rilis](https://github.com/Adrian463588/android-stress-detection/releases) |
+| [android-v0.1.5](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.5) | 0.1.5 | 0.1.1 | Prerelease terbaru; internal debug |
+| [android-v0.1.2](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.2) | 0.1.2 | 0.1.1 | Historis |
+| [android-v0.1.1](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.1) | 0.1.1 | 0.1.0 | Historis |
+| [android-v0.1.0](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.0) | 0.1.0 | 0.1.0 | Rilis non-prerelease yang ditandai GitHub sebagai “Latest” |
 
-## Catatan historis — Verbatim+ v0.1.2
+GitHub masih menandai v0.1.0 sebagai rilis non-prerelease terbaru karena v0.1.5 ditandai prerelease. v0.1.5 tetap APK aplikasi terbaru yang tersedia di repo.
 
-- Waveform amplitudo PCM dan pitch openSMILE F0 terpisah, live dan arsip per 60 detik.
-- Marker cue, akustik/prosodi, catatan dan PPG opsional dapat ditinjau dengan bukti serta aksi dengar pada arsip.
-- Perbaikan pemotongan diarization, final ASR kosong, antrean VAD dan review pengulangan ASR; teks asli tidak dihapus.
-- Trace ikut ZIP serta backup SAF terenkripsi. Arsip lama tanpa trace menampilkan unavailable.
-- Bundle speech v4 memakai Whisper untuk teks final Indonesia/Inggris; diarization tetap memakai segmentasi/embedding native, bukan Whisper saja.
-- Marker tersimpan dengan metadata channel/taxonomy tak dikenal tetap dipertahankan tanpa fallback ke Green atau arousal.
+### Instalasi/update
 
-[Kontrak, hasil verifikasi dan checklist manual](docs/evidence/verbatim-audio-20261015/acceptance.md).
-APK 0.1.2 sudah dipasang dengan replacement aman dan menjalani smoke/UI test non-rekaman pada perangkat; belum ada uji mikrofon atau akurasi pengenalan. Gambar di bawah berasal dari versi historis.
-Preview debug internal, bukan klaim akurasi forensik, diagnosis atau pendeteksi kebohongan.
+Unduh APK Phone dan Watch dari pasangan di atas. Update APK Phone pada perangkat yang sama tanpa menghapus data:
 
-### Riwayat unduhan
+    adb -s <serial-phone> install -r -d app-production-debug.apk
 
-- [Unduh Phone v0.1.2 preview](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.2/app-production-debug.apk).
-- [Rilis v0.1.2 dan keterbatasannya](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.2), [checksum SHA-256](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.2/SHA256SUMS-0.1.2.txt).
-- [Unduh companion Watch v0.1.1](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/wear-production-debug.apk) — tidak berubah pada rilis ini.
-- [Unduh Phone v0.1.1 preview](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/app-production-debug.apk).
-- [Rilis v0.1.1 dan keterbatasannya](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.1), [checksum SHA-256](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/SHA256SUMS.txt).
-- [Rilis historis Android](https://github.com/Adrian463588/android-stress-detection/releases).
-- [Phone dan Watch v0.1.0](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.0).
-
-Unduhan repo private memerlukan akun yang diberi akses. Phone 0.1.2 tetap memakai
-protocol yang sama dengan companion Watch 0.1.1; pairing dan PPG fisik belum
-divalidasi pada rilis ini.
-
-## Evidence historis v0.1.0
-
-### Perbaikan AI+ lokal — 6 Oktober 2026
-
-Pada pengujian 6 Oktober berikut, perubahan development saat itu **belum memperbarui APK pada tautan rilis**.
-APK production-debug lokal dipasang in-place pada HP `2412DPC0AG`
-(`QSWSEMRKNFZ9LJRC`) tanpa uninstall atau penghapusan data.
-
-- Prompt percakapan, budget dan format daftar diperbaiki. Memori aktif memakai
-  kutipan chat, episode relevan, serta tujuan/preferensi yang benar-benar dinyatakan
-  pengguna; tidak membuat diagnosis atau ringkasan buatan. Gemma di HP mengingat
-  konteks revisi skripsi dan memberi satu latihan journaling serta satu probing.
-  Runtime kini mempertahankan spasi/baris baru agar paragraf dan daftar tidak
-  menyatu. Judul sumber saja tidak diterima sebagai jawaban.
-- Setiap jawaban kini mempunyai satu menu **Lihat sumber**, tertutup secara
-  default. Semua rujukan `[W1]`, `[W2]`, metadata dan tautan tampil bersama
-  saat dibuka, tanpa tombol lipat berulang per rujukan. Penomoran dan binding
-  sumber tidak diubah.
-- Retrieval memakai urutan dokumen lokal → dataset bawaan → web berizin.
-  Corpus bawaan masih kosong dan belum ada benchmark RAG tervalidasi; jawaban
-  yang memerlukan evidence tetap diblokir, bukan diberi sumber buatan.
-- Pilihan **Izinkan web otomatis** merupakan opt-in terpisah, dapat dicabut, dan
-  menghilangkan dialog per pesan untuk topik publik umum. Pesan pribadi, riwayat
-  stres, persona dan dokumen tidak dikirim. Mode manual tetap menampilkan query.
-  Pencarian nyata menghasilkan jawaban Gemma dengan sitasi URL; binding sitasi
-  tidak membuktikan seluruh klaim sudah didukung kutipan atau tervalidasi klinis.
-  Kegagalan evidence tetap ditampilkan jujur lewat recovery ringkas, bukan jawaban buatan.
-- History hanya memakai sesi selesai dengan label, probabilitas, dan kualitas
-  yang diterima. Reminder tetap opt-in dan non-diagnostik; eligibility dan kanal
-  notifikasi diperiksa ulang sebelum publication. Delivery nyata belum dibuktikan.
-- Unit test: app **602**, inference **31**, Watch **30**, shared **36** (699), tanpa
-  failure. Build APK, ktlint, detekt dan lint production lulus.
-- Empat instrumented test UI/query/opt-in dan rollback Room lulus pada smoke
-  inference sebelumnya. Enam test Compose pengelompokan sumber lulus pada
-  APK final: termasuk bubble chat 320dp/font scale 2, metadata lokal/web,
-  callback URL, perubahan sumber, serta state layar yang dibuat ulang.
-  Pembatalan saat Gemma berpikir memulihkan composer tanpa balasan terlambat
-  pada pengamatan sebelumnya. Pembaruan terakhir: **6 Oktober, 08:04:09 WIB**;
-  checksum APK terpasang cocok dengan artifact lokal. Ini bukan klaim semua
-  screen, semua ukuran, TalkBack, RAG dan reminder sudah lolos E2E.
-
-Preview rujukan pada APK final, dari percakapan yang tersimpan di HP:
-
-![Satu menu sumber yang tertutup](docs/evidence/ai-plus-20261006/sources-group-collapsed-final.png)
-
-![Semua sumber di dalam satu daftar](docs/evidence/ai-plus-20261006/sources-group-expanded-final.png)
-
-Lihat [evidence pengelompokan sumber](docs/evidence/ai-plus-20261006/source-disclosure.md)
-untuk checksum, perintah verifikasi, hasil dan batas pengujian.
-
-![Memori dan paragraf journaling Gemma pada perangkat nyata](docs/evidence/ai-plus-20261006/memory-journaling-final.png)
-
-![Sitasi dan kutipan web aktual pada perangkat nyata](docs/evidence/ai-plus-20261006/source-expanded-final.png)
-
-Evidence lengkap dan batas acceptance:
-[laporan pengujian AI+](docs/evidence/ai-plus-20261006/acceptance.md).
-
-- **[Unduh APK HP v0.1.0](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.0/app-production-debug.apk)**
-- **[Unduh APK Galaxy Watch v0.1.0](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.0/wear-production-debug.apk)**
-
-Kedua berkas berasal dari [rilis yang sama](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.0).
-Instal keduanya: Watch merekam PPG, sedangkan model ONNX berjalan di HP. APK
-ini **debug build untuk evaluasi internal**, bukan rilis Play Store. Jika repo
-masih privat, unduhan memerlukan akun GitHub yang diberi akses.
-
-> **Sebelum membuka repo atau rilis untuk publik:** pastikan persetujuan partner
-> Samsung untuk mendistribusikan aplikasi yang memakai Health Sensor SDK sudah
-> diperoleh. Lihat [ketentuan distribusi Samsung](https://developer.samsung.com/health/sensor/guide/developer-mode.html).
-
-Model yang dikemas berasal dari run `20260916T132736Z`. Green menjadi kanal
-utama, IR dinilai terpisah, dan Red tidak memiliki model stres. Kualitas sinyal
-yang tidak memadai menghasilkan status *sinyal tidak cukup*, bukan prediksi
-yang dibuat-buat.
-
-### Cara mencoba
-
-1. Instal APK HP dan APK Watch dari tautan di atas, lalu pastikan kedua perangkat terhubung.
-2. Buka aplikasi Watch dan HP; berikan izin sensor serta Bluetooth yang diminta.
-3. Di HP, pilih **Coba koneksi**. Mulai sesi saat status Watch menunjukkan siap.
-4. Rekam sesi sekitar lima menit. Baca hasil Green/IR dan status kualitas di HP.
-   Jika sinyal tidak cukup, perbaiki posisi Watch atau koneksi sebelum mengulang.
-
-Panduan ADB dan pemeriksaan sesi nyata tersedia di
-[panduan uji perangkat](docs/device-test-guide.md).
-
-## Apa yang tersedia?
-
-| Bagian | Fungsi |
-| --- | --- |
-| Home | Koneksi Watch, pemantauan PPG, dan hasil sesi stres. |
-| History | Riwayat hasil sesi yang tersimpan. |
-| Verbatim+ | Perekaman percakapan dan PPG dalam satu alur; fitur audio tetap dapat digunakan saat PPG tidak tersedia. |
-| AI+ | Bantuan berbasis dokumen lokal; sumber web memerlukan persetujuan. Model atau sumber yang belum siap ditampilkan sebagai tidak tersedia. |
-| Profile | Pengaturan izin, penyimpanan, dan model lokal. |
-
-Antarmuka memakai Jetpack Compose dan MVVM.
-[Tangkapan layar aplikasi](docs/screenshots/) bersifat ilustrasi antarmuka;
-bukti pengujian perangkat harus berasal dari sesi aktual.
-
-## Untuk developer
-
-### Struktur
-
-| Modul | Tanggung jawab |
-| --- | --- |
-| `:app` | UI Compose, ViewModel, penyimpanan lokal, dan koordinasi sesi di HP. |
-| `:wear` | Akuisisi PPG dan status sesi di Galaxy Watch. |
-| `:shared` | Kontrak pesan dan data lintas HP–Watch. |
-| `:inference` | Pemeriksaan kontrak model, preprocessing, fitur, dan inferensi ONNX. |
-
-Model stres hanya memakai PPG. ECG dipakai di pipeline Python sebagai referensi
-penelitian, **bukan** input aplikasi. Tidak ada fallback ke data atau model
-tiruan ketika sensor, kontrak, atau model tidak tersedia.
-
-Pada sesi Home, Watch mengirim akselerometer Android X/Y/Z yang teramati bersama
-batch PPG versi 5. Phone memakainya hanya untuk anotasi MADC per window setelah
-validasi sesi dan urutan batch. Data gerak tidak mengubah waveform, fitur model,
-atau hasil prediksi; saat sensor/gap tidak memadai, status MADC tidak tersedia.
-
-### Prasyarat build
-
-- Android SDK, JDK 17, dan perangkat/ADB untuk uji fisik.
-- Direktori saudara `../data/artifacts/runs/20260916T132736Z/` dari proyek
-  ProsesData, berisi `internal_model_index.json`,
-  `ppg_detector_contract.json`, dan model ONNX yang dirujuk. Artefak penelitian
-  ini **tidak** disimpan dalam repo Android mandiri.
-
-Build sengaja gagal jika artefak run tersebut hilang, berubah, atau tidak cocok.
-Tidak ada fallback ke index model global.
-
-### Samsung Health Sensor SDK
-
-Modul Watch memakai Samsung Health Sensor SDK v1.4.1. SDK tidak disimpan di Git;
-unduh dari [portal resmi Samsung Developer](https://developer.samsung.com/health/sensor/overview.html).
-
-1. Unduh dan ekstrak SDK dari halaman resmi.
-2. Salin `samsung-health-sensor-api.aar` ke `wear/libs/`.
-3. Jalankan build seperti biasa. Gradle membaca AAR lokal dari folder tersebut.
-
-Aturan `.gitignore` mengecualikan AAR ini dan folder hasil ekstraksi `1.4.1/`.
-Jangan menghapus aturan tersebut atau memasukkan kembali arsip SDK ke commit.
-
-Samsung mensyaratkan persetujuan partner sebelum aplikasi yang memakai SDK
-didistribusikan. Developer mode hanya untuk pengujian dan debugging. Baca
-[panduan resmi Developer Mode](https://developer.samsung.com/health/sensor/guide/developer-mode.html)
-sebelum uji pada Watch.
-
-Jalankan dari direktori `android/` di checkout ProsesData:
+Gunakan serial yang benar-benar tampil pada `adb devices -l`:
 
 ```powershell
-$runRoot = (Resolve-Path ..\data\artifacts\runs\20260916T132736Z).Path
-$index = Join-Path $runRoot 'export\internal\internal_model_index.json'
-$detector = Join-Path $runRoot 'export\internal\ppg_detector_contract.json'
-
-.\gradlew.bat --no-daemon "-PinternalModelIndex=$index" "-PdetectorContract=$detector" `
-  :app:assembleProductionDebug :wear:assembleProductionDebug
+$phoneSerial = Read-Host 'Serial ADB Phone'
+$watchSerial = Read-Host 'Serial ADB Watch'
+adb -s $phoneSerial install -r -d .\app-production-debug.apk
+adb -s $watchSerial install -r -d .\wear-production-debug.apk
 ```
 
-Hasil build berada di:
+Opsi tersebut memasang ulang secara in-place. Jangan menjalankan uninstall atau pm clear sebagai langkah update. Kedua perangkat harus memakai package dan signing identity yang kompatibel agar Wear Data Layer dapat berkomunikasi.
 
-```text
-app/build/outputs/apk/production/debug/app-production-debug.apk
-wear/build/outputs/apk/production/debug/wear-production-debug.apk
-```
+## Fitur aplikasi
 
-Nama variant `productionDebug` adalah nama Gradle; **cakupan model tetap
-evaluasi internal**. HP dan Watch memakai package `com.stressdetector` dan
-harus ditandatangani dengan identitas yang cocok agar Wear Data Layer bekerja.
-
-### Test dan pemeriksaan statis
-
-Dengan `$index` dan `$detector` dari perintah sebelumnya:
-
-```powershell
-.\gradlew.bat --no-daemon "-PinternalModelIndex=$index" "-PdetectorContract=$detector" `
-  :shared:test :inference:testProductionDebugUnitTest `
-  :app:testProductionDebugUnitTest :wear:testProductionDebugUnitTest `
-  ktlintCheck detekt :inference:lintProductionDebug `
-  :app:lintProductionDebug :wear:lintProductionDebug
-```
-
-Build dan unit test tidak menggantikan uji sesi Watch nyata. Untuk bukti fisik,
-periksa perangkat melalui `adb devices -l`, lalu ikuti
-[panduan uji perangkat](docs/device-test-guide.md). Jangan memakai data sintetis
-sebagai bukti sensor atau menganggap instalasi APK sebagai bukti kualitas prediksi.
-
-### Bukti uji akselerometer Home (3 Oktober 2026)
-
-APK `productionDebug` dipasang ulang in-place pada HP `2412DPC0AG`
-dan Watch `SM-R920`. Pada satu sesi
-Home aktual, `dumpsys sensorservice` Watch mencatat pendaftaran akselerometer
-`40000us` pukul 15:52:41 dan pelepasan listener pukul 15:57:40. Detail hasil
-Phone menampilkan MADC Green dan IR masing-masing `7/7` window dengan anotasi
-gerak. Ini membuktikan jalur data gerak pada sesi tersebut, bukan akurasi MADC
-atau validasi klinis. Pemeriksaan crash buffer tidak menemukan entri baru untuk
-Phone/Watch selama sesi tersebut.
-
-Uji ulang pukul 17:44–17:49 menemukan regresi sumber PPG pada sesi lain:
-Watch menerima Green 7.511 sampel, IR 8.939, Red 9.004, serta 7.533 sampel
-akselerometer. Phone menerima seluruh 8.939 sampel IR dengan `Batch hilang 0`,
-tetapi rentang core IR berhenti pada 90.170 ms dan Green pada 252.487 ms
-(target core akhir 270.000 ms). Keduanya benar-benar abstain; ini bukan bukti
-MADC IR gagal karena akselerometer. Diagnostik MADC tanpa window kini menyebut
-"Tidak ada window yang dievaluasi". Perbaikan database versi 21 menyimpan
-probabilitas yang tidak tersedia sebagai `NULL` dan menghentikan retry
-finalisasi otomatis yang berulang; penerimaan fisik setelah migrasi dicatat
-terpisah dari hasil sesi di atas.
-
-Tracker `PPG_IR` Samsung adalah on-demand yang deprecated; jalur 100 Hz ini
-tidak boleh dianggap otomatis mendukung sesi 5 menit. Mengganti IR ke
-`PPG_CONTINUOUS` 25 Hz memerlukan kontrak dan model IR yang divalidasi ulang,
-bukan upsampling atau sample sintetis. Lihat
-[spesifikasi sensor Samsung](https://developer.samsung.com/health/sensor/guide/data-specifications.html)
-dan [daftar API deprecated](https://developer.samsung.com/health/sensor/api-reference/deprecated-list.html).
-
-History kini memakai baris sesi ringkas; probabilitas model, ID sesi, dan
-peringatan transport ada di `Detail teknis` yang tertutup secara default.
-Kartu laporan memiliki jarak antarkartu; grafik dan evaluasi per-window
-ditutup secara default tanpa menghapus datanya. Awan
-Melayang hanya ditawarkan ketika snapshot sesi sudah dibekukan dan analisis
-masih berjalan setidaknya dua detik. Game ketuk-untuk-lompat langsung hilang
-ketika hasil atau kegagalan tersedia; tidak ada waktu tunggu buatan dan game
-tidak membaca data PPG maupun mengubah prediksi. Uji perangkat untuk perubahan
-UI terbaru harus dibedakan dari bukti sesi sensor di atas.
-
-Tampilan History Detail pada HP `2412DPC0AG` setelah redesign:
-
-![History Detail pada HP](docs/screenshots/history-detail-final-20261003.png)
-
-APK `productionDebug` HP yang dipasang in-place pada 3 Oktober 2026 memiliki
-SHA-256 `ca71d18d7309c3e71b7f520f82f56d5e1c6e5f1b32b3a598453a3eb908bb3bd1`.
-Watch tidak terlihat di ADB saat verifikasi UI ini; screenshot tersebut bukan
-bukti penerimaan IR atau validasi klinis.
-
-### Bukti perbaikan grafik dan provenance hasil (4 Oktober 2026)
-
-Frame preview yang terlambat tidak lagi dapat menimpa grafik hasil Home.
-Green/IR yang lolos agregasi menampilkan `CLEANED_CORE` dari data yang sudah
-diproses untuk inference. Kanal yang ditolak menampilkan raw diagnostik dengan
-alasan aktual; Red selalu diagnostik dan memakai snapshot final yang sama.
-Detail teknis membedakan probabilitas ONNX mentah dan terkalibrasi, serta
-menampilkan ambang, versi model, dan versi kalibrasi. Perbaikan pembulatan
-ambang IR menjadi `59%` tidak mengubah keputusan model.
-
-APK phone final dipasang in-place pada `2412DPC0AG`, tanpa uninstall atau clear
-data. SHA-256:
-`8c28ca7fc207e5233a844ff2f30f9548973defefd87e37007d88eefac5da41c4`.
-Watch `SM-R920` terhubung melalui ADB wireless dan aplikasi yang sudah terpasang;
-tidak ada perubahan kode Watch pada patch grafik ini.
-
-| Lapisan verifikasi | Evidence aktual | Batas klaim |
+| Menu | Fungsi | Batas bukti terbaru |
 | --- | --- | --- |
-| Unit production | App 505, inference 31, wear 30, shared 36; 602 test tanpa failure/error/skip | Bukan sesi sensor atau validasi klinis |
-| Quality/build | Build APK/test APK, ktlint, detekt dan lint production lulus | Lint masih memiliki 71 warning app (+2 hint) dan 9 warning wear; nol error |
-| ONNX pada HP | 100 vektor development riil per kanal; selisih Green `1.6093254089355469e-6`, IR `0.0` | Di bawah `1e-5`; bukan parity preprocessing raw sensor baru |
-| Sesi Watch nyata | Home lima menit; Green 7.470 sampel, IR 29.854; 7/7 window Ready dan anotasi MADC pada keduanya | Zero true gap/interpolasi pada window sesi ini, bukan jaminan sesi berikutnya |
-| Grafik hasil | Green 6.007 dan IR 24.005 titik cleaned-core; Red raw diagnostik dari snapshot beku | Tidak ada filter kedua atau waveform sintetis untuk tampilan |
+| **Home** | Memeriksa kesiapan model, izin, dan reachability Watch; merekam sesi stress 5 menit; menampilkan hasil dan kualitas Green/IR. | Paket v0.1.5 lolos 868 JVM tests dan gate build/lint yang tercatat. Replay lulus untuk 7 window Green dan 7 IR. Pada satu sesi baru, Green menghasilkan Normal dan IR abstain karena gap. Full-channel acceptance masih NO_GO karena konflik timestamp diagnostik Red. |
+| **History** | Meninjau sesi tersimpan, hasil, kualitas, grafik, serta detail provenance. | Screenshot detail yang ada berasal dari uji Xiaomi pada 3 Oktober, bukan bukti UI v0.1.5. |
+| **Verbatim+** | Merekam dan meninjau audio/transkrip/marker; PPG Watch dapat menjadi konteks sesi bila tersedia. Audio tetap harus menunjukkan statusnya sendiri ketika Watch tidak tersedia. | Screenshot portrait/drawer yang tercatat berasal dari Samsung S20 pada 6 Oktober. Perekaman audio, STT, dan sinkronisasi Watch belum dinyatakan lolos end-to-end untuk rilis Phone v0.1.5. |
+| **AI+** | Counselor lokal Gemma, retrieval dokumen, sitasi, dan pencarian web setelah persetujuan/opt-in yang sesuai. | Uji lokal dan jalur consent/recovery terdokumentasi. Corpus bawaan belum tervalidasi; percobaan web 5 Oktober berakhir unavailable. Jawaban web grounded yang berhasil belum dibuktikan pada evidence rilis. |
+| **Profile** | Mengelola izin, model/bundle offline, storage, backup, serta pengaturan terkait. | Tersedia screenshot historis Xiaomi. Verifikasi lengkap semua operasi Profile pada build v0.1.5 belum diklaim. |
 
-Sesi selesai pukul 11:22:17. Pemrosesan tercatat 3.530 ms, termasuk 2.175 ms
-evaluasi; tidak ditambahkan waktu tunggu buatan. Probabilitas terkalibrasi median
-Green `0.9570058` dan IR `0.8922674` melewati ambang model masing-masing `0.47`
-dan `0.59`, sehingga kedua hasil tetap Stress. Nilai ini adalah output model
-aktual, **bukan** bukti bahwa labelnya akurat secara klinis. Model tetap memakai
-run `20260916T132736Z`, kalibrasi `platt-v2-nested-outer-oof`; tidak ada tuning
-threshold atau promosi status release. Tidak ditemukan crash baru pada phone
-atau Watch dalam rentang pemeriksaan sesi.
+Semua hasil tetap bersifat non-diagnostik. Hasil Stress atau Normal adalah keluaran model pada data sesi tertentu, bukan pengukuran langsung atas perasaan pengguna atau validasi klinis. Green/IR tidak digabung atau dirata-ratakan. Akselerometer dapat digunakan untuk anotasi MADC per window jika sampel Watch aktual tersedia; data gerak bukan fitur model dan tidak memperbaiki waveform.
 
-Hasil Home pada perangkat nyata setelah perbaikan:
+## Alur pengguna
 
-![Home dengan cleaned-core aktual](docs/screenshots/home-cleaned-core-final-20261004.png)
+~~~mermaid
+flowchart TD
+    A[Home] --> B{Izin, model, dan Watch siap?}
+    B -- Tidak --> C[Perbaiki prasyarat / coba koneksi]
+    C --> B
+    B -- Ya --> D[Rekam PPG aktual selama 5 menit]
+    D --> E[Validasi transport, SQA, dan preprocessing]
+    E --> F{Window valid tersedia?}
+    F -- Tidak --> G[INSUFFICIENT_SIGNAL]
+    F -- Ya --> H[Inferensi ONNX Green dan IR secara terpisah]
+    H --> I[Hasil aktual dan kualitas]
+    G --> J[Simpan / tinjau di History]
+    I --> J
+    A --> K[Verbatim+ audio dan transkrip]
+    A --> L[AI+ lokal / dokumen / web berizin]
+    A --> M[Profile, model, izin, dan data]
+~~~
+
+## Stack dan arsitektur
+
+- **Bahasa dan UI:** Kotlin, Jetpack Compose, Material 3.
+- **Pola aplikasi:** MVVM, ViewModel, coroutines/Flow, unidirectional data flow.
+- **Penyimpanan lokal:** Room dan penyimpanan terlindungi sesuai kontrak fitur.
+- **Wear:** Wear OS, Google Play Services Wear Data Layer, Samsung Health Sensor SDK.
+- **Biosignal:** preprocessing dan SQA/MADC; ONNX Runtime untuk inferensi lokal.
+- **AI+:** Gemma lokal/LiteRT-LM, retrieval dokumen lokal, serta gateway web yang terikat consent.
+- **Audio:** pemrosesan native untuk fitur akustik dan pipeline speech sesuai artifact/runtime yang tersedia.
+- **Build:** Gradle, Android Gradle Plugin, JDK 17.
+
+Batas utama: model stres Android menggunakan PPG. ECG, identitas, metadata sesi, dan kanal saudara tidak menjadi predictor. Data sintetis, fake status, citation buatan, dan prediksi saat sinyal tidak memadai dilarang.
+
+## Struktur repository
+
+    .
+    ├── app/          # Aplikasi Phone, Compose UI, ViewModel, penyimpanan dan koordinasi
+    ├── wear/         # Aplikasi Watch, sensor dan pengiriman batch PPG
+    ├── shared/       # Kontrak pesan dan model data Phone–Watch
+    ├── inference/    # Kontrak model, preprocessing dan ONNX runtime
+    ├── config/       # Konfigurasi build/pipeline yang digunakan repo ini
+    ├── docs/         # Panduan perangkat, release notes, screenshot dan evidence
+    ├── gradle/       # Gradle wrapper dan konfigurasi
+    ├── build.gradle
+    └── settings.gradle
+
+## Galeri UI perangkat
+
+Gambar di bawah adalah tangkapan layar perangkat yang sudah tersimpan sebagai evidence di repo. Gambar tersebut **bukan screenshot build v0.1.5**. Xiaomi POCO X7 Pro (2412DPC0AG) dan package v0.1.5 sempat terdeteksi terpasang pada 18 Oktober 2026, tetapi perangkat terlepas dari ADB sebelum screenshot baru dan smoke test menu dapat diambil. Screenshot Verbatim+ yang tersedia berasal dari perangkat Samsung S20, bukan Xiaomi.
 
 <details>
-<summary>Grafik kanal dan detail provenance pada perangkat nyata</summary>
+<summary>Home — Xiaomi, evidence 4 Oktober 2026 (build sebelumnya)</summary>
 
-![Green dan IR cleaned-core; Red diagnostik](docs/screenshots/home-channels-final-20261004.png)
+![Home dengan hasil dan PPG cleaned core aktual](docs/screenshots/home-cleaned-core-final-20261004.png)
 
-![Probabilitas dan versi kalibrasi aktual](docs/screenshots/home-provenance-final-20261004.png)
+![Kanal Green, IR, dan Red diagnostik](docs/screenshots/home-channels-final-20261004.png)
+
+![Provenance hasil dan kalibrasi](docs/screenshots/home-provenance-final-20261004.png)
+
+Gambar ini adalah bukti visual historis untuk hasil dan grafik sesi, bukan screenshot v0.1.5. Gambar saja tidak membuktikan input model, hasil inferensi, atau validasi klinis; gunakan receipt yang sesuai sebelum menafsirkan hasil.
 
 </details>
 
-Pertanyaan mengenai hasil yang sering Stress tetap memerlukan validasi model
-dan parity raw-to-feature yang disetujui. Bukti numerik dan batas acceptance
-tercatat pada laporan investigasi di proyek ProsesData; tidak ada raw biosignal
-baru yang diekspor untuk perbaikan UI ini.
-
 <details>
-<summary>SHA-256 APK pada rilis v0.1.0</summary>
+<summary>History — Xiaomi, evidence 3 Oktober 2026 (build sebelumnya)</summary>
 
-- HP: `db8dafbc11fe16bd9e86e72995968bf23c7a7b764b27e0501b1c5c419115fa73`
-- Watch: `4c4a57afedb0df13a5e8aa44e112579346ed1d8c3db1d6a06ed67dd1273c021d`
+![History detail pada Xiaomi](docs/screenshots/history-detail-final-20261003.png)
 
 </details>
 
-## Cadangan SAF dan Whisper
+<details>
+<summary>Verbatim+ — Samsung S20, evidence 6 Oktober 2026</summary>
 
-Di **Profile → Model offline → Sherpa + Whisper offline**, gunakan **Perbarui → Unduh via Wi-Fi** atau **Impor ZIP lokal**. Bundle hanya diaktifkan setelah checksum dan preflight native berhasil; ZIP/manifest disalin ke `Artifacts/speech-bundle` pada folder SAF yang dipilih. Menginstal APK tidak otomatis memasang bobot Whisper.
+![Verbatim+ portrait pada Samsung S20](docs/evidence/verbatim-device-20261006/verbatim-portrait.png)
 
-Di **Profile → Data dan keamanan**, hubungkan folder SAF lalu pilih **Cadangkan History, AI+, dan Verbatim+**. Pilih kata sandi pemulihan pribadi dan simpan di tempat aman; jangan kirim lewat chat. Tunggu status berhasil dan pastikan tidak ada perubahan tertunda sebelum uninstall. Cadangan terenkripsi berada di `Artifacts/user-data-backup`; pembaruan otomatis berjalan saat aplikasi aktif setelah cadangan pertama berhasil.
+![Drawer sesi Verbatim+ pada Samsung S20](docs/evidence/verbatim-device-20261006/session-drawer.png)
 
-Setelah instalasi baru, pilih kembali folder yang sama dan **Pulihkan dari cadangan SAF** dengan kata sandi tersebut, sebelum membuat data lokal baru. Pemulihan menolak database yang sudah terisi atau schema berbeda. Archive mencakup History beserta bukti/grafik, percakapan AI+, transkrip/marker/catatan dan media Verbatim+; dokumen Knowledge Base, konfigurasi reminder dan permission tidak termasuk. Persona/model memiliki slot SAF terpisah. Cadangan penuh dipertahankan dan memakai ruang tambahan.
+Ini bukan screenshot Xiaomi dan bukan penerimaan perekaman audio pada v0.1.5. [Catatan perangkat Verbatim+](docs/verbatim-device-acceptance-20261006.md).
 
-Kontrak dan batas verifikasi: [SAF recovery contract](../_bmad-output/specs/spec-verbatim-review-cues/saf-recovery-contract.md).
+</details>
 
-### Preview dan bukti perangkat — 7 Oktober 2026
+<details>
+<summary>AI+ — Xiaomi, evidence 5 Oktober 2026 (build sebelumnya)</summary>
 
-PNG berikut diambil langsung dari S20 Ultra `RRCN3008VYE`; bukan ilustrasi. Instalasi in-place mempertahankan fingerprint data. Gate software lulus, dan 13 tes non-rekaman pada perangkat lulus; akurasi transkripsi/diarization serta siklus uninstall nyata belum dinyatakan lulus. Rincian source scoped, checksum APK, hasil tes dan batas klaim ada di [acceptance receipt](docs/evidence/saf-recovery-20261007/acceptance.md).
+![Percakapan AI+ lokal](docs/evidence/ai-plus-20261005/followup.png)
 
-![Profile: unduh atau impor Whisper](docs/evidence/saf-recovery-20261007/profile-whisper-download.png)
+![Fallback web yang berakhir unavailable](docs/evidence/ai-plus-20261005/web-unavailable.png)
 
-![Profile: cadangan privat History, AI+, dan Verbatim+](docs/evidence/saf-recovery-20261007/profile-backup.png)
+Gambar memperlihatkan smoke test yang disetujui. Jalur web tidak menghasilkan evidence tervalidasi; lihat [receipt AI+](docs/evidence/ai-plus-20261005/acceptance.md).
 
-![Profile: Whisper aktif setelah verifikasi](docs/evidence/saf-recovery-20261007/profile-whisper-ready.png)
+</details>
 
-Whisper sudah aktif pada perangkat tersebut, dan checksum ZIP/manifest SAF cocok dengan salinan lokal. Cadangan data pribadi belum diaktifkan: pengguna harus membuat cadangan pertama dengan kata sandinya sendiri sebelum uninstall.
+<details>
+<summary>Profile — screenshot Xiaomi historis; tanggal/build capture tidak terverifikasi</summary>
+
+![Profile pada Xiaomi 2412DPC0AG](docs/screenshots/ui-final-profile-2412DPC0AG.png)
+
+</details>
+
+## Status verifikasi dan batas penerimaan
+
+| Area | Bukti yang tersedia | Status |
+| --- | --- | --- |
+| Unit test Phone/Inference/Shared | 796 + 34 + 38 = 868 JVM tests, tanpa failure/error/skip pada verification receipt v0.1.5. | Lulus pada scope tersebut |
+| Static checks dan APK Phone | ktlintCheck, detekt, app/inference production lint, dan assembleProductionDebug dilaporkan lulus. | Lulus pada scope tersebut |
+| Watch module pada checkout v0.1.5 | Samsung Health Sensor SDK AAR tidak tersedia; Watch test/compile tidak diklaim lulus di checkout itu. | Belum diverifikasi |
+| Instalasi Xiaomi | Pada 18 Oktober, ADB melihat model 2412DPC0AG dan package com.stressdetector v0.1.5/versionCode 6. Xiaomi terlepas sebelum screenshot dan menu smoke test. | Versi terpasang terverifikasi; UI smoke tertunda |
+| PPG dan prediksi | Replay satu rekaman lulus 7 window Green + 7 IR. Satu sesi langsung: Green Normal, IR insufficient signal. Red timestamp conflict membuat full-channel acceptance NO_GO. | Partial; bukan validasi klinis |
+| AI+ | Local Gemma serta consent/unavailable recovery punya evidence. Web test tidak berhasil mengambil evidence valid; bundled knowledge corpus belum lulus benchmark. | Partial; grounded-web acceptance belum lulus |
+| Verbatim+ | UI smoke non-recording pada Samsung dan screenshot tersedia. | Audio/STT/Watch end-to-end terbaru belum diklaim |
+| Profile dan backup | Tangkapan layar serta sebagian smoke non-recording historis tersedia. | Semua operasi belum diverifikasi pada v0.1.5 |
+
+**Kesimpulan:** repo ini belum memiliki bukti yang mendukung klaim “semua fitur telah lolos end-to-end pada v0.1.5”. Status yang belum lulus atau belum diuji ditampilkan terbuka agar README tidak menjadi klaim pemasaran yang menyesatkan.
+
+- [Catatan rilis v0.1.5](docs/releases/android-v0.1.5.md)
+- [Panduan uji perangkat](docs/device-test-guide.md)
+- [Evidence AI+](docs/evidence/ai-plus-20261005/acceptance.md)
+- [Evidence Verbatim+](docs/verbatim-device-acceptance-20261006.md)
+
+## Build dan pengujian
+
+Persyaratan: JDK 17, Android SDK, Gradle wrapper repository, model index dan detector contract dari run 20260916T132736Z, serta Samsung Health Sensor SDK 1.4.1 lokal untuk modul Watch. AAR Samsung tidak disimpan di Git. Distribusi aplikasi yang memakai SDK Samsung memerlukan persetujuan partner Samsung; baca [ketentuan resmi Developer Mode](https://developer.samsung.com/health/sensor/guide/developer-mode.html).
+
+Packaging Phone memerlukan artifact kanonik dari checkout ProsesData yang sesuai. Tanpa index, detector contract, model, atau SDK yang diwajibkan, build harus berhenti dengan jelas; jangan mengganti dependency itu dengan dummy.
+
+Jalankan test dari root repository setelah menyediakan artifact dari run yang
+dikunci. Masukkan path root run yang benar-benar ada; script menolak run lain
+atau file kontrak yang tidak tersedia:
+
+```powershell
+$runRoot = (Resolve-Path -LiteralPath (Read-Host 'Path folder run 20260916T132736Z')).Path
+if ((Split-Path -Leaf $runRoot) -ne '20260916T132736Z') {
+    throw 'Model production dikunci ke run 20260916T132736Z.'
+}
+$internalModelIndex = Join-Path $runRoot 'export\internal\internal_model_index.json'
+$detectorContract = Join-Path $runRoot 'export\internal\ppg_detector_contract.json'
+if (!(Test-Path -LiteralPath $internalModelIndex) -or !(Test-Path -LiteralPath $detectorContract)) {
+    throw 'Model index atau detector contract tidak ditemukan pada run yang dipilih.'
+}
+.\gradlew.bat "-PinternalModelIndex=$internalModelIndex" "-PdetectorContract=$detectorContract" :shared:test :inference:testProductionDebugUnitTest :app:testProductionDebugUnitTest
+```
+
+Wear compile/test dan semua pemeriksaan lain harus dicatat terpisah sesuai dependency lokal yang tersedia. Perintah test yang sukses tidak membuktikan sensor fisik, microphone, RAG faithfulness, reminder delivery, atau validasi klinis.
+
+## BDD dan perubahan berbasis spesifikasi
+
+Untuk perubahan produk/dokumentasi, definisikan perilaku yang dapat diperiksa dengan skenario Given/When/Then, implementasikan perubahan terkecil, lalu simpan hasil verifikasi dan batas klaim. Kontrak perubahan README ini dan skenario acceptance ada di [spec README refresh](docs/specs/spec-readme-refresh/SPEC.md).
+
+Referensi workflow:
+
+- [BDD dan contoh Gherkin — Cucumber](https://github.com/cucumber/docs/blob/main/content/docs/guides/overview.md)
+- [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD)
+- [OpenSpec SDD](https://github.com/Fission-AI/OpenSpec)
+- [RTK — panduan authoring](https://github.com/rtk-ai/rtk)
+- [CAVEMAN — panduan authoring](https://github.com/JuliusBrussee/caveman)
+- [PONYTAIL — panduan authoring](https://github.com/dietrichgebert/ponytail)
+
+RTK, CAVEMAN, dan PONYTAIL berfungsi sebagai panduan authoring/quality pada repo ini, bukan dependency runtime Android.
+
+## Checklist README
+
+- [x] Overview, batas non-diagnostik, dan model run dijelaskan.
+- [x] APK Phone/Watch terbaru, versi, package, checksum, serta riwayat rilis ditautkan.
+- [x] Lima menu, fungsi, alur pengguna Mermaid, stack, dan struktur modul diringkas.
+- [x] Screenshot nyata yang sudah tersimpan dipakai dengan perangkat, tanggal, dan batas versinya.
+- [x] Hasil test dan gap fitur dibedakan; tidak ada klaim semua fitur telah lolos E2E.
+- [x] BDD/BMAD/OpenSpec-style acceptance dan sumber GitHub dicatat.
+- [ ] Screenshot segar dan smoke test semua menu pada Xiaomi v0.1.5 — tertunda: Xiaomi terputus dari ADB sebelum pengambilan.
