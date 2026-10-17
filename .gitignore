@@ -18,6 +18,7 @@ build/
 
 # Gradle files
 .gradle/
+.kotlin/
 .gradle-codex/
 .gradle-devsecops/
 .gradle-rag-*

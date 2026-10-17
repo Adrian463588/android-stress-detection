@@ -1,10 +1,44 @@
 package com.stressdetector.mobile.domain.engine
 
+import com.stressdetector.mobile.data.db.DivergenceEventEntity
 import com.stressdetector.shared.PpgType
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class TranscriptTimelineLinkerTest {
+    @Test
+    fun `given unknown persisted marker metadata when linking then preserve metadata without channel coercion`() {
+        val event = DivergenceEventEntity(
+            eventId = "future-marker",
+            sessionId = "session",
+            timestampMs = 1_000L,
+            delta = null,
+            currentProbability = null,
+            baselineProbability = null,
+            copyText = "Future marker",
+            channel = "FUTURE_CHANNEL",
+            markerElapsedMillis = 1_000L,
+            contextWindowStartElapsedMillis = 900L,
+            contextWindowEndElapsedMillis = 1_100L,
+            markerType = "FUTURE_MARKER"
+        )
+        val segment = SpeechSegment(
+            id = "segment",
+            speakerId = "Speaker_0",
+            startOffsetMs = 900L,
+            endOffsetMs = 1_100L,
+            startTimestampUtc = 0L,
+            endTimestampUtc = 0L,
+            rawText = "review this utterance",
+            confidence = 1f,
+            sessionId = "session"
+        )
+
+        assertEquals("segment", TranscriptTimelineLinker.link(event, listOf(segment), toleranceMillis = 0L))
+        assertEquals("FUTURE_CHANNEL", event.channel)
+        assertEquals("FUTURE_MARKER", event.markerType)
+    }
+
     @Test
     fun `links canonical ppg marker to audio segment after startup skew`() {
         var monotonic = 0L

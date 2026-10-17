@@ -3,6 +3,9 @@ package com.stressdetector.mobile.ui.viewmodels
 import com.stressdetector.mobile.data.db.DivergenceEventEntity
 import com.stressdetector.mobile.domain.engine.DomainAnnotation
 import com.stressdetector.mobile.domain.engine.PlaybackState
+import com.stressdetector.mobile.domain.engine.SpeechDecoderEvidence
+import com.stressdetector.mobile.domain.engine.SpeechDecoderResult
+import com.stressdetector.mobile.domain.engine.SpeechRecognitionStatus
 import com.stressdetector.mobile.domain.engine.SpeechRuntimeState
 import com.stressdetector.mobile.domain.engine.SpeechSegment
 import com.stressdetector.mobile.domain.engine.VerbatimSessionDetail
@@ -65,6 +68,24 @@ class VerbatimWorkspaceTest {
     @Test fun partialOrEmptyTranscriptDoesNotEnableTxt() {
         assertFalse(VerbatimWorkspace(archive().copy(transcriptSegments = listOf(segment().copy(isFinal = false)))).canExportText)
         assertFalse(VerbatimWorkspace(archive().copy(transcriptSegments = emptyList())).canExportText)
+    }
+
+    @Test fun blankFinalDecoderEvidenceEnablesTxtWithoutAcceptingPartialOrUnobservedBlankText() {
+        val blank = segment().copy(rawText = " \n")
+        val evidence = SpeechDecoderEvidence(
+            SpeechDecoderResult("whisper_tiny_int8", "a".repeat(40), 100L, 1_000L, blank.rawText),
+            status = SpeechRecognitionStatus.EMPTY_FINAL
+        )
+        val observed = blank.copy(decoderEvidence = evidence)
+        assertTrue(VerbatimWorkspace(archive().copy(transcriptSegments = listOf(observed))).canExportText)
+        assertFalse(VerbatimWorkspace(archive().copy(transcriptSegments = listOf(observed.copy(isFinal = false)))).canExportText)
+        assertFalse(VerbatimWorkspace(archive().copy(transcriptSegments = listOf(blank))).canExportText)
+    }
+
+    @Test fun unavailableFinalRecognitionEvidenceCanBeExportedForReview() {
+        val unavailable = segment().copy(rawText = "", recognitionEvidenceUnavailableReason = "Arsip bukti native tidak tersedia.")
+        assertTrue(VerbatimWorkspace(archive().copy(transcriptSegments = listOf(unavailable))).canExportText)
+        assertFalse(VerbatimWorkspace(archive().copy(transcriptSegments = listOf(unavailable.copy(isFinal = false)))).canExportText)
     }
 
     @Test fun saveAndExportBlockConflictingMutationsAndNewStart() {

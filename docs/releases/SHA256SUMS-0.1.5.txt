@@ -1,0 +1,2 @@
+073531f002e8f9a41fd600a0629b43916331c0bac0ccb68cff7abafae9f838d3  app-production-debug.apk
+3ea5fd86c13105244350eab8ea7713cc793df0fbde8d1ba626f3b09a8bc8cf96  wear-production-debug.apk

@@ -1,6 +1,7 @@
 package com.stressdetector.mobile.lifecycle
 
 import com.google.gson.Gson
+import com.stressdetector.mobile.domain.engine.isAudioSignalTraceFile
 
 /** Bounded in-memory identity index; clinical text and waveform bytes stay in streaming entries. */
 internal class PortableArchiveGraph(private val schema: Map<String, List<ArchiveColumn>>) {
@@ -91,7 +92,10 @@ internal class PortableArchiveGraph(private val schema: Map<String, List<Archive
                     val relative = path.removePrefix("$folder/")
                     require(
                         relative in CORE_FILES ||
+                            relative == "artifact_warnings.json.enc" ||
                             relative == "ppg_manifest.json.enc" ||
+                            relative.startsWith("audio_signal/") &&
+                            isAudioSignalTraceFile(relative.removePrefix("audio_signal/")) ||
                             relative.matches(Regex("ppg_raw/[A-Za-z0-9_-]+_[0-9]{6}\\.jsonl\\.enc"))
                     ) {
                         "Unexpected Verbatim artifact file"
@@ -104,6 +108,15 @@ internal class PortableArchiveGraph(private val schema: Map<String, List<Archive
         audioPaths.forEach { path ->
             require(path in available) { "Referenced Verbatim audio is missing" }
             selected += path
+        }
+        // Failed-with-evidence sessions may retain their original capture folder.
+        verbatimIds.filter { it.matches(Regex("[A-Za-z0-9_-]+")) }.forEach { sessionId ->
+            val prefix = "verbatim/$sessionId/audio_signal/"
+            available.filter { it.startsWith(prefix) }.forEach { path ->
+                PortableArchiveFormat.validateArtifactPath(path)
+                require(isAudioSignalTraceFile(path.removePrefix(prefix))) { "Unexpected captured audio signal file" }
+                selected += path
+            }
         }
         return selected
     }

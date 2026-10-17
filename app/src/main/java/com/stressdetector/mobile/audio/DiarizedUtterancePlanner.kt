@@ -1,8 +1,53 @@
 package com.stressdetector.mobile.audio
 
+import com.stressdetector.mobile.domain.engine.SpeechDecoderEvidence
+import com.stressdetector.mobile.domain.engine.SpeechDecoderResult
+import com.stressdetector.mobile.domain.engine.SpeechRecognitionStatus
+
+internal data class DiarizedRecognition(val turn: StableDiarizationSegment, val evidence: SpeechDecoderEvidence) {
+    val rawText: String get() = evidence.crop?.rawText ?: evidence.wholeUtterance.rawText
+}
+
 /** Partitions the complete utterance; uncovered or conflicting speech stays Unknown. */
 internal object DiarizedUtterancePlanner {
-    fun plan(segments: List<StableDiarizationSegment>, start: Long, end: Long): List<StableDiarizationSegment> {
+    fun plan(segments: List<StableDiarizationSegment>, start: Long, end: Long): List<StableDiarizationSegment> =
+        partition(segments, start, end, includeUncovered = true)
+
+    /** Only native-covered speech is decoded; missing speaker identity does not mean silence. */
+    fun recognize(
+        segments: List<StableDiarizationSegment>,
+        evidence: SpeechDecoderEvidence,
+        diarizationEnabled: Boolean,
+        decode: (StableDiarizationSegment) -> SpeechDecoderResult
+    ): List<DiarizedRecognition> {
+        val whole = evidence.wholeUtterance
+        val unresolved = StableDiarizationSegment(whole.startOffsetMs, whole.endOffsetMs, -1, null)
+        val spans = if (diarizationEnabled && whole.rawText.isNotBlank()) {
+            partition(segments, whole.startOffsetMs, whole.endOffsetMs, includeUncovered = false)
+        } else {
+            emptyList()
+        }
+        return when {
+            whole.rawText.isBlank() -> listOf(DiarizedRecognition(unresolved, evidence.copy(status = SpeechRecognitionStatus.EMPTY_FINAL)))
+            !diarizationEnabled -> listOf(DiarizedRecognition(unresolved, evidence))
+            spans.isEmpty() -> listOf(
+                DiarizedRecognition(unresolved, evidence.copy(status = SpeechRecognitionStatus.SPEAKER_SPANS_UNAVAILABLE))
+            )
+            else -> spans.map { turn ->
+                val sameBounds = turn.startOffsetMs == whole.startOffsetMs && turn.endOffsetMs == whole.endOffsetMs
+                val crop = if (sameBounds) null else decode(turn)
+                val status = if (crop?.rawText?.isBlank() == true) SpeechRecognitionStatus.EMPTY_CROP else SpeechRecognitionStatus.DECODED
+                DiarizedRecognition(turn, evidence.copy(crop = crop, status = status))
+            }
+        }
+    }
+
+    private fun partition(
+        segments: List<StableDiarizationSegment>,
+        start: Long,
+        end: Long,
+        includeUncovered: Boolean
+    ): List<StableDiarizationSegment> {
         if (end <= start) return emptyList()
         val turns = segments.mapNotNull { segment ->
             val first = maxOf(segment.startOffsetMs, start)
@@ -14,6 +59,7 @@ internal object DiarizedUtterancePlanner {
         val spans = intervalSpans(turns.map { it.startOffsetMs to it.endOffsetMs } + (start to end))
         return spans.fold(mutableListOf<StableDiarizationSegment>()) { output, (first, last) ->
             val covering = turns.filter { it.startOffsetMs < last && it.endOffsetMs > first }
+            if (!includeUncovered && covering.isEmpty()) return@fold output
             val identities = covering.map { it.stableSpeakerIndex }.distinct()
             val identity = identities.singleOrNull()
             val rawCluster = if (identities.size == 1) covering.map { it.rawCluster }.distinct().singleOrNull() ?: -1 else -1

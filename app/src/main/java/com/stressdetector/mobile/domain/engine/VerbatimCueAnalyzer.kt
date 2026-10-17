@@ -43,7 +43,7 @@ object VerbatimTranscriptText {
 class VerbatimCueAnalyzer {
     fun analyze(segment: SpeechSegment): VerbatimCueAnalysis {
         val text = VerbatimTranscriptText.clean(segment.displayText)
-        if (!segment.isFinal || segment.language !in supportedLanguages) {
+        if (!segment.isFinal || segment.language !in supportedLanguages || segment.recognitionReviewReason != null) {
             return VerbatimCueAnalysis(text, emptyList())
         }
         val tokens = tokenPattern.findAll(text).map { match ->
@@ -135,7 +135,7 @@ class VerbatimCueAnalyzer {
     private data class Rule(val language: String, val type: VerbatimCueType, val words: List<String>, val id: String)
 
     companion object {
-        const val VERSION = "verbatim-lexicon-id-en-v1"
+        const val VERSION = "verbatim-lexicon-id-en-v2"
         private val supportedLanguages = setOf("id", "en")
         private val tokenPattern = Regex("[\\p{L}\\p{M}\\p{N}]+(?:[-’'][\\p{L}\\p{M}\\p{N}]+)*")
         private val phraseGap = Regex("[\\s\\p{Z}]+")

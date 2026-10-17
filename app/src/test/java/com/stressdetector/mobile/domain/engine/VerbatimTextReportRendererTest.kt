@@ -69,6 +69,48 @@ class VerbatimTextReportRendererTest {
         renderer.render(detail(emptyList()))
     }
 
+    @Test
+    fun `review report retains exact decoder evidence and does not label suspected output as a cue`() {
+        val raw = "  mungkin mungkin mungkin mungkin\n"
+        val whole = SpeechDecoderResult("whisper_tiny_int8", "pinned-revision", 0, 4_000, raw)
+        val evidence = SpeechDecoderEvidence(whole, crop = whole.copy(startOffsetMs = 100, endOffsetMs = 1_800))
+        val segment = speech("review", 100, raw).copy(endOffsetMs = 1_800, decoderEvidence = evidence)
+        val report = renderer.render(detail(listOf(segment)))
+        assertTrue(report.contains("[TINJAUAN ASR]"))
+        assertTrue(report.contains("Ujaran utuh [00:00:00.000–00:00:04.000]"))
+        assertTrue(report.contains("Crop [00:00:00.100–00:00:01.800]"))
+        assertTrue(report.contains("backend=whisper_tiny_int8; revision=pinned-revision"))
+        assertTrue(report.contains(raw))
+        assertFalse(report.contains("[Hedging]"))
+        assertFalse(report.contains("[Pengulangan]"))
+    }
+
+    @Test
+    fun `blank terminal evidence can be exported without inventing a final sentence`() {
+        val whole = SpeechDecoderResult("whisper_tiny_int8", "pinned-revision", 1_000, 3_000, "")
+        val evidence = SpeechDecoderEvidence(
+            whole,
+            precedingPartial = whole.copy(backend = "zipformer2_transducer", rawText = "earlier hypothesis"),
+            status = SpeechRecognitionStatus.EMPTY_FINAL
+        )
+        val report = renderer.render(detail(listOf(speech("empty", 1_000, "").copy(decoderEvidence = evidence))))
+        assertTrue(report.contains("[TINJAUAN ASR] Hasil akhir ASR kosong"))
+        assertTrue(report.contains("[Bukti decoder] EMPTY_FINAL"))
+        assertTrue(report.contains("Partial terakhir, bukan teks final"))
+        assertTrue(report.contains("earlier hypothesis"))
+        assertFalse(report.contains("[Hedging]"))
+    }
+
+    @Test
+    fun `blank final with unavailable recognition evidence exports the explicit failure`() {
+        val reason = "Arsip bukti native tidak tersedia."
+        val segment = speech("unavailable", 1_000, "").copy(recognitionEvidenceUnavailableReason = reason)
+        val report = renderer.render(detail(listOf(segment)))
+        assertTrue(report.contains("[TINJAUAN ASR] $reason"))
+        assertFalse(report.contains("[Bukti decoder]"))
+        assertFalse(report.contains("[Hedging]"))
+    }
+
     private fun speech(id: String, start: Long, text: String) =
         SpeechSegment(id, "Speaker_0", start, start + 2_000, start, start + 2_000, text, 0.9f)
     private fun detail(transcript: List<SpeechSegment>) = VerbatimSessionDetail(

@@ -407,6 +407,7 @@ fun UnifiedSessionScreen(
                 onStopPlayback = viewModel::stopAudio,
                 onSeekAudio = viewModel::seekAudio,
                 onPlayFromMarker = viewModel::playFromMarker,
+                onMoveSignalPage = viewModel::moveSignalPage,
                 onRetryPlayback = viewModel::prepareAudioPlayback,
                 onExport = { viewModel.prepareZipExport()?.let(exportLauncher::launch) },
                 onExportText = { viewModel.prepareTranscriptExport()?.let(textExportLauncher::launch) },
@@ -864,7 +865,8 @@ internal fun SessionContent(
     onRequestAddManualAnnotation: () -> Unit,
     onDeleteManualAnnotation: (String) -> Unit,
     microphoneDenied: Boolean = false,
-    onOpenMicrophoneSettings: () -> Unit = {}
+    onOpenMicrophoneSettings: () -> Unit = {},
+    onMoveSignalPage: (Int) -> Unit = {}
 ) {
     val workspace = remember(uiState) { VerbatimWorkspace(uiState) }
     val counts = remember(uiState) { VerbatimMarkerCounts(uiState) }
@@ -941,7 +943,7 @@ internal fun SessionContent(
                     }
                 }
                 item("live-pitch") {
-                    VerbatimPitchPanel(uiState.livePitch, uiState.isPaused)
+                    VerbatimPitchPanel(uiState.livePitch, uiState.isPaused, markers = uiState.signalMarkers)
                 }
             }
             uiState.selectedSession?.summary?.let { session ->
@@ -968,6 +970,19 @@ internal fun SessionContent(
                             VerbatimArchiveActions(workspace, onExportText, onExport, onDelete)
                         }
                     }
+                }
+            }
+            if (!workspace.capturing && uiState.selectedSession != null) {
+                item("archive-signal") {
+                    VerbatimArchiveSignalPanel(
+                        page = uiState.signalTracePage,
+                        loading = uiState.isSignalTraceLoading,
+                        markers = uiState.signalMarkers,
+                        playbackOffsetMs = uiState.playbackPositionMillis,
+                        canPlay = workspace.canReviewAudio,
+                        onMovePage = onMoveSignalPage,
+                        onPlayFromMarker = onPlayFromMarker
+                    )
                 }
             }
             if (uiState.isSavingTranscript || uiState.isExporting || uiState.isDeletingSession) {

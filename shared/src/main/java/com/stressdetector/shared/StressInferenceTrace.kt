@@ -61,5 +61,6 @@ data class StressInferenceTrace(
     val physiologicalIbiRatio: Double? = null,
     val morphologySupport: Int = 0,
     val qualityStatus: String? = null,
-    val rejectionReason: String? = null
+    val rejectionReason: String? = null,
+    val samplingRatePolicy: String = PpgSamplingPolicy.MANIFEST_FIXED_V1
 )

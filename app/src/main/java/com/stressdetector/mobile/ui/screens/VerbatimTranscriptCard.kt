@@ -79,13 +79,7 @@ internal fun VerbatimTranscriptCard(
                 )
             } else {
                 VerbatimReviewText(analysis, onSeekAudio, canPlay)
-                if (!segment.isFinal) {
-                    Text(
-                        "Teks sementara · diarization sedang diproses",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                VerbatimRecognitionStatus(segment)
                 VerbatimUtteranceActions(segment, canPlay, canEdit, onSeekAudio, onCycleSpeaker) {
                     draft = segment.displayText
                     editing = true
@@ -101,6 +95,20 @@ internal fun VerbatimTranscriptCard(
 }
 
 @Composable
+private fun VerbatimRecognitionStatus(segment: SpeechSegment) {
+    segment.recognitionReviewReason?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+    if (!segment.isFinal) {
+        Text(
+            "Teks sementara · diarization sedang diproses",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
 private fun VerbatimUtteranceEvidence(segment: SpeechSegment) {
     Text("Bahasa ${segment.language} · UTC ${segment.startTimestampUtc}", style = MaterialTheme.typography.bodySmall)
     Text(
@@ -112,6 +120,14 @@ private fun VerbatimUtteranceEvidence(segment: SpeechSegment) {
         style = MaterialTheme.typography.bodySmall
     )
     if (segment.editedText != null) Text("ASR asli: ${segment.rawText}", style = MaterialTheme.typography.bodySmall)
+    segment.decoderEvidence?.let { evidence ->
+        val result = evidence.crop ?: evidence.wholeUtterance
+        Text("ASR ${result.backend} · ${result.modelRevision} · ${evidence.status}", style = MaterialTheme.typography.bodySmall)
+        if (evidence.crop != null) Text("Ujaran utuh: ${evidence.wholeUtterance.rawText}", style = MaterialTheme.typography.bodySmall)
+        evidence.precedingPartial?.let {
+            Text("Hipotesis sementara, bukan hasil final: ${it.rawText}", style = MaterialTheme.typography.bodySmall)
+        }
+    }
     VerbatimProsodyStatus(segment.prosody)
 }
 

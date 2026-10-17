@@ -66,6 +66,9 @@ data class InferenceResult(
 
 /** Metadata supplied by the acquisition/preprocessing boundary for trace-only diagnostics. */
 data class InferenceTraceContext(
+    val sourceRateHz: Double? = null,
+    val modelRateHz: Double? = null,
+    val samplingRatePolicy: String? = null,
     val sessionId: String? = null,
     val windowId: String? = null,
     val trackerContract: String? = null,

@@ -630,44 +630,7 @@ class UnifiedSessionEngine(
             .sortedWith(compareBy({ it.episodeStartElapsedMillis }, { it.eventId }))
         val linkedDivergences = finalDivergences.map { event ->
             val linkedId = TranscriptTimelineLinker.link(
-                event = DivergenceEvent(
-                    id = event.eventId,
-                    sessionId = event.sessionId,
-                    timestampMs = event.timestampMs,
-                    currentStressProbability = event.currentProbability,
-                    baselineStressProbability = event.baselineProbability,
-                    divergenceDelta = event.delta,
-                    isElevatedArousal = true,
-                    channel = runCatching { com.stressdetector.shared.PpgType.valueOf(event.channel) }
-                        .getOrDefault(com.stressdetector.shared.PpgType.GREEN),
-                    markerElapsedMillis = event.markerElapsedMillis,
-                    episodeStartElapsedMillis = event.episodeStartElapsedMillis,
-                    episodeEndElapsedMillis = event.episodeEndElapsedMillis,
-                    contextWindowStartElapsedMillis = event.contextWindowStartElapsedMillis,
-                    contextWindowEndElapsedMillis = event.contextWindowEndElapsedMillis,
-                    confidence = event.confidence,
-                    signalQuality = event.signalQuality,
-                    sourceWindowId = event.sourceWindowId,
-                    transcriptSegmentId = event.transcriptSegmentId,
-                    markerType = runCatching { PhysiologicalMarkerType.valueOf(event.markerType) }
-                        .getOrDefault(PhysiologicalMarkerType.MODEL_AROUSAL),
-                    bpm = event.bpm,
-                    baselineBpm = event.baselineBpm,
-                    peakBpm = event.peakBpm,
-                    bpmDelta = event.bpmDelta,
-                    bpmTrend = event.bpmTrend,
-                    sourceChannels = event.sourceChannels
-                        .split(',')
-                        .mapNotNull { name -> runCatching { com.stressdetector.shared.PpgType.valueOf(name) }.getOrNull() }
-                        .toSet()
-                        .ifEmpty {
-                            setOf(
-                                runCatching { com.stressdetector.shared.PpgType.valueOf(event.channel) }
-                                    .getOrDefault(com.stressdetector.shared.PpgType.GREEN)
-                            )
-                        },
-                    markerConfigVersion = event.markerConfigVersion
-                ),
+                event = event,
                 transcript = finalizedTranscript,
                 toleranceMillis = TRANSCRIPT_LINK_TOLERANCE_MILLIS,
                 timeline = timeline
@@ -691,7 +654,8 @@ class UnifiedSessionEngine(
                     divergenceEvents = linkedDivergences,
                     monitorStatus = currentMonitorStatus,
                     annotations = annotationRepository.getAnnotationsForSession(sessionId),
-                    ppgArchive = ppgArchiveResult
+                    ppgArchive = ppgArchiveResult,
+                    audioStartSessionElapsedMillis = timeline?.audioStartElapsedMillisOrNull()
                 )
             }
         }.onFailure { error ->
@@ -714,12 +678,12 @@ class UnifiedSessionEngine(
         }
         val processingError = completedStop.processingError
         processingError?.let { error ->
-            currentMonitorStatus = ("$currentMonitorStatus; STT_DEGRADED: $error")
+            currentMonitorStatus = ("$currentMonitorStatus; AUDIO_PROCESSING_DEGRADED: $error")
                 .take(MAX_MONITOR_STATUS_LENGTH)
             _monitorStatus.value = currentMonitorStatus
         }
         val evidenceComplete = artifacts != null && transcriptPersisted.isSuccess && eventsPersisted.isSuccess
-        val persistenceComplete = evidenceComplete && processingError == null
+        val persistenceComplete = evidenceComplete && processingError == null && artifacts.warnings.isEmpty()
         val sessionEnd = runCatching {
             repository.endSession(
                 sessionId,
@@ -727,7 +691,7 @@ class UnifiedSessionEngine(
                 persistedAudioPath(audio, artifacts),
                 artifactFolderPath = artifacts?.folderPath.orEmpty(),
                 summaryStatus = when {
-                    processingError != null -> "ERROR_STT_PROCESSING"
+                    processingError != null -> "ERROR_AUDIO_PROCESSING"
                     else -> artifacts?.summaryStatus ?: "ERROR_FINALIZATION_FAILED"
                 },
                 audioGaps = completedStop.audioGaps,
@@ -743,7 +707,8 @@ class UnifiedSessionEngine(
         } else {
             val reasons = buildList {
                 finalizationFailure?.let { add("artifacts:${it.message ?: "failed"}") }
-                processingError?.let { add("stt:$it") }
+                processingError?.let { add("audio_processing:$it") }
+                addAll(artifacts?.warnings.orEmpty())
                 addAll(persistenceFailures)
             }
             val message = "Session finalization completed with retained evidence: ${reasons.joinToString().ifBlank { "unknown error" }}"
@@ -955,6 +920,7 @@ class UnifiedSessionEngine(
             biosignal = projectedBiosignal,
             acousticAnalysis = latestAcousticAnalysis,
             livePitch = livePitchHistory,
+            audioStartSessionElapsedMs = currentTimeline?.audioStartElapsedMillisOrNull(),
             transcript = transcript,
             backlogFrames = transcript.processing.backlogFrames,
             audioGaps = transcript.processing.audioGaps,

@@ -20,7 +20,8 @@ data class VerbatimSessionArtifacts(
     val summaryPath: String,
     val summaryStatus: String,
     val ppgManifestPath: String? = null,
-    val ppgCaptureStatus: String = PpgCaptureStatus.UNAVAILABLE.name
+    val ppgCaptureStatus: String = PpgCaptureStatus.UNAVAILABLE.name,
+    val warnings: List<String> = emptyList()
 )
 
 /** Publishes encrypted, app-private session artifacts through one finalization boundary. */
@@ -47,7 +48,8 @@ class VerbatimSessionFinalizer(
         divergenceEvents: List<DivergenceEventEntity>,
         monitorStatus: String,
         annotations: List<DomainAnnotation> = emptyList(),
-        ppgArchive: VerbatimPpgArchiveResult = VerbatimPpgArchiveResult.unavailable("archive_not_provided")
+        ppgArchive: VerbatimPpgArchiveResult = VerbatimPpgArchiveResult.unavailable("archive_not_provided"),
+        audioStartSessionElapsedMillis: Long? = null
     ): VerbatimSessionArtifacts {
         require(recordedAudio.sessionId == sessionId) { "Recorded audio belongs to another session." }
         val folder = "verbatim_sessions/${folderName(customSessionName, recordedAudio.startedAtUtcMillis)}"
@@ -166,18 +168,6 @@ class VerbatimSessionFinalizer(
                 }
                 ppgRawPublished = true
             }
-            coreStaged.forEach { encryptedStorage.deleteEncryptedFile(userId, it) }
-            if (ppgManifestStaged) {
-                encryptedStorage.deleteEncryptedFile(userId, "$stagingFolder/ppg_manifest.json.enc")
-            }
-            ppgStagedChunks.forEach { (stagedPath, _) -> encryptedStorage.deleteEncryptedFile(userId, stagedPath) }
-            check(encryptedStorage.deleteEncryptedFile(userId, recordedAudio.encryptedRelativePath)) {
-                "Source audio could not be retired after artifact commit."
-            }
-            if (ppgRawPublished) {
-                ppgArchive.manifestPath?.let { encryptedStorage.deleteEncryptedFile(userId, it) }
-                ppgArchive.chunkPaths.forEach { encryptedStorage.deleteEncryptedFile(userId, it) }
-            }
         } catch (error: Throwable) {
             coreStaged.forEach { encryptedStorage.deleteEncryptedFile(userId, it) }
             encryptedStorage.deleteEncryptedFile(userId, "$stagingFolder/ppg_manifest.json.enc")
@@ -189,6 +179,22 @@ class VerbatimSessionFinalizer(
             }
             throw error
         }
+        // The core is committed. Optional trace and cleanup failures cannot roll it back.
+        val tracePublisher = VerbatimSignalTracePublication(encryptedStorage)
+        val trace = tracePublisher.publish(userId, recordedAudio, folder, audioStartSessionElapsedMillis)
+        val cleanupPaths = buildList {
+            addAll(coreStaged)
+            if (ppgManifestStaged) add("$stagingFolder/ppg_manifest.json.enc")
+            addAll(ppgStagedChunks.map { it.first })
+            add(recordedAudio.encryptedRelativePath)
+            addAll(trace.sourceFiles)
+            if (ppgRawPublished) {
+                ppgArchive.manifestPath?.let(::add)
+                addAll(ppgArchive.chunkPaths)
+            }
+        }
+        val cleanupWarnings = pendingArtifactCleanup(encryptedStorage, userId, cleanupPaths)
+        val warnings = tracePublisher.recordWarnings(userId, folder, trace.warnings + cleanupWarnings)
         return VerbatimSessionArtifacts(
             folderPath = folder,
             audioPath = audioPath,
@@ -197,14 +203,24 @@ class VerbatimSessionFinalizer(
             summaryPath = summaryPath,
             summaryStatus = summary.second,
             ppgManifestPath = ppgManifestPath.takeIf { ppgRawPublished },
-            ppgCaptureStatus = ppgStatus.name
+            ppgCaptureStatus = ppgStatus.name,
+            warnings = warnings
         )
     }
 
     private suspend fun generateSummary(sessionId: String, transcriptSegments: List<SpeechSegment>): Pair<String, String> {
+        val reviewed = transcriptSegments.filter { it.isFinal && it.recognitionReviewReason == null && it.displayText.isNotBlank() }
+        return if (reviewed.isEmpty()) {
+            summaryError("No final transcript eligible for summary; review the original audio.")
+        } else {
+            generateReviewedSummary(sessionId, reviewed, transcriptSegments.size - reviewed.size)
+        }
+    }
+
+    private suspend fun generateReviewedSummary(sessionId: String, reviewed: List<SpeechSegment>, excluded: Int): Pair<String, String> {
         val promptAsset = runCatching { promptAssetProvider.getCounselorPrompt() }
             .getOrElse { return summaryError("Prompt asset unavailable: ${it.message}") }
-        val transcript = transcriptSegments.joinToString("\n") { segment ->
+        val transcript = reviewed.joinToString("\n") { segment ->
             "[${segment.startTimestampUtc}] ${segment.speakerId}: ${segment.displayText}"
         }.take(MAX_TRANSCRIPT_CHARS)
         val grounding = retrieveGrounding(transcript)
@@ -217,29 +233,15 @@ class VerbatimSessionFinalizer(
         )
         return try {
             val assembler = GenerationTextAssembler()
-            var terminalStatus = "GENERATED"
             llmEngine.generate(request).collect { state ->
-                when (state) {
-                    is LlmGenerationState.Content -> assembler.append(state)
-                    is LlmGenerationState.Unavailable -> {
-                        terminalStatus = "ERROR_MODEL_UNAVAILABLE"
-                        throw SummaryGenerationException("Local Gemma model is unavailable: ${state.readiness}")
-                    }
-                    is LlmGenerationState.Failed -> {
-                        terminalStatus = "ERROR_GENERATION_FAILED"
-                        throw SummaryGenerationException(state.reason)
-                    }
-                    LlmGenerationState.Cancelled -> {
-                        terminalStatus = "ERROR_GENERATION_CANCELLED"
-                        throw SummaryGenerationException("Generation was cancelled.")
-                    }
-                }
+                appendSummaryContent(state, assembler)
             }
             val text = assembler.currentText().trim()
             if (text.isBlank()) {
                 summaryError("Gemma returned an empty response.")
             } else {
-                renderSummaryWithCitations(text, grounding.second) to terminalStatus
+                val note = if (excluded > 0) "Catatan: $excluded hasil ASR belum ditinjau dan tidak digunakan dalam ringkasan.\n\n" else ""
+                note + renderSummaryWithCitations(text, grounding.second) to "GENERATED"
             }
         } catch (error: SummaryGenerationException) {
             summaryError(error.message ?: "Gemma generation failed.")
@@ -248,6 +250,19 @@ class VerbatimSessionFinalizer(
         } catch (error: Exception) {
             summaryError(error.message ?: "Gemma generation failed.")
         }
+    }
+
+    private fun appendSummaryContent(state: LlmGenerationState, assembler: GenerationTextAssembler) {
+        val failure = when (state) {
+            is LlmGenerationState.Content -> {
+                assembler.append(state)
+                null
+            }
+            is LlmGenerationState.Unavailable -> "Local Gemma model is unavailable: ${state.readiness}"
+            is LlmGenerationState.Failed -> state.reason
+            LlmGenerationState.Cancelled -> "Generation was cancelled."
+        }
+        if (failure != null) throw SummaryGenerationException(failure)
     }
 
     private suspend fun retrieveGrounding(transcript: String): Pair<RagMode, List<KnowledgeCitation>> {
@@ -314,6 +329,9 @@ class VerbatimSessionFinalizer(
                         "language" to segment.language,
                         "confidence" to segment.confidence,
                         "isDisfluent" to segment.isDisfluent,
+                        "decoderEvidence" to segment.decoderEvidence,
+                        "recognitionReviewReason" to segment.recognitionReviewReason,
+                        "recognitionEvidenceUnavailableReason" to segment.recognitionEvidenceUnavailableReason,
                         "reviewCueAnalysis" to VerbatimCueAnalyzer().analyze(segment),
                         "prosodyEvidence" to segment.prosody
                     )

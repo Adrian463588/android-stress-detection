@@ -290,6 +290,8 @@ class HomePpgProcessingCoordinator(
 
     private fun preparedFingerprint(window: PreparedPpgWindow): String = buildString {
         append(window.type.assetSuffix)
+        append(':').append(window.samplingRatePolicy)
+        append(':').append(window.sourceRateHz).append(':').append(window.modelRateHz)
         append(':').append(window.size)
         append(':').append(window.timestampsMillis.firstOrNull() ?: 0L)
         append(':').append(window.timestampsMillis.lastOrNull() ?: 0L)

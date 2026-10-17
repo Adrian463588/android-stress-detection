@@ -16,6 +16,8 @@ class SessionTimeline private constructor(
 
     fun currentElapsedMillis(): Long = (monotonicNowMillis() - startedAtMonotonicMillis).coerceAtLeast(0L)
 
+    fun audioStartElapsedMillisOrNull(): Long? = synchronized(lock) { audioStartElapsedMillis }
+
     fun markAudioStarted(): Long = synchronized(lock) {
         markAudioStartedAtLocked(monotonicNowMillis())
     }

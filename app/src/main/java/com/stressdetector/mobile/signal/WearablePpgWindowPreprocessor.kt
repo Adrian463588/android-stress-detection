@@ -3,6 +3,7 @@ package com.stressdetector.mobile.signal
 import com.stressdetector.mobile.data.WindowSnapshot
 import com.stressdetector.shared.AccelerometerSample
 import com.stressdetector.shared.PpgFilterContract
+import com.stressdetector.shared.PpgSamplingPolicy
 import com.stressdetector.shared.PpgTransportDiagnostics
 import com.stressdetector.shared.PpgType
 import com.stressdetector.shared.SessionConfig
@@ -50,6 +51,7 @@ data class PreparedPpgWindow(
     val gridResampledMask: BooleanArray = BooleanArray(filteredValues.size),
     val sourceRateHz: Double = type.sourceRateHz.toDouble(),
     val modelRateHz: Double = type.modelRateHz.toDouble(),
+    val samplingRatePolicy: String = PpgSamplingPolicy.MANIFEST_FIXED_V1,
     val preprocessingVersion: String = "wearable_ppg_v1",
     val featureVersion: String = "v3",
     val manifestFingerprint: String? = null,
@@ -127,7 +129,7 @@ data class PpgPreprocessingPolicy(
     /** A larger gap is a structural rejection, never a request to manufacture samples. */
     val maxObservedGapMillis: Long = 500L,
     /** The aggregate observed cadence may differ slightly from the frozen source rate. */
-    val maximumObservedRateDeviationRatio: Double = 0.20
+    val maximumObservedRateDeviationRatio: Double = PpgSamplingPolicy.MAX_RATE_DEVIATION_RATIO
 ) {
     init {
         require(maxObservedGapMillis >= 0L) { "maxObservedGapMillis must be non-negative" }
@@ -258,7 +260,9 @@ class WearablePpgWindowPreprocessor(
         val filtered = try {
             butterworthFilter.filter(
                 signal = observed.values,
-                samplingRateHz = sourceRateHz,
+                // PpgBatch validates this per-channel recording rate. The manifest
+                // rate is a cohort median, not a request to resample live data.
+                samplingRateHz = snapshot.type.sourceRateHz.toDouble(),
                 contract = filterContract
             )
         } catch (_: IllegalArgumentException) {
@@ -318,8 +322,9 @@ class WearablePpgWindowPreprocessor(
                 unresolvedSampleCount = 0,
                 gridResampledSampleCount = 0,
                 gridResampledMask = BooleanArray(observed.timestamps.size),
-                sourceRateHz = sourceRateHz,
-                modelRateHz = modelRateHz,
+                sourceRateHz = snapshot.type.sourceRateHz.toDouble(),
+                modelRateHz = PpgSamplingPolicy.observedRateHz(observed.timestamps),
+                samplingRatePolicy = PpgSamplingPolicy.RECORDING_OBSERVED_V1,
                 preprocessingVersion = contract.preprocessingVersion,
                 featureVersion = contract.featureVersion,
                 manifestFingerprint = contract.manifestFingerprint,

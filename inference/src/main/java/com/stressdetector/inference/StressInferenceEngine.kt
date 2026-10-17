@@ -1,5 +1,6 @@
 package com.stressdetector.inference
 
+import com.stressdetector.shared.PpgSamplingPolicy
 import com.stressdetector.shared.StressInferenceTrace
 import com.stressdetector.shared.StressLabel
 import java.nio.ByteBuffer
@@ -108,8 +109,10 @@ class StressInferenceEngine(
                 featureCount = input.features.size,
                 featureValues = input.features.toList(),
                 sampleCount = input.sampleCount.coerceAtLeast(0),
-                sourceRateHz = context.manifest.source_rate_hz,
-                modelRateHz = context.manifest.model_rate_hz,
+                sourceRateHz = input.traceContext?.sourceRateHz ?: context.manifest.source_rate_hz,
+                modelRateHz = input.traceContext?.modelRateHz ?: context.manifest.model_rate_hz,
+                samplingRatePolicy = input.traceContext?.samplingRatePolicy
+                    ?: PpgSamplingPolicy.MANIFEST_FIXED_V1,
                 rawProbability = probability,
                 calibratedProbability = calibratedProbability,
                 calibrationVersion = context.calibrator.version,
