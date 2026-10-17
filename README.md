@@ -6,6 +6,18 @@ Aplikasi pendamping untuk merekam PPG dari Galaxy Watch dan menjalankan analisis
 
 > **Status distribusi:** Phone v0.1.5 adalah prerelease debug untuk evaluasi internal, bukan rilis Play Store. Repository privat; unduhan memerlukan akun GitHub dengan akses. Watch v0.1.1 adalah companion terbaru dan tidak berubah pada rilis Phone v0.1.5.
 
+## Keamanan dan kesiapan publikasi
+
+Repository tetap privat sampai pemilik mengubah visibilitasnya. Audit 18 Oktober 2026 tidak menemukan credential pada reachable Git history atau field nama partisipan eksplisit, tetapi menemukan satu AAR Sherpa 37,6 MB pada commit historis yang masih reachable melalui branch/tag. File itu dihapus dari snapshot kerja melalui perubahan ini; **publikasi tetap diblokir** sampai pemilik menyetujui pembersihan seluruh history dan scan ulang memastikan tidak ada AAR pada refs yang akan dipublikasikan. Penghapusan lewat commit biasa tidak menghapus blob dari commit lama.
+
+- Phone dan Watch memakai R8 minification serta resource shrinking hanya pada `release`; build `debug` dan APK prerelease yang tertaut di atas tetap debug preview.
+- Build mengambil Sherpa-ONNX v1.13.4 dari rilis upstream HTTPS ke `app/build/third-party/`, lalu memeriksa ukuran dan SHA-256 tetap sebelum dipakai. `*.aar` diabaikan Git; Samsung Health Sensor SDK tetap perlu disediakan lokal untuk build Watch.
+- Workflow `Publication safety` menjalankan pemeriksaan artifact/field identitas pada snapshot kerja dan Gitleaks pada seluruh reachable history. Temuan tidak mencetak nilai atau path sensitif ke log.
+- R8 adalah defense-in-depth, bukan jaminan anti-reverse-engineering. Source publik memang dapat dibaca; signing key tidak disimpan di repository. Release yang dibuat tanpa signing key owner tetap unsigned dan tidak boleh dipromosikan sebagai rilis produksi.
+- GitHub Secret Scanning saat audit masih nonaktif pada repository privat ini. Setelah repository menjadi public, verifikasi Secret Scanning dan Push Protection di GitHub Settings; workflow tetap menjadi pemeriksaan independen.
+
+Sebelum membuat repository public, jalankan `python scripts/check_publication_safety.py --history` dan Gitleaks full-history scan. Perintah pertama saat ini sengaja gagal karena AAR lama; jangan mengabaikannya atau memakai baseline/allowlist untuk menyatakan repository bersih.
+
 ## Ringkasan proyek
 
 Phone menjadi pusat UI, pemrosesan, hasil, riwayat, AI+, dan Verbatim+. Watch menyediakan pengukuran PPG aktual. Model stres di Android memakai satu kanal PPG per model; ECG hanya digunakan sebagai referensi validasi pada pipeline penelitian, bukan input model aplikasi.
@@ -158,7 +170,7 @@ Screenshot historis dari build/perangkat lain tetap tersedia pada [galeri arsip]
 
 ## Build dan pengujian
 
-Persyaratan: JDK 17, Android SDK, Gradle wrapper repository, model index dan detector contract dari run 20260916T132736Z, serta Samsung Health Sensor SDK 1.4.1 lokal untuk modul Watch. AAR Samsung tidak disimpan di Git. Distribusi aplikasi yang memakai SDK Samsung memerlukan persetujuan partner Samsung; baca [ketentuan resmi Developer Mode](https://developer.samsung.com/health/sensor/guide/developer-mode.html).
+Persyaratan: JDK 17, Android SDK, Gradle wrapper repository, model index dan detector contract dari run 20260916T132736Z, serta Samsung Health Sensor SDK 1.4.1 lokal untuk modul Watch. Gradle mengambil AAR Sherpa yang dipin dari rilis resmi dan menolak ukuran/checksum yang berbeda; artifact tersebut berada hanya di ignored build output. AAR Samsung juga tetap lokal dan tidak disimpan di Git. Distribusi aplikasi yang memakai SDK Samsung memerlukan persetujuan partner Samsung; baca [ketentuan resmi Developer Mode](https://developer.samsung.com/health/sensor/guide/developer-mode.html).
 
 Packaging Phone memerlukan artifact kanonik dari checkout ProsesData yang sesuai. Tanpa index, detector contract, model, atau SDK yang diwajibkan, build harus berhenti dengan jelas; jangan mengganti dependency itu dengan dummy.
 

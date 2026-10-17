@@ -31,6 +31,15 @@ android {
         }
     }
 
+    buildTypes {
+        release {
+            debuggable false
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), rootProject.file("proguard-rules.pro")
+        }
+    }
+
     lint {
         // The bundled Compose detector crashes on this module's Kotlin/UAST
         // combination before it can report findings. Keep the remaining lint

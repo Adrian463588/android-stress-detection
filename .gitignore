@@ -2,6 +2,7 @@
 *.apk
 *.ap_
 *.aab
+*.aar
 
 # Files for the ART/Dalvik VM
 *.dex
@@ -15,6 +16,8 @@ gen/
 out/
 build/
 */build/
+__pycache__/
+*.py[cod]
 
 # Gradle files
 .gradle/

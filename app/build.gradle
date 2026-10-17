@@ -54,6 +54,15 @@ android {
         }
     }
 
+    buildTypes {
+        release {
+            debuggable false
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), rootProject.file("proguard-rules.pro")
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -78,6 +87,89 @@ android {
 
     sourceSets {
         main.assets.srcDirs = ["src/main/canonicalAssets", "build/generated/openSmileAssets"]
+    }
+}
+
+def sherpaAarName = "sherpa-onnx-static-link-onnxruntime-1.13.4.aar"
+def sherpaAarUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.4/${sherpaAarName}"
+def sherpaAarSha256 = "dc5ac19a28dee3bffc5e5a5d50cb6afa977703fc4a7ee535a308506990fdd295"
+def sherpaAarSize = 37631864L
+def staticSherpaAar = file("$buildDir/third-party/$sherpaAarName")
+def verifiedAbis = ["armeabi-v7a", "arm64-v8a", "x86_64"] as Set
+def sha256File = { File source ->
+    def digest = java.security.MessageDigest.getInstance("SHA-256")
+    source.withInputStream { stream ->
+        byte[] buffer = new byte[1024 * 1024]
+        int count
+        while ((count = stream.read(buffer)) != -1) digest.update(buffer, 0, count)
+    }
+    digest.digest().collect { String.format("%02x", it) }.join()
+}
+
+def downloadSherpaAar = tasks.register("downloadSherpaAar") {
+    inputs.property("artifactUrl", sherpaAarUrl)
+    inputs.property("sha256", sherpaAarSha256)
+    outputs.file(staticSherpaAar)
+    doLast {
+        if (staticSherpaAar.isFile()) {
+            if (staticSherpaAar.length() == sherpaAarSize && sha256File(staticSherpaAar) == sherpaAarSha256) return
+            throw new GradleException("Cached Sherpa runtime failed pinned size/SHA-256 validation")
+        }
+
+        staticSherpaAar.parentFile.mkdirs()
+        def temporary = new File(staticSherpaAar.parentFile, "${sherpaAarName}.part")
+        def currentUrl = new URL(sherpaAarUrl)
+        try {
+            for (int redirect = 0; redirect <= 3; redirect++) {
+                if (currentUrl.protocol != "https" ||
+                    !(currentUrl.host == "github.com" || currentUrl.host.endsWith(".githubusercontent.com"))) {
+                    throw new GradleException("Sherpa runtime download redirected to an unapproved host")
+                }
+                def connection = (HttpURLConnection) currentUrl.openConnection()
+                connection.connectTimeout = 15000
+                connection.readTimeout = 30000
+                connection.instanceFollowRedirects = false
+                try {
+                    int status = connection.responseCode
+                    if (status in [301, 302, 303, 307, 308]) {
+                        if (redirect == 3) throw new GradleException("Sherpa runtime exceeded the redirect limit")
+                        def location = connection.getHeaderField("Location")
+                        if (!location) throw new GradleException("Sherpa runtime redirect did not include a location")
+                        currentUrl = new URL(currentUrl, location)
+                        continue
+                    }
+                    if (status != 200) throw new GradleException("Sherpa runtime download returned HTTP ${status}")
+
+                    def digest = java.security.MessageDigest.getInstance("SHA-256")
+                    long bytes = 0
+                    connection.inputStream.withCloseable { input ->
+                        temporary.withOutputStream { output ->
+                            byte[] buffer = new byte[64 * 1024]
+                            int count
+                            while ((count = input.read(buffer)) != -1) {
+                                bytes += count
+                                if (bytes > sherpaAarSize) throw new GradleException("Sherpa runtime exceeded its pinned size")
+                                digest.update(buffer, 0, count)
+                                output.write(buffer, 0, count)
+                            }
+                        }
+                    }
+                    def actualSha256 = digest.digest().collect { String.format("%02x", it) }.join()
+                    if (bytes != sherpaAarSize || actualSha256 != sherpaAarSha256) {
+                        throw new GradleException("Sherpa runtime failed pinned size/SHA-256 validation")
+                    }
+                    java.nio.file.Files.move(temporary.toPath(), staticSherpaAar.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+                    return
+                } finally {
+                    connection.disconnect()
+                }
+            }
+            throw new GradleException("Sherpa runtime download did not complete")
+        } catch (Exception error) {
+            temporary.delete()
+            if (error instanceof GradleException) throw error
+            throw new GradleException("Sherpa runtime download failed; no unverified artifact was retained", error)
+        }
     }
 }
 
@@ -122,8 +214,8 @@ dependencies {
     // and SHA-256 validation by ModelManager.
     implementation "androidx.security:security-crypto:1.1.0-alpha06"
     implementation "androidx.work:work-runtime-ktx:2.9.0"
-    // Official upstream binding; model weights remain user-downloaded and app-private.
-    implementation files("libs/sherpa-onnx-static-link-onnxruntime-1.13.4.aar")
+    // Official upstream binding; fetched into ignored build output and checksum-verified.
+    implementation files(staticSherpaAar) { builtBy downloadSherpaAar }
     implementation "org.apache.commons:commons-compress:1.28.0"
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
     implementation "com.tom-roush:pdfbox-android:2.0.27.0"
@@ -187,18 +279,6 @@ tasks.register("verifyRagRuntimeContract", Exec) {
     )
 }
 
-def staticSherpaAar = file("libs/sherpa-onnx-static-link-onnxruntime-1.13.4.aar")
-def verifiedAbis = ["armeabi-v7a", "arm64-v8a", "x86_64"] as Set
-def sha256File = { File source ->
-    def digest = java.security.MessageDigest.getInstance("SHA-256")
-    source.withInputStream { stream ->
-        byte[] buffer = new byte[1024 * 1024]
-        int count
-        while ((count = stream.read(buffer)) != -1) digest.update(buffer, 0, count)
-    }
-    digest.digest().collect { String.format("%02x", it) }.join()
-}
-
 // audEERING Research License: noncommercial research only. Commercial product
 // distribution needs a separate license. License/configs ship with the APK.
 tasks.register("prepareOpenSmile") {
@@ -233,13 +313,14 @@ tasks.configureEach { task ->
 }
 
 tasks.register("verifyStaticSherpaRuntime") {
+    dependsOn(downloadSherpaAar)
     inputs.file(staticSherpaAar)
     doLast {
         if (!staticSherpaAar.isFile()) {
-            throw new GradleException("Missing static Sherpa runtime AAR")
+            throw new GradleException("Missing downloaded static Sherpa runtime AAR")
         }
-        if (sha256File(staticSherpaAar) != "dc5ac19a28dee3bffc5e5a5d50cb6afa977703fc4a7ee535a308506990fdd295") {
-            throw new GradleException("Static Sherpa runtime checksum mismatch")
+        if (staticSherpaAar.length() != sherpaAarSize || sha256File(staticSherpaAar) != sherpaAarSha256) {
+            throw new GradleException("Static Sherpa runtime size/SHA-256 mismatch")
         }
         def duplicated = zipTree(staticSherpaAar).matching {
             verifiedAbis.each { abi -> include("jni/${abi}/libonnxruntime.so") }
