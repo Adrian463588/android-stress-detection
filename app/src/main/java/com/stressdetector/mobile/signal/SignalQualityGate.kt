@@ -19,7 +19,9 @@ class SignalQualityGate(private val config: LiveMonitorConfig) {
         timestampsMillis = window.timestampsMillis,
         values = window.filteredValues,
         requiredSamples = window.size,
-        expectedRateHz = window.modelRateHz,
+        // Missing/gap checks concern acquisition cadence, not the window's feature
+        // feature rate. Mixing them invents a missing-sample boundary penalty.
+        expectedRateHz = window.sourceRateHz,
         providedMissingRatio = window.sourceGapInterpolatedSampleCount.toDouble() /
             window.size.coerceAtLeast(1)
     )

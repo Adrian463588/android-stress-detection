@@ -4,7 +4,35 @@ Aplikasi pendamping yang merekam PPG dari Galaxy Watch dan menghitung hasil stre
 secara lokal di HP. Hasilnya adalah **bantuan pengambilan keputusan**, bukan
 diagnosis medis.
 
-## Preview pengembangan Verbatim+ v0.1.2
+## Unduhan terbaru — Stress Detector Phone v0.1.5
+
+APK Phone terbaru untuk demo internal adalah `0.1.5` (versionCode 6). Ini
+debug build untuk evaluasi, bukan aplikasi klinis atau rilis Play Store.
+
+- [Unduh APK Phone v0.1.5](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/app-production-debug.apk)
+- [Rilis v0.1.5 dan catatan batas pengujian](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.5)
+- [Checksum SHA-256 v0.1.5](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/SHA256SUMS-0.1.5.txt)
+- Companion Galaxy Watch tetap v0.1.1 karena tidak ada perubahan Watch pada rilis ini: [Unduh Watch](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/wear-production-debug.apk).
+
+v0.1.5 menyelaraskan preprocessing PPG Android dengan cadence model yang
+terverifikasi. Replay rekaman sebelumnya lulus parity untuk tujuh window Green
+dan tujuh IR; pada sesi baru Green menghasilkan Normal, sedangkan IR abstain
+karena gap sinyal. Full-channel acceptance masih `NO_GO` karena timestamp
+diagnostik Red berkonflik. Hasil tidak dipaksa dan model/threshold tidak diubah.
+Lihat [catatan versi dan evidence](docs/releases/android-v0.1.5.md).
+
+Repo ini privat; unduhan memerlukan akun GitHub yang diberi akses.
+
+### Riwayat versi
+
+| Komponen | Versi | Status | Unduhan/catatan |
+| --- | --- | --- | --- |
+| Phone | **0.1.5** | Terbaru, debug preview | [APK](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/app-production-debug.apk) · [Rilis](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.5) |
+| Galaxy Watch | 0.1.1 | Companion untuk Phone 0.1.5; tidak berubah | [APK](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/wear-production-debug.apk) |
+| Phone | 0.1.2 | Historis | [APK](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.2/app-production-debug.apk) · [Rilis](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.2) |
+| Phone + Watch | 0.1.1 / 0.1.0 | Historis | [Semua rilis](https://github.com/Adrian463588/android-stress-detection/releases) |
+
+## Catatan historis — Verbatim+ v0.1.2
 
 - Waveform amplitudo PCM dan pitch openSMILE F0 terpisah, live dan arsip per 60 detik.
 - Marker cue, akustik/prosodi, catatan dan PPG opsional dapat ditinjau dengan bukti serta aksi dengar pada arsip.

@@ -10,6 +10,7 @@ import com.stressdetector.shared.SessionConfig
 import com.stressdetector.shared.SignalQualitySummary
 import com.stressdetector.shared.StressLabel
 import com.stressdetector.shared.StressPrediction
+import java.security.MessageDigest
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -157,11 +158,7 @@ class HomeSessionFinalizer(private val dao: StressSessionDao, private val eviden
                 .filter { it.channel == selectedChannel }
                 .mapNotNull { it.snapshot.availability.predictionOrNull()?.modelVersion }
                 .firstOrNull(),
-            preprocessingFingerprint = windows.asSequence()
-                .filter { it.channel == selectedChannel }
-                .map { it.snapshot.processingFingerprint }
-                .distinct()
-                .singleOrNull(),
+            preprocessingFingerprint = sessionPreprocessingFingerprint(),
             evidenceMode = evidenceMode,
             reportStatus = if (selectedChannel != null &&
                 windows.any {
@@ -187,6 +184,35 @@ class HomeSessionFinalizer(private val dao: StressSessionDao, private val eviden
             irValidPeakCount = irBpmSummary?.validPeakCount ?: 0,
             createdAtMillis = snapshot.endedAtMillis
         )
+
+    private fun FinalizedSessionReport.sessionPreprocessingFingerprint(): String? {
+        val channel = selectedChannel
+        val ordered = windows.filter { it.channel == channel }.sortedBy { it.windowIndex }
+        return when {
+            channel == null || expectedWindowCount <= 0 || ordered.isEmpty() -> null
+            ordered.any {
+                it.windowIndex !in 0 until expectedWindowCount ||
+                    it.snapshot.channel != channel ||
+                    it.snapshot.processingFingerprint.isBlank()
+            } -> null
+            ordered.zipWithNext().any { (left, right) -> left.windowIndex == right.windowIndex } -> null
+            ordered.size == 1 -> ordered.single().snapshot.processingFingerprint
+            else -> {
+                // Bind different indexed windows without discarding their individual evidence.
+                val payload = buildString {
+                    append("home-session-lineage-v1\n").append(channel.assetSuffix).append('\n')
+                    ordered.forEach { window ->
+                        val fingerprint = window.snapshot.processingFingerprint
+                        append(window.windowIndex).append(':').append(fingerprint.toByteArray(Charsets.UTF_8).size).append(':')
+                        append(fingerprint).append('\n')
+                    }
+                }
+                MessageDigest.getInstance("SHA-256")
+                    .digest(payload.toByteArray(Charsets.UTF_8))
+                    .joinToString("") { "%02x".format(it) }
+            }
+        }
+    }
 
     private fun FinalizedWindowReport.toEntity(sessionId: String): StressWindowEvaluationEntity {
         val prediction = snapshot.availability.predictionOrNull()

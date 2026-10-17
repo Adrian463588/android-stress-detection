@@ -4,6 +4,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -41,6 +42,7 @@ data class PpgFeatureExtractionInput(
 object V3PpgFeatureExtractor {
     /** Canonical ONNX contract: full 180-second PPG input window. */
     private const val MIN_WINDOW_SECONDS = 180.0
+    private const val WINDOW_BOUNDARY_TOLERANCE_SECONDS = 0.5
     private const val MILLIS_PER_SECOND = 1_000.0
     private const val MILLIS_PER_MINUTE = 60_000.0
     private const val MIN_PHYSIOLOGICAL_IBI = 300.0
@@ -236,12 +238,14 @@ object V3PpgFeatureExtractor {
     }
 
     private fun validateInput(input: PpgFeatureExtractionInput): PpgFeatureExtractionInput {
-        require(input.values.size >= (MIN_WINDOW_SECONDS * input.samplingRateHz).toInt()) {
-            "insufficient_window_samples"
-        }
         require(input.samplingRateHz.isFinite() && input.samplingRateHz > 0.0) {
             "invalid_sampling_rate"
         }
+        // Match features_v4's boundary tolerance without padding or changing Home coverage gates.
+        val minimumSamples = floor(
+            (MIN_WINDOW_SECONDS - WINDOW_BOUNDARY_TOLERANCE_SECONDS) * input.samplingRateHz
+        ).toInt()
+        require(input.values.size >= minimumSamples) { "insufficient_window_samples" }
         require(input.values.all(Double::isFinite)) { "non_finite_signal" }
         return input
     }
