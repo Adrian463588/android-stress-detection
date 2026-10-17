@@ -24,27 +24,29 @@ Status: PASS. Digest aset diverifikasi melalui GitHub Release API pada 18 Oktobe
 
 Status: PASS. Wear, sensor penuh, web-grounded AI+, Verbatim recording, dan seluruh operasi Profile tetap memiliki gap yang terlihat.
 
-## Scenario: Screenshot lama tidak disebut sebagai tampilan build terbaru
+## Scenario: Screenshot historis tidak disebut sebagai tampilan build terbaru
 
-**Given** screenshot Home/History/AI+ Xiaomi yang tersedia berasal dari Oktober 3–5 dan build sebelum v0.1.5; screenshot Verbatim berasal dari Samsung pada Oktober 6
+**Given** repo memiliki screenshot historis dari perangkat/build sebelumnya dan screenshot baru Xiaomi v0.1.5
 
 **When** screenshot ditampilkan pada README
 
 **Then** tanggal, perangkat, dan batas versi harus dicantumkan
 
-**And** screenshot Verbatim dari Samsung tidak boleh diberi label Xiaomi.
+**And** screenshot historis tidak boleh diberi label sebagai capture v0.1.5.
 
-Status: PASS untuk caption historis; tanggal/build Profile tetap ditandai tidak terverifikasi.
+Status: PASS. Galeri utama memakai lima tab Xiaomi v0.1.5; aset lama disimpan terpisah sebagai arsip.
 
 ## Scenario: Screenshot baru diambil dari Xiaomi
 
-**Given** Xiaomi 2412DPC0AG muncul sebagai device pada ADB
+**Given** Xiaomi POCO X7 Pro 2412DPC0AG (`QSWSEMRKNFZ9LJRC`) muncul sebagai device pada ADB dan `com.stressdetector` versi 0.1.5/versionCode 6 terpasang
 
-**When** UI v0.1.5 dibuka dan menu smoke test dijalankan
+**When** lima tab utama dibuka melalui navigasi dan UI dibaca tanpa memulai sesi/rekaman atau mengubah data
 
 **Then** screenshot dari Home, History, Verbatim+, AI+, dan Profile harus disimpan sebagai PNG tanpa klaim hasil yang tidak diuji.
 
-Status: BLOCKED. Xiaomi QSWSEMRKNFZ9LJRC terlepas dari ADB sebelum screenshot dan navigasi; hanya Samsung RRCN3008VYE yang masih terlihat.
+**And** UI AI+ memperlihatkan satu kontrol untuk membuka daftar sumber W1/W2.
+
+Status: PASS untuk navigasi dan rendering UI pada 18 Oktober 2026. Ini bukan acceptance end-to-end fitur, validitas sumber, akurasi model, atau Watch.
 
 ## Scenario: README siap merge
 

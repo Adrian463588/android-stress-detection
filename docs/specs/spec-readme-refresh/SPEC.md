@@ -3,6 +3,7 @@ id: SPEC-readme-refresh
 companions:
   - plan.md
   - acceptance.md
+  - ../../evidence/readme-screenshots-xiaomi-20261018.md
 sources:
   - https://github.com/Fission-AI/OpenSpec
   - https://github.com/bmad-code-org/BMAD-METHOD

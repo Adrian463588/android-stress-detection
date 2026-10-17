@@ -58,10 +58,10 @@ Opsi tersebut memasang ulang secara in-place. Jangan menjalankan uninstall atau 
 | Menu | Fungsi | Batas bukti terbaru |
 | --- | --- | --- |
 | **Home** | Memeriksa kesiapan model, izin, dan reachability Watch; merekam sesi stress 5 menit; menampilkan hasil dan kualitas Green/IR. | Paket v0.1.5 lolos 868 JVM tests dan gate build/lint yang tercatat. Replay lulus untuk 7 window Green dan 7 IR. Pada satu sesi baru, Green menghasilkan Normal dan IR abstain karena gap. Full-channel acceptance masih NO_GO karena konflik timestamp diagnostik Red. |
-| **History** | Meninjau sesi tersimpan, hasil, kualitas, grafik, serta detail provenance. | Screenshot detail yang ada berasal dari uji Xiaomi pada 3 Oktober, bukan bukti UI v0.1.5. |
-| **Verbatim+** | Merekam dan meninjau audio/transkrip/marker; PPG Watch dapat menjadi konteks sesi bila tersedia. Audio tetap harus menunjukkan statusnya sendiri ketika Watch tidak tersedia. | Screenshot portrait/drawer yang tercatat berasal dari Samsung S20 pada 6 Oktober. Perekaman audio, STT, dan sinkronisasi Watch belum dinyatakan lolos end-to-end untuk rilis Phone v0.1.5. |
-| **AI+** | Counselor lokal Gemma, retrieval dokumen, sitasi, dan pencarian web setelah persetujuan/opt-in yang sesuai. | Uji lokal dan jalur consent/recovery terdokumentasi. Corpus bawaan belum tervalidasi; percobaan web 5 Oktober berakhir unavailable. Jawaban web grounded yang berhasil belum dibuktikan pada evidence rilis. |
-| **Profile** | Mengelola izin, model/bundle offline, storage, backup, serta pengaturan terkait. | Tersedia screenshot historis Xiaomi. Verifikasi lengkap semua operasi Profile pada build v0.1.5 belum diklaim. |
+| **History** | Meninjau sesi tersimpan, hasil, kualitas, grafik, serta detail provenance. | Screenshot kalender diambil dari Xiaomi v0.1.5 pada 18 Oktober 2026. Ini bukti tampilan dan navigasi, bukan verifikasi seluruh operasi history. |
+| **Verbatim+** | Merekam dan meninjau audio/transkrip/marker; PPG Watch dapat menjadi konteks sesi bila tersedia. Audio tetap harus menunjukkan statusnya sendiri ketika Watch tidak tersedia. | Screenshot daftar sesi diambil dari Xiaomi v0.1.5 pada 18 Oktober 2026. Perekaman audio, STT, dan sinkronisasi Watch tidak diuji dalam smoke test dokumentasi ini. |
+| **AI+** | Counselor lokal Gemma, retrieval dokumen, sitasi, dan pencarian web setelah persetujuan/opt-in yang sesuai. | Screenshot v0.1.5 menampilkan percakapan counselor dan panel sumber W1/W2 dalam satu kontrol. Ini membuktikan rendering state yang tersimpan, bukan validitas URL, keberhasilan fetch baru, atau faithfulness jawaban. Corpus bawaan belum tervalidasi. |
+| **Profile** | Mengelola izin, model/bundle offline, storage, backup, serta pengaturan terkait. | Screenshot overview diambil dari Xiaomi v0.1.5 pada 18 Oktober 2026. Status yang terlihat bukan verifikasi semua operasi Profile. |
 
 Semua hasil tetap bersifat non-diagnostik. Hasil Stress atau Normal adalah keluaran model pada data sesi tertentu, bukan pengukuran langsung atas perasaan pengguna atau validasi klinis. Green/IR tidak digabung atau dirata-ratakan. Akselerometer dapat digunakan untuk anotasi MADC per window jika sampel Watch aktual tersedia; data gerak bukan fitur model dan tidak memperbaiki waveform.
 
@@ -113,56 +113,27 @@ Batas utama: model stres Android menggunakan PPG. ECG, identitas, metadata sesi,
 
 ## Galeri UI perangkat
 
-Gambar di bawah adalah tangkapan layar perangkat yang sudah tersimpan sebagai evidence di repo. Gambar tersebut **bukan screenshot build v0.1.5**. Xiaomi POCO X7 Pro (2412DPC0AG) dan package v0.1.5 sempat terdeteksi terpasang pada 18 Oktober 2026, tetapi perangkat terlepas dari ADB sebelum screenshot baru dan smoke test menu dapat diambil. Screenshot Verbatim+ yang tersedia berasal dari perangkat Samsung S20, bukan Xiaomi.
+Screenshot berikut diambil langsung dari Xiaomi POCO X7 Pro (`2412DPC0AG`, serial ADB `QSWSEMRKNFZ9LJRC`) pada 18 Oktober 2026. Package `com.stressdetector` yang terpasang adalah Phone v0.1.5, versionCode 6. Ini smoke test navigasi dan rendering pada lima tab; tidak mengubah data aplikasi dan tidak membuktikan seluruh alur fitur, akurasi model, atau penerimaan end-to-end Watch. [Rincian capture dan checksum PNG](docs/evidence/readme-screenshots-xiaomi-20261018.md).
 
-<details>
-<summary>Home — Xiaomi, evidence 4 Oktober 2026 (build sebelumnya)</summary>
+| Home | History |
+| --- | --- |
+| <img src="docs/screenshots/home-xiaomi-2412DPC0AG-v0.1.5-20261018.png" alt="Home Xiaomi v0.1.5; hasil sesi dan grafik cleaned core yang tampil pada perangkat" width="280"> | <img src="docs/screenshots/history-calendar-xiaomi-2412DPC0AG-v0.1.5-20261018.png" alt="Kalender History Xiaomi v0.1.5" width="280"> |
 
-![Home dengan hasil dan PPG cleaned core aktual](docs/screenshots/home-cleaned-core-final-20261004.png)
+| Verbatim+ | Profile |
+| --- | --- |
+| <img src="docs/screenshots/verbatim-sessions-xiaomi-2412DPC0AG-v0.1.5-20261018.png" alt="Daftar sesi Verbatim+ Xiaomi v0.1.5" width="280"> | <img src="docs/screenshots/profile-xiaomi-2412DPC0AG-v0.1.5-20261018.png" alt="Overview Profile Xiaomi v0.1.5" width="280"> |
 
-![Kanal Green, IR, dan Red diagnostik](docs/screenshots/home-channels-final-20261004.png)
+| AI+ — percakapan | AI+ — satu panel sumber |
+| --- | --- |
+| <img src="docs/screenshots/ai-plus-chat-top-xiaomi-2412DPC0AG-v0.1.5-20261018.png" alt="Percakapan AI Counselor pada perangkat Xiaomi" width="280"> | <img src="docs/screenshots/ai-plus-web-sources-xiaomi-2412DPC0AG-v0.1.5-20261018.png" alt="Satu kontrol sumber membuka daftar W1 dan W2 pada AI Counselor" width="280"> |
 
-![Provenance hasil dan kalibrasi](docs/screenshots/home-provenance-final-20261004.png)
+Catatan pembacaan screenshot:
 
-Gambar ini adalah bukti visual historis untuk hasil dan grafik sesi, bukan screenshot v0.1.5. Gambar saja tidak membuktikan input model, hasil inferensi, atau validasi klinis; gunakan receipt yang sesuai sebelum menafsirkan hasil.
+- Home memperlihatkan hasil tersimpan `Stress` untuk Green dan IR. Ini adalah state lokal yang tampil pada perangkat, bukan bukti bahwa hasil tersebut sesuai kondisi subjektif, benar secara klinis, atau terbebas dari masalah provenance. Lihat [catatan rilis dan batas penerimaan](docs/releases/android-v0.1.5.md) sebelum menafsirkan hasil.
+- AI+ menampilkan percakapan tersimpan. Panel sumber memperlihatkan W1/W2, URL, cuplikan, dan skor relevansi yang ditampilkan aplikasi; screenshot bukan verifikasi independen atas kualitas web fetch, sitasi, atau jawaban.
+- History, Verbatim+, dan Profile hanya dinavigasi untuk mengambil tampilan. Tidak ada sesi rekaman, penghapusan, ekspor, atau perubahan model dijalankan.
 
-</details>
-
-<details>
-<summary>History — Xiaomi, evidence 3 Oktober 2026 (build sebelumnya)</summary>
-
-![History detail pada Xiaomi](docs/screenshots/history-detail-final-20261003.png)
-
-</details>
-
-<details>
-<summary>Verbatim+ — Samsung S20, evidence 6 Oktober 2026</summary>
-
-![Verbatim+ portrait pada Samsung S20](docs/evidence/verbatim-device-20261006/verbatim-portrait.png)
-
-![Drawer sesi Verbatim+ pada Samsung S20](docs/evidence/verbatim-device-20261006/session-drawer.png)
-
-Ini bukan screenshot Xiaomi dan bukan penerimaan perekaman audio pada v0.1.5. [Catatan perangkat Verbatim+](docs/verbatim-device-acceptance-20261006.md).
-
-</details>
-
-<details>
-<summary>AI+ — Xiaomi, evidence 5 Oktober 2026 (build sebelumnya)</summary>
-
-![Percakapan AI+ lokal](docs/evidence/ai-plus-20261005/followup.png)
-
-![Fallback web yang berakhir unavailable](docs/evidence/ai-plus-20261005/web-unavailable.png)
-
-Gambar memperlihatkan smoke test yang disetujui. Jalur web tidak menghasilkan evidence tervalidasi; lihat [receipt AI+](docs/evidence/ai-plus-20261005/acceptance.md).
-
-</details>
-
-<details>
-<summary>Profile — screenshot Xiaomi historis; tanggal/build capture tidak terverifikasi</summary>
-
-![Profile pada Xiaomi 2412DPC0AG](docs/screenshots/ui-final-profile-2412DPC0AG.png)
-
-</details>
+Screenshot historis dari build/perangkat lain tetap tersedia pada [galeri arsip](docs/evidence/README-screenshots-archive.md); screenshot tersebut tidak digunakan sebagai bukti tampilan v0.1.5.
 
 ## Status verifikasi dan batas penerimaan
 
@@ -171,17 +142,18 @@ Gambar memperlihatkan smoke test yang disetujui. Jalur web tidak menghasilkan ev
 | Unit test Phone/Inference/Shared | 796 + 34 + 38 = 868 JVM tests, tanpa failure/error/skip pada verification receipt v0.1.5. | Lulus pada scope tersebut |
 | Static checks dan APK Phone | ktlintCheck, detekt, app/inference production lint, dan assembleProductionDebug dilaporkan lulus. | Lulus pada scope tersebut |
 | Watch module pada checkout v0.1.5 | Samsung Health Sensor SDK AAR tidak tersedia; Watch test/compile tidak diklaim lulus di checkout itu. | Belum diverifikasi |
-| Instalasi Xiaomi | Pada 18 Oktober, ADB melihat model 2412DPC0AG dan package com.stressdetector v0.1.5/versionCode 6. Xiaomi terlepas sebelum screenshot dan menu smoke test. | Versi terpasang terverifikasi; UI smoke tertunda |
+| UI Xiaomi | Pada 18 Oktober, ADB melihat model 2412DPC0AG, Android 16, screen 1220×2712, dan package com.stressdetector v0.1.5/versionCode 6. Lima tab dibuka dan screenshot PNG aktual disimpan; tidak ada tindakan yang mengubah data. | UI/navigation smoke lulus; bukan E2E |
 | PPG dan prediksi | Replay satu rekaman lulus 7 window Green + 7 IR. Satu sesi langsung: Green Normal, IR insufficient signal. Red timestamp conflict membuat full-channel acceptance NO_GO. | Partial; bukan validasi klinis |
-| AI+ | Local Gemma serta consent/unavailable recovery punya evidence. Web test tidak berhasil mengambil evidence valid; bundled knowledge corpus belum lulus benchmark. | Partial; grounded-web acceptance belum lulus |
-| Verbatim+ | UI smoke non-recording pada Samsung dan screenshot tersedia. | Audio/STT/Watch end-to-end terbaru belum diklaim |
-| Profile dan backup | Tangkapan layar serta sebagian smoke non-recording historis tersedia. | Semua operasi belum diverifikasi pada v0.1.5 |
+| AI+ | Layar v0.1.5 menampilkan percakapan Web tersimpan dan daftar W1/W2. Tidak dilakukan pencarian baru atau audit faithfulness pada smoke ini; corpus lokal belum lulus benchmark. | UI display terverifikasi; grounded-web acceptance masih partial |
+| Verbatim+ | Daftar sesi dan navigasi UI terlihat pada Xiaomi v0.1.5; tidak ada rekaman/import/delete yang dijalankan. | Audio/STT/Watch end-to-end terbaru belum diklaim |
+| Profile dan backup | Overview Profile dibuka pada Xiaomi v0.1.5; aksi operasi data/model tidak dijalankan. | Semua operasi belum diverifikasi pada v0.1.5 |
 
 **Kesimpulan:** repo ini belum memiliki bukti yang mendukung klaim “semua fitur telah lolos end-to-end pada v0.1.5”. Status yang belum lulus atau belum diuji ditampilkan terbuka agar README tidak menjadi klaim pemasaran yang menyesatkan.
 
 - [Catatan rilis v0.1.5](docs/releases/android-v0.1.5.md)
 - [Panduan uji perangkat](docs/device-test-guide.md)
-- [Evidence AI+](docs/evidence/ai-plus-20261005/acceptance.md)
+- [Evidence capture Xiaomi terbaru](docs/evidence/readme-screenshots-xiaomi-20261018.md)
+- [Evidence AI+ historis](docs/evidence/ai-plus-20261005/acceptance.md)
 - [Evidence Verbatim+](docs/verbatim-device-acceptance-20261006.md)
 
 ## Build dan pengujian
@@ -232,4 +204,5 @@ RTK, CAVEMAN, dan PONYTAIL berfungsi sebagai panduan authoring/quality pada repo
 - [x] Screenshot nyata yang sudah tersimpan dipakai dengan perangkat, tanggal, dan batas versinya.
 - [x] Hasil test dan gap fitur dibedakan; tidak ada klaim semua fitur telah lolos E2E.
 - [x] BDD/BMAD/OpenSpec-style acceptance dan sumber GitHub dicatat.
-- [ ] Screenshot segar dan smoke test semua menu pada Xiaomi v0.1.5 — tertunda: Xiaomi terputus dari ADB sebelum pengambilan.
+- [x] Screenshot segar untuk Home, History, Verbatim+, AI+, dan Profile dari Xiaomi v0.1.5 dilampirkan; UI smoke dibatasi pada navigasi dan rendering.
+- [x] Screenshot yang memuat percakapan AI+ disertakan atas persetujuan pengguna; caption membatasi klaim pada tampilan.
