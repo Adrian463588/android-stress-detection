@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath
+from typing import BinaryIO, Iterator
 
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_SUFFIXES = {
@@ -229,6 +230,25 @@ def _git_with_input(input_data: bytes, *arguments: str) -> bytes:
     return result.stdout
 
 
+def _nul_records(stream: BinaryIO) -> Iterator[bytes]:
+    buffer = bytearray()
+    start = 0
+    while chunk := stream.read(64 * 1024):
+        buffer.extend(chunk)
+        while (end := buffer.find(0, start)) >= 0:
+            if end - start > MAX_TREE_RECORD_BYTES:
+                raise RuntimeError("repository tree record exceeds policy limit")
+            yield bytes(buffer[start:end])
+            start = end + 1
+        if start:
+            del buffer[:start]
+            start = 0
+        if len(buffer) > MAX_TREE_RECORD_BYTES:
+            raise RuntimeError("repository tree record exceeds policy limit")
+    if buffer:
+        raise RuntimeError("unable to inspect repository tree records")
+
+
 def _git_nul_records(*arguments: str):
     try:
         process = subprocess.Popen(
@@ -245,20 +265,9 @@ def _git_nul_records(*arguments: str):
         process.wait()
         raise RuntimeError("unable to inspect repository state")
 
-    buffer = bytearray()
-    start = 0
     try:
-        while chunk := process.stdout.read(64 * 1024):
-            buffer.extend(chunk)
-            while (end := buffer.find(0, start)) >= 0:
-                yield bytes(buffer[start:end])
-                start = end + 1
-            if start:
-                del buffer[:start]
-                start = 0
-            if len(buffer) > MAX_TREE_RECORD_BYTES:
-                raise RuntimeError("repository tree record exceeds policy limit")
-        if buffer or process.wait() != 0:
+        yield from _nul_records(process.stdout)
+        if process.wait() != 0:
             raise RuntimeError("unable to inspect repository state")
     finally:
         process.stdout.close()

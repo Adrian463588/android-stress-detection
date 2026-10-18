@@ -1,3 +1,4 @@
+import io
 import subprocess
 import tempfile
 import unittest
@@ -7,7 +8,9 @@ from unittest.mock import patch
 from check_publication_safety import (
     HISTORICAL_ALLOWED_AAR_PATH,
     HISTORICAL_ALLOWED_AAR_SHA256,
+    MAX_TREE_RECORD_BYTES,
     ROOT,
+    _nul_records,
     content_violation,
     historical_path_violation,
     inspect_history,
@@ -121,6 +124,11 @@ class PublicationSafetyTest(unittest.TestCase):
             ("forbidden-package-or-key", "android/wear/libs/samsung-health-sensor.aar"),
             findings,
         )
+
+    def test_nul_stream_rejects_oversized_terminated_record(self):
+        stream = io.BytesIO(b"x" * (MAX_TREE_RECORD_BYTES + 1) + b"\0")
+        with self.assertRaisesRegex(RuntimeError, "record exceeds policy limit"):
+            list(_nul_records(stream))
 
     def test_rejects_raw_participant_source_directories(self):
         self.assertEqual(
