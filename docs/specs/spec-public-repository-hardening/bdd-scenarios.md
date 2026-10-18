@@ -47,6 +47,11 @@ Feature: Build without vendored AARs and harden release variants
     Then the approved path remains allowed
     And the unapproved alias path fails publication safety
 
+  Scenario: A tree contains an oversized or malformed path record
+    Given a reachable Git tree emits a record beyond the scanner limit
+    When the history scan streams its NUL-delimited entries
+    Then the scan fails closed without releasing the oversized record
+
   Scenario: Release variants are optimized and non-debuggable
     Given Phone and Wear release build types are configured
     When the release APKs are assembled

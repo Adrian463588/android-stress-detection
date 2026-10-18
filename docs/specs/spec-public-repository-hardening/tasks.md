@@ -18,7 +18,7 @@
 | --- | --- |
 | Pinned Sherpa download integrity | `:app:verifyStaticSherpaRuntime` and release assemble; checksum/size mismatch must fail. |
 | Forbidden files and participant-name fields | `python -m unittest discover -s scripts -p 'test_publication_safety.py'`; `python scripts/check_publication_safety.py --worktree`. |
-| History artifact policy | `python scripts/check_publication_safety.py --history`; passes only with the exact legacy Sherpa path and SHA-256. Tests reject aliases of the same blob, changed content, other paths, and any current-tree AAR. |
+| History artifact policy | `python scripts/check_publication_safety.py --history`; passes only with the exact legacy Sherpa path and SHA-256. Tests reject aliases of the same blob, changed content, other paths, current-tree AARs, and over-limit tree records. |
 | No credential in reachable commits | Gitleaks 8.30.1 with `--redact --log-opts=--all`; retain generic/redacted diagnostics only. |
 | Release hardening | Phone `:app:assembleProductionRelease` passed; R8 mapping output exists and APK manifest has no `android:debuggable=true`. Wear release is blocked by absent local Samsung SDK AAR. |
 
