@@ -30,6 +30,23 @@ Feature: Build without vendored AARs and harden release variants
     And verifies the pinned SHA-256 before compilation uses it
     And fails closed on a checksum mismatch or incomplete download
 
+  Scenario: The exact legacy Sherpa archive remains in history
+    Given the reachable history contains the approved Sherpa path and SHA-256
+    When the publication policy scans all refs
+    Then that historical object is accepted without rewriting Git history
+    And the same AAR remains forbidden in the current worktree
+
+  Scenario: Samsung or any other AAR is found
+    Given an AAR is not the exact approved historical Sherpa object
+    When the worktree or history policy scans it
+    Then publication safety fails with a redacted finding
+
+  Scenario: The same blob appears under an unapproved path
+    Given the approved Sherpa blob is also reachable under another AAR path
+    When the history scanner enumerates each distinct commit tree
+    Then the approved path remains allowed
+    And the unapproved alias path fails publication safety
+
   Scenario: Release variants are optimized and non-debuggable
     Given Phone and Wear release build types are configured
     When the release APKs are assembled
@@ -45,7 +62,7 @@ Feature: Prevent future publication regressions
 
   Scenario: Pull request introduces a forbidden binary
     Given the repository security workflow runs with read-only permissions
-    When a change adds an AAR, signing key, or raw data artifact
+    When a change adds any current-tree AAR, signing key, or raw data artifact
     Then the publication-safety check fails before merge
 
   Scenario: Pull request introduces a credential

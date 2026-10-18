@@ -6,7 +6,7 @@ The app build obtains the exact Sherpa-ONNX v1.13.4 AAR from its official GitHub
 
 ## Publication checks
 
-`scripts/check_publication_safety.py --worktree` checks current tracked and non-ignored files; `--history` checks paths and structured text reachable from all local refs. Findings expose only a reason and a one-way path reference. GitHub Actions runs the worktree policy and its unit tests, then uses a checksum-pinned Gitleaks binary against complete Git history with read-only permissions and no credential persistence.
+`scripts/check_publication_safety.py --worktree` rejects all AARs and other forbidden files in tracked/non-ignored current files. `--history` enumerates every path in each distinct reachable commit tree, so one Git blob under multiple names cannot hide a forbidden path. It permits exactly one historic AAR only when both path `app/libs/sherpa-onnx-static-link-onnxruntime-1.13.4.aar` and SHA-256 `dc5ac19a28dee3bffc5e5a5d50cb6afa977703fc4a7ee535a308506990fdd295` match; it checks the pinned file size before reading content and caches only the digest. A new AAR at that path, a Samsung SDK AAR, or any other package still fails. Findings expose only a reason and a one-way path reference. GitHub Actions runs unit tests and both worktree/history policy scans, then uses a checksum-pinned Gitleaks binary against complete Git history with read-only permissions and no credential persistence.
 
 ## Android hardening
 
@@ -14,4 +14,4 @@ Phone and Wear `release` enable R8 minification, resource shrinking, and `debugg
 
 ## Git boundary
 
-Normal source commits may remove the AAR from the current tree. Removing its historical blob requires rewriting every branch and tag that reaches it. This is a separate, owner-approved operation; until approved and independently rescanned, public visibility remains a release blocker.
+Normal source commits keep the AAR out of the current tree. The owner accepts the exact historical Sherpa blob, so it stays reachable without rewrite or force-push. All other AARs remain publication blockers and are rejected by the scanner.

@@ -8,15 +8,15 @@ Aplikasi pendamping untuk merekam PPG dari Galaxy Watch dan menjalankan analisis
 
 ## Keamanan dan kesiapan publikasi
 
-Repository tetap privat sampai pemilik mengubah visibilitasnya. Audit 18 Oktober 2026 tidak menemukan credential pada reachable Git history atau field nama partisipan eksplisit, tetapi menemukan satu AAR Sherpa 37,6 MB pada commit historis yang masih reachable melalui branch/tag. File itu dihapus dari snapshot kerja melalui perubahan ini; **publikasi tetap diblokir** sampai pemilik menyetujui pembersihan seluruh history dan scan ulang memastikan tidak ada AAR pada refs yang akan dipublikasikan. Penghapusan lewat commit biasa tidak menghapus blob dari commit lama.
+Repository tetap privat sampai pemilik mengubah visibilitasnya. Audit 18 Oktober 2026 tidak menemukan credential pada reachable Git history atau field nama partisipan eksplisit. Satu AAR Sherpa-ONNX v1.13.4 berukuran 37,6 MB masih ada di history pada path `app/libs/sherpa-onnx-static-link-onnxruntime-1.13.4.aar` dengan SHA-256 `dc5ac19a28dee3bffc5e5a5d50cb6afa977703fc4a7ee535a308506990fdd295`; pemilik mengonfirmasi artefak Sherpa historis boleh dipertahankan. AAR Samsung Health Sensor SDK tidak ditemukan pada refs atau aset rilis yang diaudit. Scanner hanya mengecualikan blob Sherpa tersebut berdasarkan path dan checksum persis; AAR apa pun di working tree atau AAR lain di history tetap ditolak. Tidak diperlukan rewrite history atau force-push.
 
 - Phone dan Watch memakai R8 minification serta resource shrinking hanya pada `release`; build `debug` dan APK prerelease yang tertaut di atas tetap debug preview.
 - Build mengambil Sherpa-ONNX v1.13.4 dari rilis upstream HTTPS ke `app/build/third-party/`, lalu memeriksa ukuran dan SHA-256 tetap sebelum dipakai. `*.aar` diabaikan Git; Samsung Health Sensor SDK tetap perlu disediakan lokal untuk build Watch.
-- Workflow `Publication safety` menjalankan pemeriksaan artifact/field identitas pada snapshot kerja dan Gitleaks pada seluruh reachable history. Temuan tidak mencetak nilai atau path sensitif ke log.
+- Workflow `Publication safety` menjalankan pemeriksaan artifact/field identitas pada working tree dan seluruh reachable history, serta Gitleaks full-history. Temuan tidak mencetak nilai atau path sensitif ke log.
 - R8 adalah defense-in-depth, bukan jaminan anti-reverse-engineering. Source publik memang dapat dibaca; signing key tidak disimpan di repository. Release yang dibuat tanpa signing key owner tetap unsigned dan tidak boleh dipromosikan sebagai rilis produksi.
 - GitHub Secret Scanning saat audit masih nonaktif pada repository privat ini. Setelah repository menjadi public, verifikasi Secret Scanning dan Push Protection di GitHub Settings; workflow tetap menjadi pemeriksaan independen.
 
-Sebelum membuat repository public, jalankan `python scripts/check_publication_safety.py --history` dan Gitleaks full-history scan. Perintah pertama saat ini sengaja gagal karena AAR lama; jangan mengabaikannya atau memakai baseline/allowlist untuk menyatakan repository bersih.
+Sebelum mengubah visibilitas repository, jalankan `python scripts/check_publication_safety.py --history`, Gitleaks full-history scan, dan inventaris aset rilis. Pemeriksaan history menerima hanya artefak Sherpa lama yang dijelaskan di atas; jangan menambahkan pengecualian lain atau mengabaikan temuan baru.
 
 ## Ringkasan proyek
 

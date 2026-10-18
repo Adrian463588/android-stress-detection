@@ -28,6 +28,12 @@ FORBIDDEN_SUFFIXES = {
     ".ppk",
     ".mobileprovision",
 }
+# Owner-approved legacy-only exception; worktree policy rejects every AAR.
+HISTORICAL_ALLOWED_AAR_PATH = "app/libs/sherpa-onnx-static-link-onnxruntime-1.13.4.aar"
+HISTORICAL_ALLOWED_AAR_SHA256 = (
+    "dc5ac19a28dee3bffc5e5a5d50cb6afa977703fc4a7ee535a308506990fdd295"
+)
+HISTORICAL_ALLOWED_AAR_SIZE_BYTES = 37_631_864
 FORBIDDEN_PATH_SEGMENTS = {
     "datarenamedpartisipan",
     "datatrimmedpartisipan",
@@ -60,7 +66,9 @@ IDENTIFYING_FIELD = re.compile(
     r"(?i)(?:[\"']\s*)?(?:participant|subject)(?:[_\-\s])?"
     r"(?:full(?:[_\-\s])?)?name(?:[\"']\s*)?\s*[:=]"
 )
-FULL_NAME_FIELD = re.compile(r"(?i)(?:[\"']\s*)?full(?:[_\-\s])?name(?:[\"']\s*)?\s*[:=]")
+FULL_NAME_FIELD = re.compile(
+    r"(?i)(?:[\"']\s*)?full(?:[_\-\s])?name(?:[\"']\s*)?\s*[:=]"
+)
 PSEUDONYM = re.compile(r"^ID-(?:0[1-9]|[12][0-9]|3[0-2])$", re.IGNORECASE)
 IDENTITY_KEYS = {"participantid", "subjectid"}
 NAME_KEYS = {"name", "displayname"}
@@ -83,6 +91,30 @@ def path_violation(path: str) -> str | None:
     return None
 
 
+def historical_path_violation(
+    path: str, content_sha256: str | None = None
+) -> str | None:
+    normalized = PurePosixPath(path.replace("\\", "/"))
+    if normalized.suffix.casefold() != ".aar":
+        return path_violation(path)
+    if (
+        normalized.as_posix() != HISTORICAL_ALLOWED_AAR_PATH
+        or content_sha256 != HISTORICAL_ALLOWED_AAR_SHA256
+    ):
+        return "forbidden-package-or-key"
+    return None
+
+
+def _parse_tree_entry(entry: bytes) -> tuple[str, str, str]:
+    try:
+        metadata, raw_path = entry.split(b"\t", 1)
+        _, object_type, object_id = metadata.decode("ascii").split()
+    except (UnicodeDecodeError, ValueError) as error:
+        raise RuntimeError("unable to inspect repository tree") from error
+    path = raw_path.decode("utf-8", errors="surrogateescape")
+    return object_id, object_type, path
+
+
 def _normalized_key(value: object) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value).casefold())
 
@@ -100,7 +132,9 @@ def _has_unmasked_name(value: object) -> bool:
         for participant_id in participant_ids:
             for key in NAME_KEYS & normalized.keys():
                 name = str(normalized[key]).strip()
-                if name and (not PSEUDONYM.fullmatch(participant_id) or name != participant_id):
+                if name and (
+                    not PSEUDONYM.fullmatch(participant_id) or name != participant_id
+                ):
                     return True
         return any(_has_unmasked_name(item) for item in value.values())
     if isinstance(value, list):
@@ -116,8 +150,12 @@ def _csv_has_unmasked_name(text: str, delimiter: str) -> bool:
         return False
     if set(headers) & EXPLICIT_NAME_KEYS:
         return True
-    id_indexes = [index for index, header in enumerate(headers) if header in IDENTITY_KEYS]
-    name_indexes = [index for index, header in enumerate(headers) if header in NAME_KEYS]
+    id_indexes = [
+        index for index, header in enumerate(headers) if header in IDENTITY_KEYS
+    ]
+    name_indexes = [
+        index for index, header in enumerate(headers) if header in NAME_KEYS
+    ]
     if not id_indexes or not name_indexes:
         return False
     for row in rows:
@@ -125,7 +163,9 @@ def _csv_has_unmasked_name(text: str, delimiter: str) -> bool:
             participant_id = row[id_index].strip() if id_index < len(row) else ""
             for name_index in name_indexes:
                 name = row[name_index].strip() if name_index < len(row) else ""
-                if name and (not PSEUDONYM.fullmatch(participant_id) or name != participant_id):
+                if name and (
+                    not PSEUDONYM.fullmatch(participant_id) or name != participant_id
+                ):
                     return True
     return False
 
@@ -211,27 +251,63 @@ def inspect_worktree() -> list[tuple[str, str]]:
 
 
 def inspect_history() -> list[tuple[str, str]]:
-    findings: list[tuple[str, str]] = []
-    objects = _git("rev-list", "--objects", "--all")
+    path_findings: set[tuple[str, str]] = set()
     paths_by_object: dict[str, set[str]] = {}
-    for line in objects.decode("utf-8", errors="surrogateescape").splitlines():
-        parts = line.split(" ", 1)
-        if len(parts) != 2:
-            continue
-        object_id, path = parts
-        reason = path_violation(path)
-        if reason:
-            findings.append((reason, path))
-        suffix = PurePosixPath(path.replace("\\", "/")).suffix.casefold()
-        if suffix in TEXT_SUFFIXES:
-            paths_by_object.setdefault(object_id, set()).add(path)
+    digest_by_object: dict[str, str | None] = {}
+    tree_ids = sorted(
+        set(_git("log", "--all", "--format=%T").decode("ascii").splitlines())
+    )
+    for tree_id in tree_ids:
+        entries = _git("ls-tree", "-r", "-z", tree_id)
+        for entry in entries.split(b"\0"):
+            if not entry:
+                continue
+            object_id, object_type, path = _parse_tree_entry(entry)
+            suffix = PurePosixPath(path.replace("\\", "/")).suffix.casefold()
+            if suffix == ".aar":
+                content = None
+                if (
+                    path.replace("\\", "/") == HISTORICAL_ALLOWED_AAR_PATH
+                    and object_type == "blob"
+                ):
+                    if object_id not in digest_by_object:
+                        try:
+                            size = int(
+                                _git("cat-file", "-s", object_id).decode("ascii")
+                            )
+                        except (UnicodeDecodeError, ValueError) as error:
+                            raise RuntimeError(
+                                "unable to inspect historical archive"
+                            ) from error
+                        digest_by_object[object_id] = (
+                            hashlib.sha256(
+                                _git("cat-file", "blob", object_id)
+                            ).hexdigest()
+                            if size == HISTORICAL_ALLOWED_AAR_SIZE_BYTES
+                            else None
+                        )
+                reason = historical_path_violation(
+                    path, digest_by_object.get(object_id)
+                )
+            else:
+                reason = path_violation(path)
+            if reason:
+                path_findings.add((reason, path))
+            if object_type == "blob" and suffix in TEXT_SUFFIXES:
+                paths_by_object.setdefault(object_id, set()).add(path)
+
+    findings = sorted(path_findings)
 
     if not paths_by_object:
         return findings
 
     object_ids = list(paths_by_object)
     object_input = ("\n".join(object_ids) + "\n").encode("ascii")
-    metadata = _git_with_input(object_input, "cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)")
+    metadata = _git_with_input(
+        object_input,
+        "cat-file",
+        "--batch-check=%(objectname) %(objecttype) %(objectsize)",
+    )
     sizes: dict[str, int] = {}
     for line in metadata.decode("ascii", errors="replace").splitlines():
         parts = line.split()
@@ -267,7 +343,10 @@ def inspect_history() -> list[tuple[str, str]]:
     for object_id in readable_ids:
         header = stream.readline().decode("ascii", errors="replace").split()
         if len(header) != 3 or header[1] != "blob":
-            findings.extend(("unreadable-history-object", path) for path in paths_by_object[object_id])
+            findings.extend(
+                ("unreadable-history-object", path)
+                for path in paths_by_object[object_id]
+            )
             continue
         size = int(header[2])
         content = stream.read(size)
@@ -282,8 +361,16 @@ def inspect_history() -> list[tuple[str, str]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--worktree", action="store_true", help="inspect tracked and non-ignored current files")
-    mode.add_argument("--history", action="store_true", help="inspect every file path and text blob reachable from refs")
+    mode.add_argument(
+        "--worktree",
+        action="store_true",
+        help="inspect tracked and non-ignored current files",
+    )
+    mode.add_argument(
+        "--history",
+        action="store_true",
+        help="inspect every file path and text blob reachable from refs",
+    )
     arguments = parser.parse_args()
     try:
         findings = inspect_history() if arguments.history else inspect_worktree()
@@ -291,12 +378,16 @@ def main() -> int:
         print("FAIL: publication policy could not inspect the Git repository")
         return 2
     if findings:
-        print(f"FAIL: {len(findings)} publication-policy finding(s); paths are hashed to avoid exposing names.")
+        print(
+            f"FAIL: {len(findings)} publication-policy finding(s); paths are hashed to avoid exposing names."
+        )
         for reason, path in findings:
             print(f"- {reason}; path-ref=sha256:{_path_reference(path)}")
         return 1
     scope = "reachable Git history" if arguments.history else "current worktree/index"
-    print(f"PASS: publication policy found no prohibited artifacts or identifying name fields in {scope}.")
+    print(
+        f"PASS: publication policy found no prohibited artifacts or identifying name fields in {scope}."
+    )
     return 0
 
 

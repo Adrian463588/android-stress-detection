@@ -23,6 +23,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p 'test_publication_safety.py'
           python3 scripts/check_publication_safety.py --worktree
+          python3 scripts/check_publication_safety.py --history
 
       - name: Scan all reachable Git history for credentials
         shell: bash
