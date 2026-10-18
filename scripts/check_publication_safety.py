@@ -62,6 +62,7 @@ TEXT_SUFFIXES = STRUCTURED_SUFFIXES | {
     ".yml",
 }
 MAX_STRUCTURED_BYTES = 8 * 1024 * 1024
+MAX_TREE_RECORD_BYTES = 64 * 1024
 IDENTIFYING_FIELD = re.compile(
     r"(?i)(?:[\"']\s*)?(?:participant|subject)(?:[_\-\s])?"
     r"(?:full(?:[_\-\s])?)?name(?:[\"']\s*)?\s*[:=]"
@@ -228,6 +229,44 @@ def _git_with_input(input_data: bytes, *arguments: str) -> bytes:
     return result.stdout
 
 
+def _git_nul_records(*arguments: str):
+    try:
+        process = subprocess.Popen(
+            ["git", *arguments],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as error:
+        raise RuntimeError("unable to inspect repository state") from error
+
+    if process.stdout is None:
+        process.kill()
+        process.wait()
+        raise RuntimeError("unable to inspect repository state")
+
+    buffer = bytearray()
+    start = 0
+    try:
+        while chunk := process.stdout.read(64 * 1024):
+            buffer.extend(chunk)
+            while (end := buffer.find(0, start)) >= 0:
+                yield bytes(buffer[start:end])
+                start = end + 1
+            if start:
+                del buffer[:start]
+                start = 0
+            if len(buffer) > MAX_TREE_RECORD_BYTES:
+                raise RuntimeError("repository tree record exceeds policy limit")
+        if buffer or process.wait() != 0:
+            raise RuntimeError("unable to inspect repository state")
+    finally:
+        process.stdout.close()
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+
+
 def _path_reference(path: str) -> str:
     return hashlib.sha256(path.encode("utf-8", errors="replace")).hexdigest()[:12]
 
@@ -258,10 +297,7 @@ def inspect_history() -> list[tuple[str, str]]:
         set(_git("log", "--all", "--format=%T").decode("ascii").splitlines())
     )
     for tree_id in tree_ids:
-        entries = _git("ls-tree", "-r", "-z", tree_id)
-        for entry in entries.split(b"\0"):
-            if not entry:
-                continue
+        for entry in _git_nul_records("ls-tree", "-r", "-z", tree_id):
             object_id, object_type, path = _parse_tree_entry(entry)
             suffix = PurePosixPath(path.replace("\\", "/")).suffix.casefold()
             if suffix == ".aar":
