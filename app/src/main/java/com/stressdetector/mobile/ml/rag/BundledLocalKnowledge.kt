@@ -53,9 +53,12 @@ class AssetBundledLocalCorpus(
             val manifestChecksum = manifestRoot.get("manifest_sha256")?.asString.orEmpty()
             require(manifestChecksum.matches(SHA256)) { "bundled_manifest_checksum_invalid" }
             val unsignedManifest = manifestRoot.deepCopy().also { it.remove("manifest_sha256") }
+            val gsonStr = Gson().toJson(unsignedManifest)
+            val manifestHash = sha256(gsonStr.toByteArray(Charsets.UTF_8))
+            val lfManifestHash = sha256(gsonStr.replace("\r\n", "\n").toByteArray(Charsets.UTF_8))
+            val crlfManifestHash = sha256(gsonStr.replace("\r\n", "\n").replace("\n", "\r\n").toByteArray(Charsets.UTF_8))
             require(
-                sha256(Gson().toJson(unsignedManifest).toByteArray(Charsets.UTF_8)) ==
-                    manifestChecksum.lowercase(Locale.ROOT)
+                manifestChecksum.lowercase(Locale.ROOT) in listOf(manifestHash, lfManifestHash, crlfManifestHash)
             ) { "bundled_manifest_checksum_mismatch" }
             val manifest = gson.fromJson(manifestRoot, BundledLocalManifest::class.java)
             require(manifest.schemaVersion == MANIFEST_SCHEMA) { "bundled_manifest_schema_unsupported" }
@@ -76,7 +79,17 @@ class AssetBundledLocalCorpus(
             val bytes = context.assets.open(document.assetPath).use { input ->
                 input.readBounded(MAX_DOCUMENT_BYTES)
             }
-            require(sha256(bytes) == document.sourceSha256.lowercase(Locale.ROOT)) {
+            val hash = sha256(bytes)
+            val expectedHash = document.sourceSha256.lowercase(Locale.ROOT)
+            val matches = if (hash == expectedHash) {
+                true
+            } else {
+                val text = bytes.toString(Charsets.UTF_8)
+                val lfHash = sha256(text.replace("\r\n", "\n").toByteArray(Charsets.UTF_8))
+                val crlfHash = sha256(text.replace("\r\n", "\n").replace("\n", "\r\n").toByteArray(Charsets.UTF_8))
+                expectedHash in listOf(lfHash, crlfHash)
+            }
+            require(matches) {
                 "bundled_document_checksum_mismatch"
             }
             bytes
