@@ -1,0 +1,156 @@
+{
+  "claims_policy": "decision_support_only",
+  "development_participants": [
+    "ID-01",
+    "ID-02",
+    "ID-03",
+    "ID-04",
+    "ID-05",
+    "ID-06",
+    "ID-07",
+    "ID-08",
+    "ID-09",
+    "ID-10",
+    "ID-11",
+    "ID-12",
+    "ID-13",
+    "ID-14",
+    "ID-15",
+    "ID-16",
+    "ID-17",
+    "ID-18",
+    "ID-19",
+    "ID-20",
+    "ID-21",
+    "ID-22",
+    "ID-23",
+    "ID-24",
+    "ID-25",
+    "ID-26",
+    "ID-27",
+    "ID-28"
+  ],
+  "eligible_channels": [
+    "ppg_green",
+    "ppg_ir"
+  ],
+  "internal_android_status": "PENDING_DEVICE_PARITY",
+  "internal_test_participants": [
+    "ID-29",
+    "ID-30",
+    "ID-31",
+    "ID-32"
+  ],
+  "model_version": "stress_v4.0.0-core240s-20260916T132736Z",
+  "models": [
+    {
+      "analysis_seconds": 240,
+      "android_device_parity_status": "PENDING",
+      "artifact_status": "internal_candidate",
+      "balanced_accuracy_development": 0.8035714285714286,
+      "balanced_accuracy_internal_test": 0.75,
+      "calibration_version": "platt-v2-nested-outer-oof",
+      "candidate_artifact_fingerprint": "dcaf4677a501067242472292628bc265084c6f91983fc3be9f268fe60edbcbb6",
+      "claims_policy": "decision_support_only",
+      "deployment_scope": "internal",
+      "development_model_status": "GO",
+      "evaluation_scope": "internal_32_participants",
+      "expected_windows_per_session": 7,
+      "f1_development": 0.819672131147541,
+      "f1_internal_test": 0.8,
+      "files": {
+        "manifest": {
+          "path": "data/artifacts/runs/20260916T132736Z/export/internal/stress_v4.0.0-core240s-20260916T132736Z/ppg_green/model_manifest.json",
+          "sha256": "c1764312909280becb74d1d32dc5372a7593f6ca85671714e4e30e580db5beef"
+        },
+        "model": {
+          "path": "data/artifacts/runs/20260916T132736Z/export/internal/stress_v4.0.0-core240s-20260916T132736Z/ppg_green/stress_ppg_green_fp32.onnx",
+          "sha256": "2b135df9dccbaec0e2b892f82c6dc80edabc6f8bed3d2ff15922c330c04ab77f"
+        },
+        "parity": {
+          "path": "data/artifacts/runs/20260916T132736Z/export/internal/stress_v4.0.0-core240s-20260916T132736Z/ppg_green/onnx_parity.json",
+          "sha256": "adf112cf64b5aa56cab0e4696fad2a4debefdd0f846c3e823f82cd243abdbf11"
+        },
+        "test_vectors": {
+          "path": "data/artifacts/runs/20260916T132736Z/export/internal/stress_v4.0.0-core240s-20260916T132736Z/ppg_green/onnx_feature_parity_vectors.json",
+          "sha256": "e2c19b4f42f1a71f779cad1889773bdde2b1c54c31ee6860415da6f45c29cc16"
+        }
+      },
+      "hrv_prv_status": "GO",
+      "internal_android_status": "PENDING_DEVICE_PARITY",
+      "internal_test_contract_fingerprint": "fb686fc9fa33c2c5e33cf783c3c074f9f460b921245968aa3115db94d6939395",
+      "internal_test_status": "GO",
+      "model_rate_hz": 24.91929703690945,
+      "model_version": "stress_v4.0.0-core240s-20260916T132736Z",
+      "onnx_export_status": "GO",
+      "performance_policy_sha256": "411346c6bdd8110ba36a26df70b89616d5fdf874d0d3e01d1c108f41dc008e66",
+      "performance_policy_version": "ml_dl_tiered_v1",
+      "performance_tier": "research_usable",
+      "release_status": "internal_candidate",
+      "roc_auc_development": 0.8698979591836734,
+      "roc_auc_internal_test": 1.0,
+      "sensor_channel": "ppg_green",
+      "source_rate_hz": 24.91929703690945,
+      "stride_seconds": 10,
+      "training_admission_status": "GO",
+      "validation_scope": "internal_32_participants",
+      "window_seconds": 180
+    },
+    {
+      "analysis_seconds": 240,
+      "android_device_parity_status": "PENDING",
+      "artifact_status": "internal_candidate",
+      "balanced_accuracy_development": 0.8214285714285714,
+      "balanced_accuracy_internal_test": 1.0,
+      "calibration_version": "platt-v2-nested-outer-oof",
+      "candidate_artifact_fingerprint": "f0fe8fa9e8cfce9aeacaf4ffd8770f8c92bf67818deea58ac65c6f85e0b69ba2",
+      "claims_policy": "decision_support_only",
+      "deployment_scope": "internal",
+      "development_model_status": "GO",
+      "evaluation_scope": "internal_32_participants",
+      "expected_windows_per_session": 7,
+      "f1_development": 0.8,
+      "f1_internal_test": 1.0,
+      "files": {
+        "manifest": {
+          "path": "data/artifacts/runs/20260916T132736Z/export/internal/stress_v4.0.0-core240s-20260916T132736Z/ppg_ir/model_manifest.json",
+          "sha256": "10e7ba75b8df47d5ec79a35952ea105ccf7525c1de5ceccdf9d70fff5c178b1a"
+        },
+        "model": {
+          "path": "data/artifacts/runs/20260916T132736Z/export/internal/stress_v4.0.0-core240s-20260916T132736Z/ppg_ir/stress_ppg_ir_fp32.onnx",
+          "sha256": "3ff139293f4f2a51d19420a1501beabe26f479457e648ae9f4f0032cb80a738c"
+        },
+        "parity": {
+          "path": "data/artifacts/runs/20260916T132736Z/export/internal/stress_v4.0.0-core240s-20260916T132736Z/ppg_ir/onnx_parity.json",
+          "sha256": "453c1ad2d07865589d31e3f8b30f268d25ca641ac8f80989cc74ec664d5dbdc9"
+        },
+        "test_vectors": {
+          "path": "data/artifacts/runs/20260916T132736Z/export/internal/stress_v4.0.0-core240s-20260916T132736Z/ppg_ir/onnx_feature_parity_vectors.json",
+          "sha256": "e706c10305ed7da2769c96246b404be755bd8c0900227b110b82272aab1dd07a"
+        }
+      },
+      "hrv_prv_status": "GO",
+      "internal_android_status": "PENDING_DEVICE_PARITY",
+      "internal_test_contract_fingerprint": "ef75269f1b3defe2e002ad9dd3ba666c5822b8ce9fc38b566b039a110990d68d",
+      "internal_test_status": "GO",
+      "model_rate_hz": 99.67720608252635,
+      "model_version": "stress_v4.0.0-core240s-20260916T132736Z",
+      "onnx_export_status": "GO",
+      "performance_policy_sha256": "411346c6bdd8110ba36a26df70b89616d5fdf874d0d3e01d1c108f41dc008e66",
+      "performance_policy_version": "ml_dl_tiered_v1",
+      "performance_tier": "preferred",
+      "release_status": "internal_candidate",
+      "roc_auc_development": 0.8928571428571429,
+      "roc_auc_internal_test": 1.0,
+      "sensor_channel": "ppg_ir",
+      "source_rate_hz": 99.67720608252635,
+      "stride_seconds": 10,
+      "training_admission_status": "GO",
+      "validation_scope": "internal_32_participants",
+      "window_seconds": 180
+    }
+  ],
+  "run_id": "20260916T132736Z",
+  "schema_version": "internal-android-v2",
+  "validation_scope": "internal_32_participants"
+}

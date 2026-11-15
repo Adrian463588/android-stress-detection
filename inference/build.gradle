@@ -32,7 +32,10 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     sourceSets {
-        production.assets.srcDir("$buildDir/generated/inferenceAssets")
+        production.assets.srcDirs = [
+            "src/production/assets",
+            "$buildDir/generated/inferenceAssets"
+        ]
         androidTest.assets.srcDirs = [
             "../../tests/fixtures/android_parity",
             "$buildDir/generated/candidateInferenceAssets",
@@ -222,9 +225,12 @@ def sha256 = { File source ->
 }
 
 tasks.register("syncInferenceAssets") {
+    onlyIf {
+        modelIndex.isFile() && detectorContract.isFile() && runArtifactsRoot.isDirectory()
+    }
     inputs.property("internalModelIndexPath", modelIndex.absolutePath)
     inputs.property("detectorContractPath", detectorContract.absolutePath)
-    inputs.dir(exportRoot)
+    inputs.dir(exportRoot).optional(true)
     outputs.dir(generatedAssets)
     doLast {
         def scopedIndex = requireRunScopedIndex(

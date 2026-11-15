@@ -1,0 +1,17 @@
+{
+    "schema_version": "1.0.0",
+    "performance_policy_version": "ml_dl_tiered_v1",
+    "performance_policy_sha256": "411346c6bdd8110ba36a26df70b89616d5fdf874d0d3e01d1c108f41dc008e66",
+    "minimum_research": {
+        "balanced_accuracy": 0.7,
+        "f1": 0.7,
+        "roc_auc": 0.7
+    },
+    "preferred": {
+        "balanced_accuracy": 0.8,
+        "f1": 0.78,
+        "roc_auc": 0.83
+    },
+    "research_disclaimer": "Model penelitian \u2014 validasi internal terbatas. Bukan diagnosis klinis.",
+    "accuracy_is_gate": false
+}

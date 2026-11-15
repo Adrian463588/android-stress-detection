@@ -1,0 +1,12 @@
+{
+  "batch1_latency_ms": 0.0176,
+  "checked_samples": 100,
+  "max_abs_diff": 6.556510925292969e-07,
+  "mean_abs_diff": 9.872491244861375e-08,
+  "model_size_bytes": 1364,
+  "onnx_checker_passed": true,
+  "parity_max_diff": 6.556510925292969e-07,
+  "parity_mean_diff": 9.872491244861375e-08,
+  "passed": true,
+  "real_batch1_inference_passed": true
+}
