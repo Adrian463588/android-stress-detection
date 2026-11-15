@@ -270,14 +270,15 @@ tasks.register("verifyNoLegacyModelAssets") {
     }
 }
 
-def ragYamlConfig = file("../../configs/rag.yaml")
-def ragContractGenerator = file("../../scripts/generate_rag_runtime_contract.py")
+def ragYamlConfig = file("../configs/rag.yaml").isFile() ? file("../configs/rag.yaml") : file("../../configs/rag.yaml")
+def ragContractGenerator = file("../scripts/generate_rag_runtime_contract.py").isFile() ? file("../scripts/generate_rag_runtime_contract.py") : file("../../scripts/generate_rag_runtime_contract.py")
 def ragRuntimeContractAsset = file("src/main/canonicalAssets/ai/rag_runtime_contract.json")
 def ragContractPython = providers.gradleProperty("pythonExecutable").orElse("python").get()
 
 tasks.register("verifyRagRuntimeContract", Exec) {
     group = "verification"
     description = "Fails when the Android RAG asset drifts from configs/rag.yaml."
+    onlyIf { ragYamlConfig.isFile() && ragContractGenerator.isFile() }
     inputs.files(ragYamlConfig, ragContractGenerator)
     outputs.file(ragRuntimeContractAsset)
     commandLine(

@@ -1,0 +1,101 @@
+version: rag_e5_v1
+
+formats:
+  supported:
+    - pdf
+    - docx
+    - txt_utf8
+    - markdown
+  rejected:
+    - doc
+  partial_extraction_default_retrieval: false
+
+embedding:
+  model: intfloat/multilingual-e5-small
+  revision: 614241f622f53c4eeff9890bdc4f31cfecc418b3
+  dimension: 384
+  max_tokens: 512
+  query_prefix: "query: "
+  passage_prefix: "passage: "
+  pooling: attention_mask_mean
+  normalization: l2
+  require_model_and_tokenizer_checksum: true
+  unavailable_mode: lexical_only_visible
+
+chunking:
+  policy_version: e5_wordpiece_224_256_32_v1
+  target_tokens: 224
+  hard_max_tokens: 256
+  overlap_tokens: 32
+  boundaries:
+    - sentence
+    - paragraph
+    - heading
+    - table
+  cross_pdf_page: false
+  cross_docx_top_level_section: false
+  silent_embedding_truncation: false
+
+retrieval:
+  semantic_candidates: 30
+  lexical_candidates: 30
+  rrf_k: 60
+  mmr_lambda: 0.75
+  max_evidence_chunks: 4
+  max_chunks_per_document: 3
+  max_chunks_per_page: 2
+  runtime_lexical_backend: sqlite_fts5_bm25
+  release_required_lexical_backend: sqlite_fts5_bm25
+  production_status: blocked_until_benchmark_and_physical_validation
+  in_memory_backend_scope: development_only
+  threshold_policy: benchmark_calibrated
+  uncalibrated_behavior: abstain
+  benchmark:
+    total_queries: 60
+    indonesia_answerable: 20
+    english_answerable: 15
+    mixed_language_answerable: 10
+    no_answer: 15
+    recall_at_5_min: 0.90
+    mrr_at_5_min: 0.80
+    no_answer_precision_min: 0.90
+    citation_locator_required: 1.00
+
+persona:
+  profile_type: structured
+  focus_note_max_words: 1500
+  allowed_fields:
+    - language
+    - tone
+    - response_length
+    - reflective_questions
+    - focus_note
+  reject_role_markers: true
+  reject_safety_bypass: true
+  reject_diagnosis_or_medication_instruction: true
+  reject_crisis_bypass: true
+
+safety:
+  crisis_interception_before_retrieval: true
+  imported_document_is_untrusted_evidence: true
+  llm_tool_permissions: none
+  buffer_generation_until_final_guard: true
+  exact_prompt_visible_citation_binding: true
+  grounded_answer_without_valid_citation: abstain
+  web_search_requires_explicit_consent: true
+
+storage:
+  source_encryption_required: aes_gcm_android_keystore
+  knowledge_database_encryption_required: sqlcipher_keystore_wrapped_passphrase
+  source_encryption_runtime_status: implemented_unverified
+  database_encryption_runtime_status: implemented_unverified
+  atomic_generation_required: true
+  incompatible_policy_action: reindex_required
+
+release_gates:
+  sqlite_fts5_integrated: false
+  retrieval_benchmark_passed: false
+  signed_e5_artifact_parity_passed: false
+  encrypted_source_storage_passed: false
+  encrypted_database_passed: false
+  physical_end_to_end_validation_passed: false
