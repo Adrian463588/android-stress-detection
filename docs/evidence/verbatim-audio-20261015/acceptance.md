@@ -210,3 +210,96 @@ Checksums are also attached to the private `android-v0.1.2` prerelease.
 The earlier 0.1.1 verification table above remains historical; this follow-up
 supersedes its “instrumentation compiled but not run” status only for the four
 selected UI classes listed here.
+
+## Repeat verification — 2026-10-17
+
+- Python quality gates: Ruff check and format passed; **460 pytest passed**
+  (one NumPy `Mean of empty slice` warning).
+- Forced Android JVM rerun: shared **36**, inference **31**, app **783**, Wear
+  **30**; **880 total, 0 skipped, 0 failures, 0 errors**.
+- Production lint (`:inference:lintProductionDebug`, `:app:lintProductionDebug`,
+  `:wear:lintProductionDebug`), `ktlintCheck`, `detekt`, and Phone/Watch
+  production debug assembly succeeded.
+- Additional on-device Compose coverage: **25/25** tests across the four UI
+  classes above, plus **6/6** `AiCounselorCitationTest` tests. The latter
+  verifies one collapsed source disclosure, grouped web/local citations,
+  citation URL callbacks, and large-font layout using rendering-only fixtures.
+- Reinstalled the production debug APK on `RRCN3008VYE` (Samsung SM-G988B,
+  Android 13) with `adb install -r -d`; result `Success`. Package remains
+  `com.stressdetector`, versionCode **3**, versionName **0.1.2**, UID **10446**;
+  first-install time remained `2026-10-06 14:13:13`.
+- Before/after replacement SHA-256 remained identical for
+  `stress_sessions.db` (`6f7823d3cd813e8a2bd308f6ab69101cc100670fcf727656b806368f6d36714d`)
+  and `knowledge_base_secure.db` (`9cd7afad9b518461d15c3020eda1b87ed0443b9f580449dcd7136801848ceb1f`).
+- Relaunch reached `com.stressdetector/.mobile.MainActivity`; process remained
+  alive. The crash buffer contained older entries dated 2026-10-16 and no
+  crash entry dated 2026-10-17 at verification time.
+- Local APK SHA-256 matches the existing private GitHub `android-v0.1.2`
+  prerelease asset digest exactly. README contains the current APK, checksum,
+  historical release, and companion Watch download links; no duplicate release
+  asset was created.
+
+### Full-product acceptance gaps — static audit, not runtime claims
+
+- The bundled RAG manifest is empty and the runtime RAG release gates remain
+  blocked; grounded local-document answering is therefore not accepted as ready.
+- The inspected Room chat database path stores message/context fields without
+  the Keystore-backed database encryption required by the PRD. This needs a
+  separate migration/security change before sensitive chat storage is accepted.
+- MADC motion annotations do not currently participate in the inspected SQA
+  gate, and Home can select a raw diagnostic chart when preprocessing has
+  completed but the result is rejected. These findings do not establish that
+  ONNX consumes raw PPG or that any stored result is fabricated.
+- A phone ingress backpressure message claims Watch retry although the active
+  direct-message path has no durable batch retry; this needs truthful status or
+  an explicitly specified transport recovery design.
+- The read-only UI audit found a stale AI+ composer accessibility description
+  and missing textual gap semantics on History/Verbatim waveforms. Broad screen
+  coverage for Profile, Home, History, and Verbatim is still incomplete.
+- No Watch was connected to ADB during this repeat run. Pairing, live PPG,
+  stress-session parity, and full Verbatim microphone/runtime acceptance remain
+  unverified on physical hardware.
+
+### Device state after instrumented tests
+
+Immediately after the connected instrumentation task, Android PackageManager
+logged `onPackageRemoved pkgName=com.stressdetector userId=0` at
+`2026-10-17 07:13:02`; subsequent checks found no production package and no
+`/data/user/0/com.stressdetector` directory. The earlier replacement install
+and database-hash comparison had succeeded, but the connected-test cleanup
+removed the app afterward. No further install was attempted: with the package
+and private data directory absent, another `install -r -d` would be a fresh
+install and could not satisfy the user's data-preservation condition. Device
+installation is therefore **blocked pending an explicit recovery/fresh-install
+decision**. The instrumentation result remains valid for those 31 presentation
+tests; it does not imply that the app is currently installed.
+
+### Fresh-install recovery follow-up — 2026-10-17
+
+The user subsequently authorized a fresh install because PackageManager and the
+app-private directory no longer contained `com.stressdetector`. No uninstall or
+`pm clear` was run by this follow-up.
+
+- Device: `RRCN3008VYE`, Samsung SM-G988B, Android 13. No Watch was listed by
+  `adb devices -l`.
+- Installed local production-debug APK with `adb install -r -d`; output:
+  `Success`.
+- Installed package: `com.stressdetector`, versionCode `3`, versionName `0.1.2`.
+  First-install and update times both read `2026-10-17 07:24:00`, confirming
+  this was a fresh install, not a data-preserving replacement.
+- APK size `255732794` bytes; local SHA-256
+  `91cf17afb44e5128f01560ca8184c283ee540da37f454d27b3c7dc756fb12f03`.
+- `com.stressdetector/.mobile.MainActivity` launched and remained alive (PID
+  `28551`). Home showed the permission-required state for audio and Bluetooth;
+  no permissions were granted, and no stress session was started.
+- Crash-buffer inspection found no `com.stressdetector` crash after install.
+  Existing `FATAL EXCEPTION` entries were from `com.coffeecreator.app` on
+  2026-10-16 and are unrelated to this package.
+- Screenshot: [fresh-install Home permission state](fresh-install-home-20261017.png).
+- The published private GitHub `android-v0.1.2` APK asset has SHA-256
+  `e42071aaa904fdaec6d9e6f05f43a3b1444ab3e78c57121676157e79c16ab07c` and size
+  `252548527` bytes. It differs from the installed local artifact; this run
+  does not claim that the existing download link serves the exact APK tested.
+- Watch pairing, permissions, live PPG, AI+ model/RAG, and stress-session
+  acceptance were not tested in this smoke run. The fresh install has no
+  restored app-private databases or downloaded model state.

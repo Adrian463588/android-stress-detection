@@ -14,7 +14,7 @@ Hasil fisiologis dan psikometri adalah **bantuan pengambilan keputusan (decision
 - **Ukuran File**: `286,793,076 byte` (~273.5 MB, memuat offline speech model Sherpa-ONNX, openSMILE config, model ONNX biosinyal, dan katalog offline psikometri).
 - **Integritas & Checksum SHA-256**:
   ```text
-  A4E4031251D983FA39A039442476F0D8B44EE105095493C8ECE064120DEE4D59  app-production-release.apk
+  A0B291F55B150824F430BCE26B6FA61F873A8F412731C08FA0F2D5156246539E  app-production-release.apk
   ```
 - **Status Verifikasi Perangkat Nyata**: Teruji dan berjalan mulus pada Samsung Galaxy S20 Ultra (`SM-G988B`, serial `RRCN3008VYE`) dan Xiaomi 14 (`2412DPC0AG`). Seluruh modul (Home, History, Verbatim+, AI Counselor, Bank Asesmen, dan Profile) berfungsi 100% offline tanpa ketergantungan server luar.
 
