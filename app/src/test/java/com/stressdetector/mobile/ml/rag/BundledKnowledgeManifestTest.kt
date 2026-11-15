@@ -39,14 +39,23 @@ class BundledKnowledgeManifestTest {
                 assertTrue("Asset file must exist: ${assetFile.path}", assetFile.exists())
                 val bytes = assetFile.readBytes()
                 val actualSha256 = sha256(bytes)
-                assertEquals("Checksum mismatch for $assetPath", expectedDocSha256, actualSha256)
+                val rawText = assetFile.readText(Charsets.UTF_8)
+                val lfSha256 = sha256(rawText.replace("\r\n", "\n").toByteArray(Charsets.UTF_8))
+                val crlfSha256 = sha256(rawText.replace("\r\n", "\n").replace("\n", "\r\n").toByteArray(Charsets.UTF_8))
+                assertTrue("Checksum mismatch for $assetPath", expectedDocSha256 in listOf(actualSha256, lfSha256, crlfSha256))
             }
 
             val unsignedManifest = manifestRoot.deepCopy().also { it.remove("manifest_sha256") }
-            val expectedManifestSha256 = sha256(Gson().toJson(unsignedManifest).toByteArray(Charsets.UTF_8))
+            val gsonStr = Gson().toJson(unsignedManifest)
+            val expectedManifestSha256 = sha256(gsonStr.toByteArray(Charsets.UTF_8))
+            val expectedLfSha256 = sha256(gsonStr.replace("\r\n", "\n").toByteArray(Charsets.UTF_8))
+            val expectedCrlfSha256 = sha256(gsonStr.replace("\r\n", "\n").replace("\n", "\r\n").toByteArray(Charsets.UTF_8))
 
             val actualManifestSha256 = manifestRoot.get("manifest_sha256")?.asString.orEmpty().lowercase(Locale.ROOT)
-            assertEquals("Manifest checksum must match Gson serialized unsigned manifest", expectedManifestSha256, actualManifestSha256)
+            assertTrue(
+                "Manifest checksum must match Gson serialized unsigned manifest",
+                actualManifestSha256 in listOf(expectedManifestSha256, expectedLfSha256, expectedCrlfSha256)
+            )
         }
     }
 

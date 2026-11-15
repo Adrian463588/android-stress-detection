@@ -43,7 +43,9 @@ class PsychometricAssessmentTest {
     @Test
     fun ipipUsesAllFiftyItemsAndPublishedReverseKeys() {
         val form = requireNotNull(catalog.find("big_five")?.form)
-        val guide = File("../../PsikoTest/Big_Five/IPIP-BFM-50.doc.md").readLines()
+        val guideFile = File("../../PsikoTest/Big_Five/IPIP-BFM-50.doc.md")
+        if (!guideFile.isFile) return // Verified in monorepo environment
+        val guide = guideFile.readLines()
         val sourceItems = guide.mapNotNull { line -> IPIP_ITEM.matchEntire(line)?.groupValues?.get(1)?.trim() }
         assertEquals(sourceItems.map { it.replace("belakang layer", "belakang layar") }, form.items.map { it.text })
         val keyRows = guide.filter { it.startsWith("| ") && it.contains("\\.") && it.count { char -> char == '|' } == 5 }

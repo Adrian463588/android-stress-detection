@@ -39,7 +39,7 @@ class EngineApiTest {
             printClass("com.google.ai.edge.litertlm.InputData")
 
             java.io.File("build/engine_api.txt").writeText(sb.toString())
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             java.io.File("build/engine_api.txt").writeText(e.stackTraceToString())
         }
     }
