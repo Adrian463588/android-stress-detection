@@ -1,4 +1,4 @@
-# Pinned Sherpa-ONNX runtime
+# Pinned Sherpa-ONNX runtime (not vendored)
 
 - Artifact: `sherpa-onnx-static-link-onnxruntime-1.13.4.aar`
 - Source: https://github.com/k2-fsa/sherpa-onnx/releases/tag/v1.13.4
@@ -11,3 +11,7 @@ Runtime Mobile 1.22.0 as the sole packaged `libonnxruntime.so` for stress
 inference. The Gradle native-runtime contract fails the build if that invariant
 is broken. Speech model weights are not packaged in the APK; they are downloaded
 only after an explicit Profile action and activated after checksum validation.
+
+Gradle downloads this exact asset into the ignored `app/build/third-party/`
+directory and validates the pinned byte count and SHA-256 before compilation.
+Do not add the archive to Git or a repository release asset.
