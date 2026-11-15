@@ -17,8 +17,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class AssessmentRepository(context: Context, private val resultDao: () -> AssessmentResultDao) {
-    private val assets = context.applicationContext.assets
+    private val appContext = context.applicationContext
+    private val assets = appContext.assets
     private val gson = Gson()
+    private val searchPrefs by lazy {
+        appContext.getSharedPreferences("assessment_search_prefs", Context.MODE_PRIVATE)
+    }
     private val catalog by lazy {
         val instruments = assets.open("ai/psychometrics/catalog.json").bufferedReader().use {
             gson.fromJson(it, Array<AssessmentInstrument>::class.java).toList()
@@ -233,4 +237,36 @@ class AssessmentRepository(context: Context, private val resultDao: () -> Assess
 
     private fun AssessmentResultEntity.decode(): AssessmentResult =
         gson.fromJson(payloadJson, AssessmentResult::class.java).also { require(it.instrumentId == instrumentId) }
+
+    fun getRecentSearches(): List<String> {
+        val raw = searchPrefs.getString("recent_searches", null) ?: return emptyList()
+        return try {
+            gson.fromJson(raw, Array<String>::class.java).toList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun saveRecentSearch(query: String): List<String> {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return getRecentSearches()
+        val current = getRecentSearches().toMutableList()
+        current.removeAll { it.equals(trimmed, ignoreCase = true) }
+        current.add(0, trimmed)
+        val capped = current.take(10)
+        searchPrefs.edit().putString("recent_searches", gson.toJson(capped)).apply()
+        return capped
+    }
+
+    fun removeRecentSearch(query: String): List<String> {
+        val current = getRecentSearches().toMutableList()
+        current.removeAll { it.equals(query.trim(), ignoreCase = true) }
+        searchPrefs.edit().putString("recent_searches", gson.toJson(current)).apply()
+        return current
+    }
+
+    fun clearRecentSearches(): List<String> {
+        searchPrefs.edit().remove("recent_searches").apply()
+        return emptyList()
+    }
 }

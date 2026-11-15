@@ -29,6 +29,9 @@ internal data class AssessmentUiState(
     val moduleExplanation: String? = null,
     val selectedTab: Int = 0,
     val selectedCategory: String = "Semua",
+    val searchQuery: String = "",
+    val recentSearches: List<String> = emptyList(),
+    val pinnedSuggestions: List<String> = listOf("TIU 6", "CFIT", "16PF", "MMPI", "Army Alpha", "WPT", "SPM"),
     val question: Int = 0,
     val answers: Map<Int, Int> = emptyMap(),
     val markedScores: Map<Int, String> = emptyMap(),
@@ -59,14 +62,48 @@ internal class AssessmentViewModel(
         val instrument = instruments.firstOrNull { it.id == id }
         val result = instrument?.let { repository.getResult(it.id) }
         val modules = repository.getCounselingModules()
+        val recentSearches = repository.getRecentSearches()
         state.update {
             it.copy(
                 instruments = instruments,
                 instrument = instrument,
                 result = result,
-                counselingModules = modules
+                counselingModules = modules,
+                recentSearches = recentSearches
             )
         }
+    }
+
+    fun updateSearchQuery(query: String) {
+        state.update { it.copy(searchQuery = query) }
+    }
+
+    fun commitSearch(query: String) {
+        val trimmed = query.trim()
+        val updatedRecent = if (trimmed.isNotBlank()) {
+            repository.saveRecentSearch(trimmed)
+        } else {
+            state.value.recentSearches
+        }
+        state.update { it.copy(searchQuery = trimmed, recentSearches = updatedRecent) }
+    }
+
+    fun selectRecentSearch(query: String) {
+        commitSearch(query)
+    }
+
+    fun removeRecentSearch(query: String) {
+        val updated = repository.removeRecentSearch(query)
+        state.update { it.copy(recentSearches = updated) }
+    }
+
+    fun clearRecentSearches() {
+        val updated = repository.clearRecentSearches()
+        state.update { it.copy(recentSearches = updated) }
+    }
+
+    fun clearSearchQuery() {
+        state.update { it.copy(searchQuery = "") }
     }
 
     fun selectTab(tab: Int) {

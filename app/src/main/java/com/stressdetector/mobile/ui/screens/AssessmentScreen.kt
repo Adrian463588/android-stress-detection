@@ -9,7 +9,17 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.InputChipDefaults
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -289,7 +299,21 @@ private fun LazyListScope.catalogContent(state: AssessmentUiState, viewModel: As
             }
         }
 
-        val filtered = when (state.selectedCategory) {
+        item {
+            AssessmentSearchBar(
+                searchQuery = state.searchQuery,
+                onQueryChange = { viewModel.updateSearchQuery(it) },
+                onSearch = { viewModel.commitSearch(state.searchQuery) },
+                onClear = { viewModel.clearSearchQuery() },
+                recentSearches = state.recentSearches,
+                pinnedSuggestions = state.pinnedSuggestions,
+                onSelectChip = { viewModel.selectRecentSearch(it) },
+                onRemoveChip = { viewModel.removeRecentSearch(it) },
+                onClearAll = { viewModel.clearRecentSearches() }
+            )
+        }
+
+        val categoryFiltered = when (state.selectedCategory) {
             "Semua" -> state.instruments
             "Kognitif & IQ" -> state.instruments.filter { it.category in setOf("Kognitif", "Kompetensi") }
             "Kepribadian" -> state.instruments.filter {
@@ -303,14 +327,89 @@ private fun LazyListScope.catalogContent(state: AssessmentUiState, viewModel: As
             else -> state.instruments.filter { it.category.contains(state.selectedCategory, ignoreCase = true) }
         }
 
+        val filtered = if (state.searchQuery.isBlank()) {
+            categoryFiltered
+        } else {
+            val q = state.searchQuery.trim().lowercase(java.util.Locale.ROOT)
+            val inCat = categoryFiltered.filter { matchesInstrumentQuery(it, q) }
+            if (inCat.isNotEmpty() || state.selectedCategory == "Semua") {
+                inCat
+            } else {
+                state.instruments.filter { matchesInstrumentQuery(it, q) }
+            }
+        }
+
+        if (state.searchQuery.isNotBlank()) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = AppSpacing.Small, vertical = AppSpacing.Micro),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Ditemukan ${filtered.size} dari ${state.instruments.size} psikotes",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    TextButton(
+                        onClick = { viewModel.clearSearchQuery() },
+                        contentPadding = PaddingValues(horizontal = AppSpacing.Small, vertical = 0.dp)
+                    ) {
+                        Text("Reset", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+
         if (filtered.isEmpty()) {
             item {
-                Text(
-                    text = "Tidak ada instrumen untuk kategori ini.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = AppSpacing.Medium)
-                )
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = AppSpacing.Medium),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(AppSpacing.Large),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SearchOff,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Text(
+                            text = if (state.searchQuery.isNotBlank()) {
+                                "Tidak ditemukan psikotes dengan kata kunci \"${state.searchQuery}\""
+                            } else {
+                                "Tidak ada instrumen untuk kategori \"${state.selectedCategory}\"."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        if (state.searchQuery.isNotBlank() || state.selectedCategory != "Semua") {
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.clearSearchQuery()
+                                    viewModel.selectCategory("Semua")
+                                },
+                                modifier = Modifier.padding(top = AppSpacing.Small)
+                            ) {
+                                Text("Tampilkan Semua Psikotes")
+                            }
+                        }
+                    }
+                }
             }
         } else {
             items(filtered, key = { it.id }) { instrument ->
@@ -349,6 +448,181 @@ private fun LazyListScope.catalogContent(state: AssessmentUiState, viewModel: As
                 module = module,
                 onClick = { viewModel.openModule(module) }
             )
+        }
+    }
+}
+
+private fun matchesInstrumentQuery(instrument: AssessmentInstrument, query: String): Boolean {
+    val q = query.trim().lowercase(java.util.Locale.ROOT)
+    if (q.isBlank()) return true
+    return instrument.title.lowercase(java.util.Locale.ROOT).contains(q) ||
+        instrument.id.lowercase(java.util.Locale.ROOT).contains(q) ||
+        instrument.aliases.any { it.lowercase(java.util.Locale.ROOT).contains(q) } ||
+        instrument.category.lowercase(java.util.Locale.ROOT).contains(q) ||
+        instrument.description.lowercase(java.util.Locale.ROOT).contains(q)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AssessmentSearchBar(
+    searchQuery: String,
+    onQueryChange: (String) -> Unit,
+    onSearch: () -> Unit,
+    onClear: () -> Unit,
+    recentSearches: List<String>,
+    pinnedSuggestions: List<String>,
+    onSelectChip: (String) -> Unit,
+    onRemoveChip: (String) -> Unit,
+    onClearAll: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = AppSpacing.Micro),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.Micro)
+    ) {
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = onQueryChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp),
+            placeholder = {
+                Text(
+                    text = "Cari psikotes (contoh: TIU 6, MMPI, CFIT)...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "Ikon Cari",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(
+                        onClick = onClear,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Hapus pencarian",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            shape = RoundedCornerShape(14.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+            ),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                imeAction = ImeAction.Search,
+                keyboardType = KeyboardType.Text
+            ),
+            keyboardActions = KeyboardActions(
+                onSearch = { onSearch() }
+            ),
+            textStyle = MaterialTheme.typography.bodyMedium
+        )
+
+        val isHistory = recentSearches.isNotEmpty()
+        val displayChips = if (isHistory) recentSearches else pinnedSuggestions
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.Micro),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(end = 4.dp)
+            ) {
+                Icon(
+                    imageVector = if (isHistory) Icons.Default.History else Icons.Default.PushPin,
+                    contentDescription = null,
+                    tint = if (isHistory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = if (isHistory) "Riwayat:" else "Rekomendasi:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            displayChips.forEach { chipQuery ->
+                val isSelected = searchQuery.equals(chipQuery, ignoreCase = true)
+                InputChip(
+                    selected = isSelected,
+                    onClick = { onSelectChip(chipQuery) },
+                    label = {
+                        Text(
+                            text = chipQuery,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.PushPin,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    },
+                    trailingIcon = if (isHistory) {
+                        {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Hapus pin riwayat $chipQuery",
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .clickable { onRemoveChip(chipQuery) },
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else null,
+                    shape = RoundedCornerShape(8.dp),
+                    colors = InputChipDefaults.inputChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        labelColor = MaterialTheme.colorScheme.onSurface,
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ),
+                    modifier = Modifier.heightIn(min = 32.dp)
+                )
+            }
+
+            if (isHistory) {
+                TextButton(
+                    onClick = onClearAll,
+                    contentPadding = PaddingValues(horizontal = AppSpacing.Micro, vertical = 0.dp),
+                    modifier = Modifier.heightIn(min = 32.dp)
+                ) {
+                    Text(
+                        text = "Hapus",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
         }
     }
 }

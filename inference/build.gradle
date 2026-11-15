@@ -32,9 +32,10 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     sourceSets {
-        production.assets.srcDirs = [
-            "src/production/assets",
+        production.assets.srcDirs = file("../../data/artifacts/export").isDirectory() ? [
             "$buildDir/generated/inferenceAssets"
+        ] : [
+            "src/production/assets"
         ]
         androidTest.assets.srcDirs = [
             "../../tests/fixtures/android_parity",
