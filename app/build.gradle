@@ -23,8 +23,8 @@ android {
         applicationId "com.stressdetector"
         minSdk 26
         targetSdk 34
-        versionCode 3
-        versionName "0.1.2"
+        versionCode 6
+        versionName "0.1.5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders = [appLabel: "Stress Detector"]
         externalNativeBuild {
@@ -54,6 +54,22 @@ android {
         }
     }
 
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            signingConfig signingConfigs.debug
+            ndk {
+                debugSymbolLevel = "none"
+            }
+        }
+        debug {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -74,6 +90,10 @@ android {
             excludes.add("lib/x86/libsherpa-onnx-jni.so")
             pickFirsts.add("lib/**/libc++_shared.so")
         }
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
     }
 
     sourceSets {

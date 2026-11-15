@@ -9,9 +9,12 @@ import com.google.gson.reflect.TypeToken
 import com.stressdetector.mobile.data.db.ChatDao
 import com.stressdetector.mobile.data.db.ChatMessageEntity
 import com.stressdetector.mobile.data.db.ChatSessionEntity
+import com.stressdetector.mobile.data.repository.AssessmentRepository
 import com.stressdetector.mobile.data.repository.RoomCrisisTurnRepository
 import com.stressdetector.mobile.data.repository.SharedPreferencesCounselorSessionSelectionStore
 import com.stressdetector.mobile.di.AppLocator
+import com.stressdetector.mobile.domain.assessment.AssessmentInstrument
+import com.stressdetector.mobile.domain.assessment.AssessmentRecommendation
 import com.stressdetector.mobile.domain.counselor.CounselorPersonaProfile
 import com.stressdetector.mobile.domain.counselor.CounselorPersonaRepository
 import com.stressdetector.mobile.domain.counselor.CounselorSessionSelectionStore
@@ -116,7 +119,8 @@ data class UiChatMessage(
     val stressContextSessionIds: List<String> = emptyList(),
     val promptVersion: String? = null,
     val retrievalMode: RagMode? = null,
-    val crisisSupportActions: List<CrisisSupportAction> = emptyList()
+    val crisisSupportActions: List<CrisisSupportAction> = emptyList(),
+    val assessmentRecommendations: List<AssessmentRecommendation> = emptyList()
 )
 
 data class UiChatSession(val id: String, val title: String, val startedAtMillis: Long, val lastMessageAtMillis: Long)
@@ -158,6 +162,7 @@ data class CounselorUiState(
     val canCancel: Boolean get() = isGenerating || isRetrieving || webConsentRequired
 }
 
+@Suppress("LongParameterList")
 class CounselorViewModel(
     private val llmEngine: OnDeviceLlmEngine,
     private val ragRetriever: RagRetriever,
@@ -180,7 +185,8 @@ class CounselorViewModel(
     private val crisisTurnRepository: CrisisTurnRepository = RoomCrisisTurnRepository(chatDao),
     private val retrievalPolicyBinding: RetrievalPolicyBinding = RetrievalPolicyBinding.Uncalibrated(
         reason = "benchmark_artifact_missing"
-    )
+    ),
+    private val assessmentRepository: AssessmentRepository? = null
 ) : ViewModel() {
 
     private val gson = Gson()
@@ -743,9 +749,33 @@ class CounselorViewModel(
             return
         }
 
+        val isDiscussionOrCompletedResult = rawText.startsWith("Halo AI Counselor, saya baru saja menyelesaikan asesmen") ||
+            rawText.startsWith("Halo AI Counselor, tolong jelaskan panduan asesmen") ||
+            rawText.contains("Rincian Skor") ||
+            rawText.contains("Interpretasi Klinis:") ||
+            rawText.contains("Metode skoring:")
+
+        val recommendations = if (isDiscussionOrCompletedResult) {
+            emptyList()
+        } else {
+            try {
+                assessmentRepository?.recommend(rawText).orEmpty()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+        requireCurrentTurn(dispatchEpoch, dispatchSessionId)
+        if (recommendations.isNotEmpty()) {
+            turnEpoch++
+            publishAssessmentTurn(userMessage, recommendations, dispatchSessionId, turnEpoch)
+            return
+        }
+
         val webMode = _uiState.value.webSearchMode
         turnEpoch++
-        if (webMode != WebSearchMode.Disabled) {
+        if (!isDiscussionOrCompletedResult && webMode != WebSearchMode.Disabled) {
             val request = PendingWebRequest(
                 rawText,
                 inputMode,
@@ -768,6 +798,74 @@ class CounselorViewModel(
             persistUserMessage = true,
             inputMode = inputMode
         )
+    }
+
+    private suspend fun publishAssessmentTurn(
+        userMessage: UiChatMessage,
+        instruments: List<AssessmentInstrument>,
+        sessionId: String,
+        epoch: Long
+    ) {
+        val recommendation = UiChatMessage(
+            id = UUID.randomUUID().toString(),
+            sender = "counselor",
+            content = assessmentRecommendationText(instruments),
+            timestampMs = userMessage.timestampMs + 1,
+            assessmentRecommendations = instruments.map { AssessmentRecommendation(it.id, it.title) }
+        )
+        val metadata = gson.toJson(
+            mapOf(
+                "version" to ASSESSMENT_PROMPT_VERSION,
+                "assessmentRecommendations" to recommendation.assessmentRecommendations,
+                "receipt" to CounselorContextReceiptFactory.create(
+                    retrieval = RagRetrievalResult.Unavailable("assessment_catalog_selection"),
+                    policyBinding = retrievalPolicyBinding,
+                    personaVersion = null,
+                    stressHistorySessionIds = emptyList(),
+                    excludedHistoryReasons = emptyList(),
+                    llmModelVersion = null
+                )
+            )
+        )
+        try {
+            chatDao.persistAssessmentTurn(
+                sessionFor(userMessage, sessionId),
+                userMessage.toEntity(sessionId),
+                recommendation.toEntity(sessionId, stressContext = metadata, promptVersion = ASSESSMENT_PROMPT_VERSION)
+            ) {
+                requireCurrentTurn(epoch, sessionId)
+                check(aiConsentGranted()) { "ai_consent_revoked" }
+            }
+            requireCurrentTurn(epoch, sessionId)
+            _uiState.update {
+                it.copy(
+                    messages = ChatMessageListReducer.replace(it.messages, userMessage, recommendation),
+                    phase = CounselorPhase.SUCCESS,
+                    statusMessage = null,
+                    lastFailedUserMessage = null
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            if (isCurrentTurn(epoch, sessionId)) {
+                _uiState.update {
+                    it.copy(
+                        phase = CounselorPhase.ERROR,
+                        statusMessage = "Rekomendasi asesmen belum tersimpan. Coba lagi.",
+                        lastFailedUserMessage = userMessage.content
+                    )
+                }
+            }
+        }
+    }
+
+    private fun assessmentRecommendationText(instruments: List<AssessmentInstrument>): String = when {
+        instruments.all { it.category == "Kognitif" } ->
+            "Berikut instrumen untuk asesmen kognitif. Psikolog dapat menentukan bentuk dan norma sesuai tujuan Anda."
+        instruments.first().id == "cbi" ->
+            "Jika ingin merefleksikan kelelahan yang Anda rasakan, Anda dapat melihat subskala kelelahan personal ini."
+        else -> "Berikut asesmen yang sesuai dengan topik Anda. Buka detail untuk melihat kegunaan dan cara mengaksesnya."
     }
 
     private fun startCrisisEscalation(rawText: String, inputMode: String, escalation: CrisisInterceptionResult.Escalate) {
@@ -1734,26 +1832,19 @@ class CounselorViewModel(
         retrievalMode: RagMode? = null
     ) {
         val timestamp = message.timestampMs
-        if (message.sender == "user") {
-            val session = _uiState.value.chatSessions.firstOrNull {
-                it.id == sessionId
-            }
-            val title = if (session == null || session.title == "Chat baru") {
-                conversationTitle(message.content)
-            } else {
-                session.title
-            }
-            chatDao.insertChatSession(
-                ChatSessionEntity(
-                    chatSessionId = sessionId,
-                    title = title,
-                    startedAtMillis = session?.startedAtMillis ?: timestamp,
-                    lastMessageAtMillis = timestamp
-                )
-            )
-        }
+        if (message.sender == "user") chatDao.insertChatSession(sessionFor(message, sessionId))
         chatDao.insertMessage(message.toEntity(sessionId, stressContext, promptVersion, retrievalMode))
         chatDao.touchChatSession(sessionId, timestamp)
+    }
+
+    private fun sessionFor(userMessage: UiChatMessage, sessionId: String): ChatSessionEntity {
+        val session = _uiState.value.chatSessions.firstOrNull { it.id == sessionId }
+        return ChatSessionEntity(
+            chatSessionId = sessionId,
+            title = session?.title?.takeUnless { it == NEW_CHAT_TITLE } ?: conversationTitle(userMessage.content),
+            startedAtMillis = session?.startedAtMillis ?: userMessage.timestampMs,
+            lastMessageAtMillis = userMessage.timestampMs
+        )
     }
 
     private fun UiChatMessage.toEntity(
@@ -1826,6 +1917,11 @@ class CounselorViewModel(
                 crisisResponseTemplateProvider.supportActionsFor(entity.promptVersion)
             } else {
                 emptyList()
+            },
+            assessmentRecommendations = if (entity.sender == "counselor" && entity.promptVersion == ASSESSMENT_PROMPT_VERSION) {
+                contextMetadata?.assessmentRecommendations.orEmpty()
+            } else {
+                emptyList()
             }
         )
     }
@@ -1872,7 +1968,7 @@ class CounselorViewModel(
                 PersistedStressContextMetadata::class.java
             )
         }
-    }.getOrNull()?.takeIf { it.version.isNotBlank() }
+    }.getOrNull()?.takeIf { !it.version.isNullOrBlank() }
 
     override fun onCleared() {
         turnEpoch++
@@ -1900,8 +1996,19 @@ class CounselorViewModel(
                 )
             }
             val contextSnapshot = stressHistoryContextProvider.snapshot()
+            val assessmentSummary = try {
+                assessmentRepository?.getRecentAssessmentSummary().orEmpty()
+            } catch (_: Exception) {
+                ""
+            }
+            val baseStress = contextSnapshot.toPromptContext()
+            val combined = if (assessmentSummary.isNotBlank()) {
+                "$baseStress\nAsesmen Psikometri: $assessmentSummary"
+            } else {
+                baseStress
+            }
             StressContextPayload(
-                promptText = contextSnapshot.toPromptContext(),
+                promptText = combined,
                 snapshotJson = gson.toJson(contextSnapshot),
                 sourceSessionIds = contextSnapshot.sourceSessionIds,
                 excludedHistoryReasons = contextSnapshot.entries
@@ -1961,7 +2068,11 @@ class CounselorViewModel(
         val receipt: CounselorContextReceipt
     )
 
-    private data class PersistedStressContextMetadata(val version: String = "", val sourceSessionIds: List<String> = emptyList())
+    private data class PersistedStressContextMetadata(
+        val version: String? = null,
+        val sourceSessionIds: List<String> = emptyList(),
+        val assessmentRecommendations: List<AssessmentRecommendation>? = null
+    )
 
     private data class RetrievalDecision(
         val mode: RagMode,
@@ -2075,7 +2186,8 @@ class CounselorViewModel(
                     db.consentDao().getConsent("AI_COUNSELING")?.isGranted == true
                 },
                 webConsentStore = AppLocator.webConsentStore(context),
-                sessionSelectionStore = SharedPreferencesCounselorSessionSelectionStore(context)
+                sessionSelectionStore = SharedPreferencesCounselorSessionSelectionStore(context),
+                assessmentRepository = AppLocator.assessmentRepository(context)
             ) as T
         }
     }
@@ -2091,6 +2203,7 @@ class CounselorViewModel(
         private const val CRISIS_SYSTEM_SENDER = "crisis_system"
         private const val VOICE_INPUT_MODE = "VOICE"
         private const val NEW_CHAT_TITLE = "Chat baru"
+        private const val ASSESSMENT_PROMPT_VERSION = "assessment-catalog-v1"
         private const val CRISIS_STATUS_MESSAGE = "Dukungan keselamatan ditampilkan. Anda tidak perlu menunggu AI lokal."
         private const val CRISIS_PERSISTENCE_FAILURE_MESSAGE =
             "Dukungan keselamatan tetap tampil, tetapi belum tersimpan di perangkat. Coba simpan lagi."

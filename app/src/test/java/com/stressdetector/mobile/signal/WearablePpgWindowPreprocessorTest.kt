@@ -1,16 +1,75 @@
 package com.stressdetector.mobile.signal
 
+import com.stressdetector.inference.PpgDetectorContract
 import com.stressdetector.mobile.data.FakePpgBatchFactory
 import com.stressdetector.mobile.data.WindowSnapshot
 import com.stressdetector.shared.AccelerometerSample
 import com.stressdetector.shared.PpgFilterContract
+import com.stressdetector.shared.PpgSamplingPolicy
 import com.stressdetector.shared.PpgType
 import kotlin.math.sin
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WearablePpgWindowPreprocessorTest {
+    @Test
+    fun cohortMedianDoesNotReplaceRecordingFilterRateOrObservedFeatureRate() {
+        val batch = FakePpgBatchFactory.inferenceWindowBatch(PpgType.GREEN)
+        val snapshot = WindowSnapshot(batch.type, batch.timestampsMillis, batch.rawValues)
+        val medianContract = PpgPreprocessingContract(
+            sourceRateHz = 24.91929703690945,
+            modelRateHz = 24.91929703690945,
+            filterContract = PpgFilterContract.forChannel("ppg_green")
+        )
+
+        val median = (WearablePpgWindowPreprocessor(medianContract).prepare(snapshot) as PpgPreprocessResult.Ready).window
+        val recording = (preprocessor(PpgType.GREEN).prepare(snapshot) as PpgPreprocessResult.Ready).window
+
+        assertArrayEquals(recording.filteredValues, median.filteredValues, 0.0)
+        assertEquals(25.0, median.sourceRateHz, 0.0)
+        assertEquals(25.0, median.modelRateHz, 0.0)
+        assertEquals(PpgSamplingPolicy.RECORDING_OBSERVED_V1, median.samplingRatePolicy)
+        assertEquals(0, median.gridResampledSampleCount)
+    }
+
+    @Test
+    fun preparedSessionSlicesExtractAtObservedEndpointCadenceWithoutPadding() {
+        PpgType.inferenceChannels.forEach { type ->
+            // Numeric regression fixture only; not device or model accuracy evidence.
+            val batch = FakePpgBatchFactory.sessionBatch(type, "observed-rate-test", seconds = 300)
+            val timestamps = LongArray(batch.rawValues.size) { index ->
+                (index * 1_000.0 / type.sourceRateHz * 1.00025).toLong()
+            }
+            val snapshot = WindowSnapshot(
+                type = type,
+                timestampsMillis = timestamps,
+                rawValues = batch.rawValues,
+                elapsedTimestampsMillis = timestamps
+            )
+            val prepared = (preprocessor(type).prepareSession(snapshot) as PpgPreprocessResult.Ready).window
+            val windows = PreparedPpgWindowSlicer().modelWindows(prepared)
+            val contract = PpgDetectorContract.defaultFor(type.assetSuffix, type.modelRateHz.toDouble())
+
+            assertEquals(PpgSamplingPolicy.observedRateHz(timestamps), prepared.modelRateHz, 0.0)
+            assertEquals(7, windows.size)
+            windows.forEach { window ->
+                assertEquals(PpgSamplingPolicy.observedRateHz(window.timestampsMillis), window.modelRateHz, 0.0)
+                assertEquals(
+                    PpgSamplingPolicy.observedRateHz(window.timestampsMillis),
+                    requireNotNull(window.observedCadenceHz),
+                    0.0
+                )
+                val extracted = PpgFeatureExtractor().extract(window, contract)
+                assertTrue("${type.assetSuffix}: ${extracted.errorMessage}", extracted.isSuccess)
+                assertTrue(extracted.values.isNotEmpty())
+                assertTrue(extracted.values.values.all(Float::isFinite))
+                assertEquals(0, window.gridResampledSampleCount)
+            }
+        }
+    }
+
     @Test
     fun observedMotionAnnotatesWindowWithoutChangingPreparedPpg() {
         val batch = FakePpgBatchFactory.inferenceWindowBatch(PpgType.GREEN)
@@ -85,6 +144,7 @@ class WearablePpgWindowPreprocessorTest {
         assertEquals(0, ready.window.sourceGapInterpolatedSampleCount)
         assertEquals(0, ready.window.gridResampledSampleCount)
         assertEquals(ready.window.size, ready.window.observedSampleCount)
+        assertEquals(PpgSamplingPolicy.observedRateHz(ready.window.timestampsMillis), ready.window.modelRateHz, 0.0)
         val quality = SignalQualityGate(testLiveMonitorConfig()).evaluate(ready.window)
         assertTrue("native 100Hz source must remain usable", quality.isUsable)
         assertEquals(0.0, quality.missingRatio, 1.0e-9)
@@ -216,5 +276,6 @@ class WearablePpgWindowPreprocessorTest {
         assertEquals(0L, ready.window.elapsedTimestampsMillis.first())
         assertTrue(ready.window.elapsedTimestampsMillis.last() <= 288_000L)
         assertTrue(ready.window.filteredValues.all(Double::isFinite))
+        assertEquals(25.0, ready.window.modelRateHz, 0.0)
     }
 }

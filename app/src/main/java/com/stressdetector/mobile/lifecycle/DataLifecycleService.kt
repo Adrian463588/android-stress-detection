@@ -3,6 +3,7 @@ package com.stressdetector.mobile.lifecycle
 import android.content.Context
 import android.database.Cursor
 import android.util.Base64
+import com.stressdetector.mobile.data.db.AssessmentResultDao
 import com.stressdetector.mobile.data.db.StressDatabase
 import com.stressdetector.mobile.domain.reminder.AiReminderScheduler
 import com.stressdetector.mobile.domain.reminder.AiReminderSecretStore
@@ -56,7 +57,8 @@ class LocalDataLifecycleService(
     private val database: StressDatabase,
     private val encryptedStorage: EncryptedStorageService,
     private val keyManager: KeyManager,
-    private val aiReminder: AiReminderLifecycleDependencies = AiReminderLifecycleDependencies()
+    private val aiReminder: AiReminderLifecycleDependencies = AiReminderLifecycleDependencies(),
+    private val assessmentResults: (() -> AssessmentResultDao)? = null
 ) : DataLifecycleService {
     private val exportDirectory = File(context.applicationContext.cacheDir, "privacy_exports")
 
@@ -72,6 +74,13 @@ class LocalDataLifecycleService(
                 aiReminder.secretStore?.let { secrets ->
                     zip.putNextEntry(ZipEntry("ai-reminder-sensitive.json"))
                     zip.write(secrets.exportJson().toByteArray(Charsets.UTF_8))
+                    zip.closeEntry()
+                }
+                assessmentResults?.invoke()?.all()?.takeIf { it.isNotEmpty() }?.let { results ->
+                    val payload = JSONArray()
+                    results.forEach { payload.put(JSONObject(it.payloadJson)) }
+                    zip.putNextEntry(ZipEntry("assessment-results.json"))
+                    zip.write(payload.toString(2).toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
                 }
                 encryptedStorage.listEncryptedFiles(userId).forEach { encrypted ->
@@ -91,6 +100,7 @@ class LocalDataLifecycleService(
         try {
             aiReminder.settings?.setEnabled(false)
             aiReminder.scheduler?.cancelAll()
+            assessmentResults?.invoke()?.deleteAll()
             database.clearAllTables()
             aiReminder.secretStore?.clear()
             encryptedStorage.deleteAllUserFiles(userId)

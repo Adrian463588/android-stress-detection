@@ -4,22 +4,33 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Database(
     entities = [
         KnowledgeBaseGenerationEntity::class,
         KnowledgeBaseDocumentEntity::class,
-        KnowledgeBaseChunkEntity::class
+        KnowledgeBaseChunkEntity::class,
+        AssessmentResultEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class KnowledgeBaseDatabase : RoomDatabase() {
     abstract fun knowledgeBaseDao(): KnowledgeBaseDao
+    abstract fun assessmentResultDao(): AssessmentResultDao
 
     companion object {
         private const val DATABASE_NAME = "knowledge_base_secure.db"
+        internal val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS assessment_results (instrumentId TEXT NOT NULL PRIMARY KEY, payloadJson TEXT NOT NULL)"
+                )
+            }
+        }
 
         @Volatile private var instance: KnowledgeBaseDatabase? = null
 
@@ -40,6 +51,7 @@ abstract class KnowledgeBaseDatabase : RoomDatabase() {
                 databaseName
             )
                 .openHelperFactory(factory)
+                .addMigrations(MIGRATION_1_2)
                 .addCallback(Fts5Callback())
                 .build()
         }

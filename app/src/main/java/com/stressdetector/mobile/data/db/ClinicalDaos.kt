@@ -159,10 +159,14 @@ interface ChatDao {
      */
     @Transaction
     suspend fun persistCrisisTurn(session: ChatSessionEntity, userMessage: ChatMessageEntity, crisisMessage: ChatMessageEntity) {
+        persistTurnPair(session, userMessage, crisisMessage)
+    }
+
+    private suspend fun persistTurnPair(session: ChatSessionEntity, userMessage: ChatMessageEntity, assistantMessage: ChatMessageEntity) {
         insertChatSession(session)
         insertMessage(userMessage)
-        insertMessage(crisisMessage)
-        touchChatSession(session.chatSessionId, crisisMessage.timestampMs)
+        insertMessage(assistantMessage)
+        touchChatSession(session.chatSessionId, assistantMessage.timestampMs)
     }
 
     /** Any lost ownership/consent during a write rolls back the entire assistant turn. */
@@ -171,6 +175,18 @@ interface ChatDao {
         requireAllowed()
         insertMessage(message)
         touchChatSession(message.chatSessionId, message.timestampMs)
+        requireAllowed()
+    }
+
+    @Transaction
+    suspend fun persistAssessmentTurn(
+        session: ChatSessionEntity,
+        userMessage: ChatMessageEntity,
+        recommendation: ChatMessageEntity,
+        requireAllowed: suspend () -> Unit
+    ) {
+        requireAllowed()
+        persistTurnPair(session, userMessage, recommendation)
         requireAllowed()
     }
 

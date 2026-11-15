@@ -18,6 +18,10 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     }
     object Verbatim : Screen("verbatim", "Verbatim+", Icons.Outlined.Mic)
     object Chat : Screen("chat", "AI+", Icons.Outlined.Chat)
+    object AssessmentCatalog : Screen("assessments", "Asesmen", Icons.Outlined.Description)
+    object AssessmentDetail : Screen("assessments/{instrumentId}", "Detail asesmen", Icons.Outlined.Description) {
+        fun createRoute(instrumentId: String): String = "assessments/${Uri.encode(instrumentId)}"
+    }
     object Profile : Screen("profile", "Profile", Icons.Outlined.Person)
     object CounselorPersona : Screen("counselor-persona", "Persona", Icons.Outlined.Person)
     object DocumentLibrary : Screen("documents", "Knowledge Base", Icons.Outlined.Description)
@@ -39,7 +43,7 @@ fun parentDestinationFor(route: String?): Screen? = when {
     route == null -> null
     route == Screen.History.route || route.startsWith("history/") -> Screen.History
     route == Screen.Verbatim.route -> Screen.Verbatim
-    route == Screen.Chat.route -> Screen.Chat
+    route == Screen.Chat.route || route == Screen.AssessmentCatalog.route || route.startsWith("assessments/") -> Screen.Chat
     route == Screen.Profile.route || route == Screen.CounselorPersona.route -> Screen.Profile
     route == Screen.DocumentLibrary.route || route.startsWith("documents/") -> Screen.Chat
     else -> Screen.Home

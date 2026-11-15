@@ -24,6 +24,7 @@ import com.stressdetector.mobile.data.db.StressDatabase
 import com.stressdetector.mobile.data.reminder.EncryptedAiReminderSecretStore
 import com.stressdetector.mobile.data.reminder.RoomAiReminderRepository
 import com.stressdetector.mobile.data.reminder.SharedPreferencesAiReminderSettings
+import com.stressdetector.mobile.data.repository.AssessmentRepository
 import com.stressdetector.mobile.data.repository.RoomCounselorPersonaRepository
 import com.stressdetector.mobile.data.repository.RoomLiveMonitorRecordStore
 import com.stressdetector.mobile.data.repository.SafCounselorPersonaRepository
@@ -157,7 +158,8 @@ object AppLocator {
                 secretStore = aiReminderSecretStore(context),
                 scheduler = aiReminderScheduler(context),
                 settings = aiReminderSettings(context)
-            )
+            ),
+            assessmentResults = { knowledgeBaseDatabase(context.applicationContext).assessmentResultDao() }
         ).also { dataLifecycleInstance = it }
     }
 
@@ -210,6 +212,13 @@ object AppLocator {
     }
 
     @Volatile private var knowledgeBaseDatabaseInstance: KnowledgeBaseDatabase? = null
+    fun assessmentRepository(context: Context): AssessmentRepository {
+        val appContext = context.applicationContext
+        return AssessmentRepository(appContext) {
+            knowledgeBaseDatabase(appContext).assessmentResultDao()
+        }
+    }
+
     fun knowledgeBaseDatabase(context: Context): KnowledgeBaseDatabase = knowledgeBaseDatabaseInstance ?: synchronized(this) {
         knowledgeBaseDatabaseInstance ?: KnowledgeBaseDatabase.get(
             context.applicationContext,

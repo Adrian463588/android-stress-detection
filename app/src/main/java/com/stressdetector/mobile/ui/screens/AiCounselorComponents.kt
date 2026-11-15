@@ -60,7 +60,9 @@ internal data class CounselorNavigation(
     val windowSizeClass: WindowWidthSizeClass,
     val onNavigateToLibrary: () -> Unit,
     val onNavigateToProfile: () -> Unit,
-    val onRequestNotificationPermission: () -> Unit
+    val onRequestNotificationPermission: () -> Unit,
+    val onOpenAssessments: () -> Unit = {},
+    val onOpenAssessment: (String) -> Unit = {}
 )
 
 internal data class CounselorDialogState(
@@ -282,7 +284,7 @@ private fun CounselorBottomBar(model: CounselorScreenModel) {
         ) {
             if (!state.isModelReady && state.phase != CounselorPhase.CRISIS_ESCALATION) {
                 Text(
-                    text = "Gemma belum siap. Pertanyaan normal menunggu model; dukungan krisis lokal tetap tersedia.",
+                    text = "Gemma belum siap. Rekomendasi asesmen dan dukungan krisis tetap tersedia.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.semantics {

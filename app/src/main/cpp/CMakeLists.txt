@@ -15,6 +15,9 @@ target_compile_features(verbatim_prosody PRIVATE cxx_std_17)
 target_link_libraries(verbatim_prosody PRIVATE SMILEapi)
 target_link_options(verbatim_prosody PRIVATE "-Wl,-z,max-page-size=16384")
 
-add_library(secure_file_ops SHARED secure_file_ops_jni.cpp)
+add_library(secure_file_ops SHARED
+    secure_file_ops_jni.cpp
+    app_security_jni.cpp
+)
 target_compile_features(secure_file_ops PRIVATE cxx_std_17)
 target_link_options(secure_file_ops PRIVATE "-Wl,-z,max-page-size=16384")

@@ -1,8 +1,148 @@
-# Stress Detector untuk Android dan Galaxy Watch
+# Stress Detector & Clinical Psychological Companion untuk Android dan Galaxy Watch
 
-Aplikasi pendamping yang merekam PPG dari Galaxy Watch dan menghitung hasil stres
-secara lokal di HP. Hasilnya adalah **bantuan pengambilan keputusan**, bukan
-diagnosis medis.
+Aplikasi pendamping klinis offline yang merekam biosinyal PPG dari Samsung Galaxy Watch (Green, IR, Red) untuk klasifikasi stres real-time menggunakan ONNX Runtime, dilengkapi dengan **Bank Asesmen & Materi Konseling (35+ alat tes psikometri kognitif & kepribadian)**, konseling berbasis **Offline RAG & Persona Adaptation (AI+)**, analisis rekaman audio sesi konseling **Verbatim+**, serta pengamanan menyeluruh **Mobile App Hardening (OWASP MASVS-RESILIENCE)**.
+
+Hasil fisiologis dan psikometri adalah **bantuan pengambilan keputusan (decision-support tool)**, bukan diagnosis medis mutlak atau pendeteksi kebohongan.
+
+---
+
+## 🚀 Release Candidate (RC) — Phone v0.1.6-rc1 (Build Production Release)
+
+- **Unduh Release Candidate**: [`app-production-release.apk`](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.6-rc1/app-production-release.apk) · [Rincian Rilis v0.1.6-rc1](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.6-rc1)
+- **Target Arsitektur (ABI)**: `arm64-v8a` (dioptimasi penuh), `armeabi-v7a`, `x86_64`
+- **Konfigurasi Android**: Package `com.stressdetector`, Min SDK 26 (Android 8.0 Oreo), Target SDK 34 (Android 14 UpsideDownCake), Compile SDK 35 (Android 15 VanillaIceCream), Version Code `7`, Version Name `0.1.6-rc1`.
+- **Ukuran File**: `286,793,076 byte` (~273.5 MB, memuat offline speech model Sherpa-ONNX, openSMILE config, model ONNX biosinyal, dan katalog offline psikometri).
+- **Integritas & Checksum SHA-256**:
+  ```text
+  A4E4031251D983FA39A039442476F0D8B44EE105095493C8ECE064120DEE4D59  app-production-release.apk
+  ```
+- **Status Verifikasi Perangkat Nyata**: Teruji dan berjalan mulus pada Samsung Galaxy S20 Ultra (`SM-G988B`, serial `RRCN3008VYE`) dan Xiaomi 14 (`2412DPC0AG`). Seluruh modul (Home, History, Verbatim+, AI Counselor, Bank Asesmen, dan Profile) berfungsi 100% offline tanpa ketergantungan server luar.
+
+---
+
+## 🛡️ Mobile App Hardening & Security (OWASP MASVS-RESILIENCE)
+
+Aplikasi beroperasi secara **100% offline** tanpa transmisi ke cloud atau server backend. Untuk melindungi hak kekayaan intelektual algoritma, mencegah tampering (modifikasi APK), dan menjaga kerahasiaan data klinis pasien, diterapkan arsitektur keamanan berlapis (*Defense-in-Depth*):
+
+```text
++-----------------------------------------------------------------------------------+
+|                        MOBILE APP HARDENING ARCHITECTURE                          |
++-----------------------------------------------------------------------------------+
+| [Layer 1: ProGuard / R8 Full Mode]                                                |
+|  - Aggressive dead code stripping & resource shrinking                           |
+|  - Repackage classes ('') to obscure package hierarchy                            |
+|  - 5-pass bytecode optimization & logging scrubber (android.util.Log removed)   |
+|  - Native symbols stripped (debugSymbolLevel = "none")                            |
++-----------------------------------------------------------------------------------+
+| [Layer 2: Native C/C++ Security (NDK / libsecure_file_ops.so)]                    |
+|  - In-memory ptrace anti-debugging test (PTRACE_TRACEME self-attach)              |
+|  - /proc/self/status TracerPid scanning                                           |
+|  - /proc/self/maps memory inspection (Frida, Xposed, Substrate hooks)              |
+|  - /proc/net/tcp port scanning (Frida default server port 27042)                  |
++-----------------------------------------------------------------------------------+
+| [Layer 3: APK Integrity & Anti-Tampering]                                         |
+|  - Genuine package name verification (com.stressdetector)                         |
+|  - Genuine signing certificate SHA-256 fingerprint verification                   |
+|  - API 33+ (Tiramisu) PackageInfoFlags compatibility without NewApi lint error    |
+|  - Java Debugger active detection (Debug.isDebuggerConnected, FLAG_DEBUGGABLE)    |
+|  - Root environment scan (su binary paths, Magisk dirs, test-keys build tags)     |
++-----------------------------------------------------------------------------------+
+| [Layer 4: Hardware-Backed Keystore & Storage Encryption]                          |
+|  - Android Keystore System (AndroidKeyStore) AES-256-GCM authenticated encryption |
+|  - MasterKey provider for local clinical session data & private keys               |
+|  - SecureStorageManager for clinical exports & assessment history                 |
++-----------------------------------------------------------------------------------+
+| [Layer 5: Offline Asset & Manifest Integrity]                                     |
+|  - SHA-256 digest validation of psychometrics catalog.json & protocols.json      |
+|  - Bundled RAG knowledge manifest checksum enforcement                            |
++-----------------------------------------------------------------------------------+
+```
+
+---
+
+## 🧠 Bank Asesmen & Materi Konseling (35+ Alat Tes Psikometri)
+
+Aplikasi menyediakan bank asesmen psikologi terlengkap yang dapat dikerjakan langsung secara digital di perangkat Android (dengan input sentuhan jari maupun stylus Samsung S Pen) maupun dihitung melalui kalkulator rekapitulasi skor:
+
+### 1. Asesmen Kognitif & Inteligensi (Pengerjaan Langsung & Skoring Otomatis)
+- **Wonderlic Personnel Test (WPT)**: 50 butir soal kognitif penalaran logika, numerik, dan verbal otentik dengan batas waktu ketat 12 menit. Dilengkapi konversi skor mentah ke norma inteligensi umum dan interpretasi kapasitas belajar kerja.
+- **TIU 5 (Tes Inteligensi Umum 5)**: 30 butir soal penalaran figural (analogi dan serial bentuk gambar geometris) dengan stimulus gambar tajam, skoring otomatis, dan konversi ke norma standar kognitif.
+- **TIU 6 (Tes Inteligensi Umum 6 - Spatial Net / Jaring-Jaring 3D)**: 40 butir stimulus jaring-jaring bangun ruang (9 ragam bentuk: balok, kubus, prisma, piramida, kerucut terpancung) dalam 8 baris soal. Opsi toggle respons interaktif ("Dapat Dilipat Utuh" / "Tidak Dapat Dilipat").
+- **Raven's Standard Progressive Matrices (SPM)**: 60 butir soal penalaran non-verbal (Set A, B, C, D, E) lengkap dengan stimulus matriks pola dan potongan gambar pilihan jawaban. Menghasilkan skor mentah, persentil, dan grade inteligensi (Grade I s.d. Grade V).
+- **Culture Fair Intelligence Test (CFIT 3A & CFIT 2A)**: 50 butir (Skala 3A) dan 46 butir (Skala 2A) bebas budaya yang terbagi ke dalam 4 subtes: Seri Gambar, Klasifikasi Bentuk, Matriks Pola, dan Kondisi Topologis Persyaratan Titik. Pemotongan gambar presisi tinggi dengan konversi IQ standar Cattell.
+- **Army Alpha Intelligence Test (Form A / UI-10013-96)**: 12 subtes pengukuran ketangkasan mental dan eksekusi instruksi lisan/visual (instruksi lingkaran/angka, aritmatika, praktis, sinonim-antonim, deret angka, analogi verbal, hingga peribahasa). Dilengkapi interpretasi IQ dan grade mental.
+- **Intelligenz Struktur Test (IST)**: 9 subtes terintegrasi (SE, WA, AN, GE, ME, RA, ZR, FA, WU) dengan psikogram komprehensif.
+
+### 2. Asesmen Kepribadian, Sikap Kerja, & Minat
+- **PAPI Kostick (20 Dimensi Kerja)**: 90 pasang pernyataan preferensi kerja (kebutuhan kerja dan peran kepemimpinan). Menghasilkan psikogram diagram jaring laba-laba (*spider web chart*).
+- **Edward Personal Preference Schedule (EPPS)**: 225 pasang pilihan paksa (*forced-choice*) mengukur 15 kebutuhan psikologis Murray dan skor konsistensi kejujuran (Consistency Score).
+- **Management Style Diagnosis Test (MSDT)**: 64 butir gaya kepemimpinan Reddin (Dedicated, Integrated, Related, Separated, Developer, Benevolent Autocrat, Bureaucrat, Compromiser, Missionary, Autocrat, Deserter, Executive).
+- **Management Skills Assessment Instrument (MSAI)**: 12 kompetensi manajerial Quin.
+- **Enneagram**: 9 tipe kepribadian adaptif dengan identifikasi *wing* dan level integrasi/disintegrasi.
+- **Self-Reporting Questionnaire (SRQ-29)**: Skrining 29 gejala gangguan mental emosional, neurotik, psikotik, dan penyalahgunaan zat.
+- **Visual-Auditory-Kinesthetic (VAK)**: Modalitas gaya belajar dominan.
+- **Tes Pauli & Kraepelin**: Tes ketahanan kerja, kecepatan, ketelitian, dan stabilitas emosi melalui kalkulasi penjumlahan angka acak.
+- **16PF, MBTI, DISC, RMIB (Rothwell-Miller Interest Blank)**.
+
+### 3. Asesmen Proyektif Klinis
+- **Tes Rorschach (Inkblot Test)**: 10 kartu bercak tinta otentik (Kartu I s.d. X) dengan alur fase respon (*Response Phase*) dan fase penelusuran (*Inquiry Phase*). Dilengkapi protokol *Exner Comprehensive System (CS)* untuk koding Lokasi (W, D, Dd, S), Perkembangan Bentuk (DQ), Determinan (F, M, FM, m, C, CF, FC, T, Y, V), Kualitas Bentuk (FQ), Konten (H, (H), A, (A), Art, Id), dan Popular (P), serta indeks EB, EA, es, D-Score, CDI, S-CON, dan DEPI.
+- **Tes Wartegg (8 Kotak Stimulus)**: Analisis gambar arketipal 8 figur dengan urutan penarikan garis, profil kepribadian, dan dinamika emosi.
+
+---
+
+## 🤖 Integrasi AI Counselor (AI+) & Offline RAG
+
+Seluruh hasil asesmen yang telah diselesaikan disimpan secara aman di database lokal Room (`clinical_assessments`). Ketika konselor atau pengguna berinteraksi di tab **AI+ (AI Counselor)**:
+1. **Context-Aware Retrieval**: Sistem RAG lokal secara otomatis mengambil skor, ringkasan subskala, dan interpretasi psikotes pasien yang relevan via pencarian hybrid BM25 + cosine similarity embedding lokal.
+2. **Adaptive Persona Synthesis**: Prompt sistem konselor memadukan data fisiologis stres (rata-rata detak jantung, RMSSD, level stres) dan profil psikometri untuk menyusun respons empati, psikoedukasi terarah, dan rekomendasi intervensi psikologis yang dipersonalisasi.
+3. **Privasi 100% Terjaga**: Seluruh proses embedding, penalaran LLM offline, dan penyimpanan data tidak pernah meninggalkan memori lokal perangkat.
+
+---
+
+## 🏷️ GitHub Topics & Metadata Repository
+
+Untuk meningkatkan *discoverability* di GitHub, disarankan menambahkan topik berikut pada pengaturan repositori:
+```text
+android, jetpack-compose, biosignals, ppg, ecg, hrv, stress-detection, wearos, psychometrics, psychological-assessment, counseling, offline-ai, rag, owasp-masvs, app-hardening, mobile-security, onnx-runtime, sherpa-onnx, material-3
+```
+
+---
+
+## Versi sebelumnya — Phone v0.1.5 / Watch v0.1.1 tetap
+
+- [Unduh Phone v0.1.5](https://github.com/HRVSkripsi/CleaningDataAdrian/releases/download/android-v0.1.5/app-production-debug.apk) · [rincian rilis](https://github.com/HRVSkripsi/CleaningDataAdrian/releases/tag/android-v0.1.5) · [SHA-256](docs/evidence/stress-parity-20261017/SHA256SUMS-0.1.5.txt). Repository private; akun perlu diberi akses.
+- APK debug internal, package `com.stressdetector`, version code 6. Perbaikan menyamakan laju filter/fitur dengan artifact model dan melengkapi fingerprint preprocessing sesi; model run `20260916T132736Z`, kalibrasi dan threshold tidak diganti.
+- Terpasang in-place pada Xiaomi `2412DPC0AG` dengan `-r -d`. Identitas direktori data, waktu instalasi pertama dan tiga laporan lama yang diperiksa tetap utuh. Capture raw debug sudah dikembalikan ke nonaktif.
+- Replay rekaman Watch aktual melalui APK baru cocok dengan Python pada cleaning, fitur dan ONNX, 7/7 window Green serta 7/7 IR. Ini bukti replay numerik, bukan rekaman sensor baru.
+- Sesi fisik baru 300 detik: Green **Normal**, 7/7 window valid; IR **Sinyal tidak cukup** akibat gap. Grafik `CLEANED_CORE` tersimpan dan dapat dibuka di History. Verifikasi capture penuh tetap **NO_GO** karena tiga konflik timestamp batas batch Red diagnostik; pemeriksaan numerik Green saja lulus dan tidak dijadikan receipt sensor penuh.
+- JVM 903/903, ktlint, detekt, lint production Phone/Wear dan assembly lulus. Suite Python aktif terakhir: 468 lulus, tanpa skip, satu warning; Ruff lulus. Tidak ada crash baru package target pada interval pengujian.
+- [Bukti, perbandingan Agustus dan pekerjaan yang masih terbuka](docs/evidence/stress-parity-20261017/acceptance.md). Akurasi/false positive belum terselesaikan oleh parity software; ini bukan alat diagnosis. AI+, Verbatim+, seluruh ukuran layar dan TalkBack tidak diuji ulang pada perubahan ini.
+- [Watch v0.1.1](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/wear-production-debug.apk) tetap companion; tidak ada APK Watch baru pada rilis ini.
+
+Preview Home sesudah replacement, sebelum probe sesi berhasil. Respons Watch pada gambar telah kedaluwarsa; state diblokir ini bukan bukti perekaman gagal:
+
+![Home v0.1.5 aktual pada Xiaomi](docs/evidence/stress-parity-20261017/home-prerequisite-v015-20261018.png)
+
+## Preview sebelumnya — Phone v0.1.4 / Watch v0.1.1
+
+- [Unduh Phone v0.1.4](https://github.com/HRVSkripsi/CleaningDataAdrian/releases/download/android-v0.1.4/app-production-debug.apk) · [rincian rilis](https://github.com/HRVSkripsi/CleaningDataAdrian/releases/tag/android-v0.1.4).
+- [Unduh Watch v0.1.1](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/wear-production-debug.apk) · [rincian rilis](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.1).
+- [SHA-256](docs/evidence/permission-onboarding-20261017/SHA256SUMS-0.1.4.txt) · [evidence dan batas acceptance](docs/evidence/permission-onboarding-20261017/acceptance.md).
+- [Receipt instalasi Phone+Watch, baseline rollback, dan verifikasi pelestarian data](docs/evidence/paired-update-20261017/acceptance.md).
+- APK debug internal, package `com.stressdetector`, version code 5. Unduh memerlukan akses ke repository private.
+- Watch v0.1.1 memakai package yang sama dan launch smoke lulus pada Galaxy Watch SM-R920. Data Layer, streaming PPG, dan sesi stres tidak diuji dalam acceptance instalasi ini.
+- Tombol Home `Izinkan aplikasi` membuka satu sheet yang memuat Lokasi, Mikrofon, Bluetooth, Perangkat sekitar, Notifikasi, dan Penyimpanan. `Izinkan akses yang diperlukan` meminta semua runtime permission yang masih kurang dan berlaku pada versi Android itu. Sistem Android menentukan urutan/pengelompokan dialog; SAF membuka pemilih dokumen tanpa akses storage luas.
+- Uji manual di Android 13 menampilkan dialog native Mikrofon dan Notifikasi. Nearby devices adalah grup izin Bluetooth; izin scan sudah aktif sehingga Android tidak menampilkan dialog kedua. Lokasi ditandai tidak diperlukan pada API ini.
+- APK dipasang dengan `adb install --user 0 -r -d`; `firstInstallTime` dan inode data tetap sama. Izin sementara dari uji dikembalikan; Home diluncurkan ulang dan menampilkan Watch tidak tersedia karena Watch tidak terhubung.
+- Unit test JVM 885/885, ktlint, detekt, lint phone/Wear dan assembly lulus. Ini tidak membuktikan koneksi Watch, PPG, perekaman mikrofon, atau delivery notifikasi.
+
+![Gerbang izin Home pada Samsung SM-G988B](docs/evidence/permission-onboarding-20261017/permission-gate-v014.png)
+
+![Sheet enam kategori dan CTA izin](docs/evidence/permission-onboarding-20261017/permission-sheet-v014.png)
+
+![Dialog sistem Mikrofon](docs/evidence/permission-onboarding-20261017/permission-prompt-v014.png)
+
+![Dialog sistem Notifikasi](docs/evidence/permission-onboarding-20261017/permission-next-prompt-v014.png)
 
 ## Preview pengembangan Verbatim+ v0.1.2
 
@@ -19,6 +159,8 @@ Preview debug internal, bukan klaim akurasi forensik, diagnosis atau pendeteksi 
 
 ### Riwayat unduhan
 
+- [Unduh Phone v0.1.4 historis](https://github.com/HRVSkripsi/CleaningDataAdrian/releases/download/android-v0.1.4/app-production-debug.apk) · [rincian v0.1.4](https://github.com/HRVSkripsi/CleaningDataAdrian/releases/tag/android-v0.1.4) — izin aplikasi dan update paired; tidak berisi perbaikan cadence v0.1.5.
+- [Unduh Phone v0.1.3 historis](https://github.com/HRVSkripsi/CleaningDataAdrian/releases/download/android-v0.1.3/app-production-debug.apk) · [rincian v0.1.3](https://github.com/HRVSkripsi/CleaningDataAdrian/releases/tag/android-v0.1.3) — alur izin lama, hanya Watch.
 - [Unduh Phone v0.1.2 preview](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.2/app-production-debug.apk).
 - [Rilis v0.1.2 dan keterbatasannya](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.2), [checksum SHA-256](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.2/SHA256SUMS-0.1.2.txt).
 - [Unduh companion Watch v0.1.1](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.1/wear-production-debug.apk) — tidak berubah pada rilis ini.

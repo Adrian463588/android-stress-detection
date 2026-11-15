@@ -1,0 +1,2122 @@
+[
+  {
+    "instrumentId": "16pf",
+    "edition": "Form C / edisi kelima",
+    "section": "4–6",
+    "method": "Periksa kelengkapan dan gaya respons, lalu hitung skor tiap faktor dengan kunci edisi yang dipakai. Faktor penalaran memakai aturan tersendiri.",
+    "interpretation": "Baca kombinasi faktor dan indeks respons berdasarkan sten dari kelompok norma yang sesuai.",
+    "limitation": "Rekap sten dari laporan yang sudah ditinjau. Aplikasi memeriksa rentang. Konversi skor mentah, validitas respons dan penafsiran lintas faktor tetap oleh pemeriksa.",
+    "entry": {
+      "version": "16PF Form C · sten dari laporan",
+      "instructions": "Salin sten faktor primer dari laporan Form C yang telah dinilai dan dinyatakan layak diinterpretasi oleh pemeriksa.",
+      "operation": "PROFILE",
+      "fields": [
+        {
+          "label": "A Kehangatan",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "B Penalaran",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "C Stabilitas emosi",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "E Dominansi",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "F Keaktifan",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "G Kepatuhan aturan",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "H Keberanian sosial",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "I Kepekaan",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "L Kewaspadaan",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "M Imajinasi",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "N Privasi",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "O Kekhawatiran",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "Q1 Keterbukaan perubahan",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "Q2 Kemandirian",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "Q3 Pengendalian diri",
+          "minimum": 1,
+          "maximum": 10
+        },
+        {
+          "label": "Q4 Ketegangan",
+          "minimum": 1,
+          "maximum": 10
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "adversity_quotient",
+    "edition": "ARP Stoltz 20 butir",
+    "section": "4–6",
+    "method": "Jumlahkan skor lima respons per dimensi CORE lalu kalikan jumlah keempat dimensi dengan dua.",
+    "interpretation": "Profil menggambarkan cara peserta menilai respons terhadap kesulitan dalam kuesioner ini.",
+    "limitation": "ARP 20 butir berbeda dari varian lokal 15 butir. Skor ini tidak memakai ambang kategori atau pemetaan tipe.",
+    "entry": {
+      "version": "ARP Stoltz 20 butir",
+      "instructions": "Masukkan jumlah mentah lima respons per dimensi CORE dari lembar ARP Stoltz 20 butir yang lengkap.",
+      "operation": "AQ",
+      "fields": [
+        {
+          "label": "Control",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Ownership",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Reach",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Endurance",
+          "minimum": 5,
+          "maximum": 25
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "army_alpha",
+    "edition": "UI-10013-96 · 12 instruksi",
+    "section": "4–6",
+    "method": "Hitung instruksi lisan yang dilaksanakan tepat sesuai kunci bentuk lokal. Setiap butir bernilai maksimum satu.",
+    "interpretation": "Skor mentah menunjukkan banyaknya instruksi yang terpenuhi pada lembar dan kondisi tersebut.",
+    "limitation": "Norma Army Alpha historis dan kategori dari institusi lain tidak digunakan.",
+    "entry": {
+      "version": "Army Alpha UI-10013-96",
+      "instructions": "Gunakan rekap lembar Army Alpha UI-10013-96 yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "TOTAL",
+      "fields": [
+        {
+          "label": "Instruksi benar 1–6",
+          "minimum": 0,
+          "maximum": 6
+        },
+        {
+          "label": "Instruksi benar 7–12",
+          "minimum": 0,
+          "maximum": 6
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "bdi",
+    "edition": "BDI-II · 21 butir",
+    "section": "4–6",
+    "method": "Pemeriksa menjumlahkan skor opsi 0–3 pada setiap butir sesuai BDI-II dan meninjau respons keselamatan (butir 9) secara langsung.",
+    "interpretation": "Rentang baku Beck: 0–13 Minimal, 14–19 Ringan, 20–28 Sedang, 29–63 Berat. Nilai butir 9 >= 1 memerlukan evaluasi risiko keselamatan segera.",
+    "limitation": "Skor total membantu evaluasi intensitas keparahan gejala depresi; bukan penegak diagnosis klinis mandiri.",
+    "entry": {
+      "version": "BDI-II Beck 21 butir",
+      "instructions": "Masukkan skor opsi 0–3 untuk masing-masing 21 butir gejala BDI-II (Butir 9 adalah item kritis keselamatan).",
+      "operation": "BDI",
+      "fields": [
+        {
+          "label": "1. Kesedihan",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "2. Pesimisme",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "3. Kegagalan Masa Lalu",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "4. Kehilangan Kesenangan",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "5. Perasaan Bersalah",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "6. Perasaan Dihukum",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "7. Ketidaksukaan Diri",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "8. Kritik Diri",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "9. Ide Bunuh Diri (Kritis)",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "10. Menangis",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "11. Kegelisahan",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "12. Kehilangan Minat",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "13. Keraguan",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "14. Ketidakberhargaan",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "15. Kehilangan Energi",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "16. Perubahan Pola Tidur",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "17. Mudah Tersinggung",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "18. Perubahan Nafsu Makan",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "19. Sulit Konsentrasi",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "20. Kelelahan",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "21. Kehilangan Minat Seksual",
+          "minimum": 0,
+          "maximum": 3
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "big_five",
+    "edition": "IPIP-BFM-50 Indonesia",
+    "section": "4A, 5–6",
+    "method": "Balik item berkunci negatif pada skala satu sampai lima, lalu jumlahkan sepuluh butir per dimensi.",
+    "interpretation": "Baca masing-masing dari lima dimensi sebagai kecenderungan yang dilaporkan pada kuesioner.",
+    "limitation": "Norma BFI atau IPIP versi lain tidak dipakai. Interpretasi bersifat deskriptif."
+  },
+  {
+    "instrumentId": "cbi",
+    "edition": "CBI NFA 2004 · EN",
+    "section": "Bagian II, 2–3",
+    "method": "Rata-ratakan jawaban berskala nol sampai seratus per subskala. Balik item energi untuk keluarga dan teman. Minimum jawaban personal tiga, pekerjaan empat, klien tiga.",
+    "interpretation": "Nilai lebih besar berarti kelelahan yang lebih sering atau lebih kuat pada konteks subskala tersebut.",
+    "limitation": "Laporkan subskala yang memenuhi kelengkapan secara terpisah. Tidak ada ambang diagnosis universal."
+  },
+  {
+    "instrumentId": "cfit_2a",
+    "edition": "CFIT Skala 2 Form A · 46 butir",
+    "section": "4–6",
+    "method": "Jumlahkan skor benar pada empat subtes setelah lembar dikoreksi dengan kunci yang cocok dengan cetakannya.",
+    "interpretation": "Total adalah performa mentah pada Form 2A dengan prosedur yang dipakai.",
+    "limitation": "Kunci dua pilihan pada subtes klasifikasi perlu dicocokkan dengan cetakan. Aplikasi hanya menjumlahkan rekap yang sudah dikoreksi.",
+    "entry": {
+      "version": "CFIT 2A · 46 butir",
+      "instructions": "Gunakan rekap lembar CFIT 2A · 46 butir yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "TOTAL",
+      "fields": [
+        {
+          "label": "Deret",
+          "minimum": 0,
+          "maximum": 12
+        },
+        {
+          "label": "Klasifikasi",
+          "minimum": 0,
+          "maximum": 14
+        },
+        {
+          "label": "Matriks",
+          "minimum": 0,
+          "maximum": 12
+        },
+        {
+          "label": "Kondisi",
+          "minimum": 0,
+          "maximum": 8
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "cfit_3a",
+    "edition": "CFIT Skala 3 Form A · 50 butir",
+    "section": "4–6",
+    "method": "Jumlahkan skor benar pada empat subtes. Periksa kedua pilihan klasifikasi dengan kunci sebelum memasukkan rekap.",
+    "interpretation": "Skor total dan subtes menggambarkan performa pada Form 3A, dengan rentang subtes yang berbeda.",
+    "limitation": "Tabel konversi lokal belum dipakai untuk IQ atau norma. Gunakan skor yang sudah dikoreksi pemeriksa.",
+    "entry": {
+      "version": "CFIT 3A · UI-10443-96",
+      "instructions": "Gunakan rekap lembar CFIT 3A · UI-10443-96 yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "TOTAL",
+      "fields": [
+        {
+          "label": "Deret",
+          "minimum": 0,
+          "maximum": 13
+        },
+        {
+          "label": "Klasifikasi",
+          "minimum": 0,
+          "maximum": 14
+        },
+        {
+          "label": "Matriks",
+          "minimum": 0,
+          "maximum": 13
+        },
+        {
+          "label": "Kondisi",
+          "minimum": 0,
+          "maximum": 10
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "disc",
+    "edition": "DISC klasik · 24 kelompok",
+    "section": "4–6",
+    "method": "Hitung Most dan Least per huruf termasuk netral. Kurangi Least dari Most per dimensi untuk memperoleh Change.",
+    "interpretation": "Selisih mentah menunjukkan perbedaan pilihan per dimensi pada lembar ini.",
+    "limitation": "Pemetaan ke grafik, garis tengah, atau tipe perlu tabel dari versi instrumen yang dipakai.",
+    "entry": {
+      "version": "DISC klasik 24 kelompok",
+      "instructions": "Gunakan rekap lembar DISC klasik 24 kelompok yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "DISC",
+      "fields": [
+        {
+          "label": "D Most",
+          "minimum": 0,
+          "maximum": 24
+        },
+        {
+          "label": "I Most",
+          "minimum": 0,
+          "maximum": 24
+        },
+        {
+          "label": "S Most",
+          "minimum": 0,
+          "maximum": 24
+        },
+        {
+          "label": "C Most",
+          "minimum": 0,
+          "maximum": 24
+        },
+        {
+          "label": "Netral Most",
+          "minimum": 0,
+          "maximum": 24
+        },
+        {
+          "label": "D Least",
+          "minimum": 0,
+          "maximum": 24
+        },
+        {
+          "label": "I Least",
+          "minimum": 0,
+          "maximum": 24
+        },
+        {
+          "label": "S Least",
+          "minimum": 0,
+          "maximum": 24
+        },
+        {
+          "label": "C Least",
+          "minimum": 0,
+          "maximum": 24
+        },
+        {
+          "label": "Netral Least",
+          "minimum": 0,
+          "maximum": 24
+        }
+      ],
+      "requiredTotal": 24,
+      "groupSize": 5
+    }
+  },
+  {
+    "instrumentId": "enneagram",
+    "edition": "Inventori lokal 180 butir",
+    "section": "4–5",
+    "method": "Jumlahkan rating nol sampai tiga dari dua puluh butir per tipe pada workbook lokal.",
+    "interpretation": "Urutkan skor untuk melihat tema refleksi yang paling menonjol pada kuesioner ini. Skor sama memiliki posisi setara.",
+    "limitation": "Inventori lokal dan RHETI memakai aturan berbeda. Skor tidak menetapkan tipe tetap atau sayap.",
+    "entry": {
+      "version": "Enneagram lokal 180 butir",
+      "instructions": "Gunakan rekap lembar Enneagram lokal 180 butir yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "HIGH_FIRST",
+      "fields": [
+        {
+          "label": "Tipe 1",
+          "minimum": 0,
+          "maximum": 60
+        },
+        {
+          "label": "Tipe 2",
+          "minimum": 0,
+          "maximum": 60
+        },
+        {
+          "label": "Tipe 3",
+          "minimum": 0,
+          "maximum": 60
+        },
+        {
+          "label": "Tipe 4",
+          "minimum": 0,
+          "maximum": 60
+        },
+        {
+          "label": "Tipe 5",
+          "minimum": 0,
+          "maximum": 60
+        },
+        {
+          "label": "Tipe 6",
+          "minimum": 0,
+          "maximum": 60
+        },
+        {
+          "label": "Tipe 7",
+          "minimum": 0,
+          "maximum": 60
+        },
+        {
+          "label": "Tipe 8",
+          "minimum": 0,
+          "maximum": 60
+        },
+        {
+          "label": "Tipe 9",
+          "minimum": 0,
+          "maximum": 60
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "epps",
+    "edition": "EPPS · 225 pasangan",
+    "section": "4–6",
+    "method": "Periksa kelengkapan dan konsistensi pilihan berulang sebelum menjumlahkan skor baris dan kolom tiap kebutuhan.",
+    "interpretation": "Profil kebutuhan dibaca dengan mempertimbangkan sifat pilihan paksa dan hasil pemeriksaan konsistensi.",
+    "limitation": "Gunakan hanya rekap EPPS lengkap dengan CONS minimal sepuluh sesuai pedoman ini. Norma, persentil dan kategori belum dihitung.",
+    "entry": {
+      "version": "EPPS 225 pasangan · CONS minimum 10",
+      "instructions": "Gunakan lembar EPPS 225 pasangan yang lengkap. Masukkan skor s tiap kebutuhan dan CONS dari pemeriksa. Jumlah 15 skor s harus 210.",
+      "operation": "EPPS",
+      "fields": [
+        {
+          "label": "Achievement",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Deference",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Order",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Exhibition",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Autonomy",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Affiliation",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Intraception",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Succorance",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Dominance",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Abasement",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Nurturance",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Change",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Endurance",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Heterosexuality",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Aggression",
+          "minimum": 0,
+          "maximum": 28
+        },
+        {
+          "label": "Konsistensi (CONS)",
+          "minimum": 10,
+          "maximum": 15
+        }
+      ],
+      "requiredTotal": 210
+    }
+  },
+  {
+    "instrumentId": "frt",
+    "edition": "FRT Indonesia · 45 butir",
+    "section": "4A, 5–6",
+    "method": "Hitung benar dikurangi seperempat jumlah salah. Jawaban kosong tidak dikenai penalti. Jumlah rekap harus empat puluh lima.",
+    "interpretation": "Skor terkoreksi menggambarkan performa pada lembar figural dan metode koreksi ini.",
+    "limitation": "Edisi tanpa penalti memakai skor berbeda. Persentil atau IQ memerlukan norma yang sesuai.",
+    "entry": {
+      "version": "FRT 45 · koreksi menebak",
+      "instructions": "Gunakan rekap lembar FRT 45 · koreksi menebak yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "FRT",
+      "fields": [
+        {
+          "label": "Benar",
+          "minimum": 0,
+          "maximum": 45
+        },
+        {
+          "label": "Salah",
+          "minimum": 0,
+          "maximum": 45
+        },
+        {
+          "label": "Kosong",
+          "minimum": 0,
+          "maximum": 45
+        }
+      ],
+      "requiredTotal": 45
+    }
+  },
+  {
+    "instrumentId": "holland",
+    "edition": "RIASEC lokal · 108 butir",
+    "section": "3–6",
+    "method": "Hitung jawaban Ya pada masing-masing delapan belas butir per tipe. Urutkan keenam skor dari yang terbesar.",
+    "interpretation": "Skor menonjol menunjukkan minat relatif terhadap aktivitas. Skor sama memiliki posisi setara.",
+    "limitation": "Gunakan format lokal 108 butir. Aplikasi tidak menetapkan kode unik saat seri atau mengukur bakat.",
+    "entry": {
+      "version": "RIASEC lokal 108 butir",
+      "instructions": "Gunakan rekap lembar RIASEC lokal 108 butir yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "HIGH_FIRST",
+      "fields": [
+        {
+          "label": "Realistic",
+          "minimum": 0,
+          "maximum": 18
+        },
+        {
+          "label": "Investigative",
+          "minimum": 0,
+          "maximum": 18
+        },
+        {
+          "label": "Artistic",
+          "minimum": 0,
+          "maximum": 18
+        },
+        {
+          "label": "Social",
+          "minimum": 0,
+          "maximum": 18
+        },
+        {
+          "label": "Enterprising",
+          "minimum": 0,
+          "maximum": 18
+        },
+        {
+          "label": "Conventional",
+          "minimum": 0,
+          "maximum": 18
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "ist",
+    "edition": "IST-70 · 9 subtes",
+    "section": "4–6",
+    "method": "Jumlahkan delapan skor subtes yang sudah dikoreksi dan skor GE yang dinilai nol sampai dua per butir.",
+    "interpretation": "Skor mentah menggambarkan performa pada subtes. Skor dengan rentang berbeda perlu norma yang cocok untuk perbandingan.",
+    "limitation": "Konversi workbook ke IQ tidak digunakan. GE harus sudah diperiksa menurut rubrik edisi IST-70.",
+    "entry": {
+      "version": "IST-70 · 176 butir",
+      "instructions": "Gunakan rekap lembar IST-70 · 176 butir yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "TOTAL",
+      "fields": [
+        {
+          "label": "SE",
+          "minimum": 0,
+          "maximum": 20
+        },
+        {
+          "label": "WA",
+          "minimum": 0,
+          "maximum": 20
+        },
+        {
+          "label": "AN",
+          "minimum": 0,
+          "maximum": 20
+        },
+        {
+          "label": "GE",
+          "minimum": 0,
+          "maximum": 32
+        },
+        {
+          "label": "RA",
+          "minimum": 0,
+          "maximum": 20
+        },
+        {
+          "label": "ZR",
+          "minimum": 0,
+          "maximum": 20
+        },
+        {
+          "label": "FA",
+          "minimum": 0,
+          "maximum": 20
+        },
+        {
+          "label": "WU",
+          "minimum": 0,
+          "maximum": 20
+        },
+        {
+          "label": "ME",
+          "minimum": 0,
+          "maximum": 20
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "kraepelin",
+    "edition": "Manual Kraepelin lokal",
+    "section": "4–6",
+    "method": "Catat jumlah per lajur, kesalahan dan lompatan. Hitung kecepatan, ketelitian, kestabilan, dan arah perubahan dengan prosedur manual.",
+    "interpretation": "Baca profil capaian dan perubahan selama sesi dengan mempertimbangkan waktu serta kondisi pengerjaan.",
+    "limitation": "Khusus lembar paket 50 lajur dengan 27 pasangan per lajur. Skor mentah menggambarkan sesi. Norma dan klasifikasi tidak diterapkan.",
+    "entry": {
+      "version": "Kraepelin paket · 50 × 27",
+      "instructions": "Gunakan Soal & Ljk Kraepelin.pdf dari paket. Masukkan jumlah benar tiap lajur sesuai urutan, lalu total salah dan lompatan dari pemeriksa.",
+      "operation": "KRAEPELIN",
+      "fields": [
+        {
+          "label": "Benar lajur 1",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 2",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 3",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 4",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 5",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 6",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 7",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 8",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 9",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 10",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 11",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 12",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 13",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 14",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 15",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 16",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 17",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 18",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 19",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 20",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 21",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 22",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 23",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 24",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 25",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 26",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 27",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 28",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 29",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 30",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 31",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 32",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 33",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 34",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 35",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 36",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 37",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 38",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 39",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 40",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 41",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 42",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 43",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 44",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 45",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 46",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 47",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 48",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 49",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Benar lajur 50",
+          "minimum": 0,
+          "maximum": 27
+        },
+        {
+          "label": "Jumlah salah",
+          "minimum": 0,
+          "maximum": 1350
+        },
+        {
+          "label": "Jumlah lompatan",
+          "minimum": 0,
+          "maximum": 1350
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "kuder",
+    "edition": "Kuder KPR-V",
+    "section": "4–6",
+    "method": "Periksa indeks verifikasi V dahulu. Koreksi pilihan dengan kunci untuk sepuluh bidang minat, lalu gunakan norma bentuk yang cocok bila tersedia.",
+    "interpretation": "Pakai profil sebagai bahan eksplorasi minat dan klarifikasi bersama peserta.",
+    "limitation": "Rekap memakai V 38 sampai 44 dari workbook lokal. Skala mempunyai rentang berbeda dan tidak diperingkat dari skor mentah. Persentil belum dihitung.",
+    "entry": {
+      "version": "Kuder KPR-V · workbook lokal",
+      "instructions": "Masukkan indeks V dan sepuluh skor mentah dari kolom Raw Skor pada sheet Hasil setelah lembar diperiksa.",
+      "operation": "PROFILE",
+      "fields": [
+        {
+          "label": "V (Verification)",
+          "minimum": 38,
+          "maximum": 44
+        },
+        {
+          "label": "Outdoor",
+          "minimum": 0,
+          "maximum": 122
+        },
+        {
+          "label": "Mechanical",
+          "minimum": 0,
+          "maximum": 98
+        },
+        {
+          "label": "Computational",
+          "minimum": 0,
+          "maximum": 81
+        },
+        {
+          "label": "Scientific",
+          "minimum": 0,
+          "maximum": 104
+        },
+        {
+          "label": "Persuasive",
+          "minimum": 0,
+          "maximum": 125
+        },
+        {
+          "label": "Artistic",
+          "minimum": 0,
+          "maximum": 78
+        },
+        {
+          "label": "Literary",
+          "minimum": 0,
+          "maximum": 63
+        },
+        {
+          "label": "Musical",
+          "minimum": 0,
+          "maximum": 45
+        },
+        {
+          "label": "Social Service",
+          "minimum": 0,
+          "maximum": 116
+        },
+        {
+          "label": "Clerical",
+          "minimum": 0,
+          "maximum": 153
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "mbti",
+    "edition": "MBTI Form M / Varian 70 Butir",
+    "section": "4–6",
+    "method": "Hitung frekuensi skor pada masing-masing 8 kutub preferensi dan tentukan 4 huruf dominan beserta indeks kejelasan preferensi.",
+    "interpretation": "Menghasilkan tipe 4-huruf preferensi kepribadian (E/I, S/N, T/F, J/P) untuk pemahaman diri dan komunikasi.",
+    "limitation": "Hasil menunjukkan kecenderungan preferensi alamiah, bukan ukuran kompetensi, bakat, atau keberhasilan kerja.",
+    "entry": {
+      "version": "MBTI 8 Kutub 4 Dikotomi (70 butir)",
+      "instructions": "Masukkan rekap perolehan skor frekuensi untuk masing-masing 8 kutub preferensi MBTI.",
+      "operation": "MBTI",
+      "fields": [
+        {
+          "label": "Extraversion (E)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Introversion (I)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Sensing (S)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Intuition (N)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Thinking (T)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Feeling (F)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Judging (J)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Perceiving (P)",
+          "minimum": 0,
+          "maximum": 30
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "mit",
+    "edition": "Multiple Intelligences Gardner",
+    "section": "3–5",
+    "method": "Jumlahkan perolehan skor per dimensi sesuai formulir inventori 8 kecerdasan majemuk Howard Gardner.",
+    "interpretation": "Mengidentifikasi 2–3 kecerdasan dominan dan non-dominan untuk eksplorasi gaya belajar dan pengembangan potensi.",
+    "limitation": "Kuesioner laporan diri mengukur kecenderungan preferensi, bukan ukuran inteligensi umum (IQ) objektif.",
+    "entry": {
+      "version": "Multiple Intelligences Gardner 8 Dimensi",
+      "instructions": "Masukkan rekap skor perolehan untuk masing-masing dari 8 dimensi kecerdasan majemuk Gardner.",
+      "operation": "HIGH_FIRST",
+      "fields": [
+        {
+          "label": "Linguistik",
+          "minimum": 0,
+          "maximum": 50
+        },
+        {
+          "label": "Logis-Matematis",
+          "minimum": 0,
+          "maximum": 50
+        },
+        {
+          "label": "Visual-Spasial",
+          "minimum": 0,
+          "maximum": 50
+        },
+        {
+          "label": "Kinestetik-Jasmani",
+          "minimum": 0,
+          "maximum": 50
+        },
+        {
+          "label": "Musikal",
+          "minimum": 0,
+          "maximum": 50
+        },
+        {
+          "label": "Interpersonal",
+          "minimum": 0,
+          "maximum": 50
+        },
+        {
+          "label": "Intrapersonal",
+          "minimum": 0,
+          "maximum": 50
+        },
+        {
+          "label": "Naturalis",
+          "minimum": 0,
+          "maximum": 50
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "mmpi",
+    "edition": "MMPI Profil Skala Dasar",
+    "section": "3–6",
+    "method": "Pemeriksa memasukkan skor T (skor standar) untuk 3 skala validitas dan 10 skala klinis dasar setelah peninjauan protokol.",
+    "interpretation": "Skala validitas mengidentifikasi konsistensi pelaporan; skor T >= 65 menunjukkan elevasi klinis yang bermakna.",
+    "limitation": "Edisi dan skala MMPI memakai norma berbeda. Interpretasi klinis komprehensif wajib dilakukan oleh psikolog klinis/psikiater.",
+    "entry": {
+      "version": "MMPI Skala Validitas & Klinis Dasar",
+      "instructions": "Masukkan T-score (skor standar T) untuk skala validitas (L, F, K) dan 10 skala klinis dasar MMPI.",
+      "operation": "MMPI",
+      "fields": [
+        {
+          "label": "L (Lie)",
+          "minimum": 30,
+          "maximum": 120
+        },
+        {
+          "label": "F (Infrequency)",
+          "minimum": 30,
+          "maximum": 120
+        },
+        {
+          "label": "K (Defensiveness)",
+          "minimum": 30,
+          "maximum": 120
+        },
+        {
+          "label": "Hs (Hypochondriasis)",
+          "minimum": 30,
+          "maximum": 120
+        },
+        {
+          "label": "D (Depression)",
+          "minimum": 30,
+          "maximum": 120
+        },
+        {
+          "label": "Hy (Hysteria)",
+          "minimum": 30,
+          "maximum": 120
+        },
+        {
+          "label": "Pd (Psychopathic Deviate)",
+          "minimum": 30,
+          "maximum": 120
+        },
+        {
+          "label": "Mf (Masculinity-Femininity)",
+          "minimum": 30,
+          "maximum": 120
+        },
+        {
+          "label": "Pa (Paranoia)",
+          "minimum": 30,
+          "maximum": 120
+        },
+        {
+          "label": "Pt (Psychasthenia)",
+          "minimum": 30,
+          "maximum": 120
+        },
+        {
+          "label": "Sc (Schizophrenia)",
+          "minimum": 30,
+          "maximum": 120
+        },
+        {
+          "label": "Ma (Hypomania)",
+          "minimum": 30,
+          "maximum": 120
+        },
+        {
+          "label": "Si (Social Introversion)",
+          "minimum": 30,
+          "maximum": 120
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "msai",
+    "edition": "MSAI · 60 / 87 butir",
+    "section": "4–6",
+    "method": "Rata-ratakan lima penilaian per kompetensi dan tiga kompetensi per kuadran. Pisahkan kelompok penilai pada versi umpan balik.",
+    "interpretation": "Baca perbedaan perspektif sebagai bahan diskusi pengembangan manajerial.",
+    "limitation": "Hasil hanya untuk satu penilai dan bagian perilaku manajerial. Bagian tambahan workbook 87 butir dan perbandingan antarpenilai belum dihitung.",
+    "entry": {
+      "version": "MSAI perilaku manajerial 60 butir",
+      "instructions": "Gunakan jumlah mentah lima item per kompetensi dari satu lembar penilaian lengkap dengan skala 1–5.",
+      "operation": "MSAI",
+      "fields": [
+        {
+          "label": "Tim",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Hubungan interpersonal",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Pengembangan orang lain",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Inovasi",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Masa depan",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Perbaikan berkelanjutan",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Daya saing",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Memberi semangat",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Layanan pelanggan",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Akulturasi",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Sistem kontrol",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Koordinasi",
+          "minimum": 5,
+          "maximum": 25
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "msdt",
+    "edition": "Reddin MSDT · 64 pasangan",
+    "section": "4–6",
+    "method": "Tabulasikan delapan gaya dalam matriks. Versi workbook menambahkan koreksi sebelum pemetaan orientasi tugas, hubungan dan efektivitas.",
+    "interpretation": "Baca gaya dalam konteks peran dan situasi manajerial.",
+    "limitation": "Hasil merupakan rekap mentah. Koreksi workbook, skala TO, RO, E, dan klasifikasi gaya belum dihitung.",
+    "entry": {
+      "version": "MSDT Reddin 64 · skor sebelum koreksi",
+      "instructions": "Masukkan rekap delapan gaya dari 64 pilihan sebelum baris koreksi workbook.",
+      "operation": "PROFILE",
+      "fields": [
+        {
+          "label": "Deserter",
+          "minimum": 0,
+          "maximum": 16
+        },
+        {
+          "label": "Missionary",
+          "minimum": 0,
+          "maximum": 16
+        },
+        {
+          "label": "Autocrat",
+          "minimum": 0,
+          "maximum": 16
+        },
+        {
+          "label": "Compromiser",
+          "minimum": 0,
+          "maximum": 16
+        },
+        {
+          "label": "Bureaucrat",
+          "minimum": 0,
+          "maximum": 16
+        },
+        {
+          "label": "Developer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        {
+          "label": "Benevolent Autocrat",
+          "minimum": 0,
+          "maximum": 16
+        },
+        {
+          "label": "Executive",
+          "minimum": 0,
+          "maximum": 16
+        }
+      ],
+      "requiredTotal": 64
+    }
+  },
+  {
+    "instrumentId": "papikostick",
+    "edition": "PAPI-I klasik · 90 pasangan",
+    "section": "4–6",
+    "method": "Tabulasikan pilihan pada diagonal menjadi dua puluh aspek. Sepuluh Roles dan sepuluh Needs masing-masing harus berjumlah empat puluh lima.",
+    "interpretation": "Bandingkan aspek dalam profil responden dengan mempertimbangkan pilihan paksa dan konteks pekerjaan.",
+    "limitation": "Rekap tidak menghasilkan psikogram normatif atau keputusan kerja. PAPI versi lain berbeda.",
+    "entry": {
+      "version": "PAPI-I klasik 90 pasangan",
+      "instructions": "Gunakan rekap lembar PAPI-I klasik 90 pasangan yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "PROFILE",
+      "fields": [
+        {
+          "label": "G",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "L",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "I",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "T",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "V",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "S",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "R",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "D",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "C",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "E",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "N",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "A",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "P",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "X",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "B",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "O",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "Z",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "K",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "F",
+          "minimum": 0,
+          "maximum": 9
+        },
+        {
+          "label": "W",
+          "minimum": 0,
+          "maximum": 9
+        }
+      ],
+      "requiredTotal": 45,
+      "groupSize": 10
+    }
+  },
+  {
+    "instrumentId": "pauli",
+    "edition": "Pauli · 20 interval",
+    "section": "4–6",
+    "method": "Rekap capaian tiap tiga menit, total, persentase salah dari sampel yang diperiksa, dan bentuk kurva menurut manual.",
+    "interpretation": "Pemeriksa membaca dinamika kinerja dengan mempertimbangkan prosedur pemeriksaan dan konteks sesi.",
+    "limitation": "Rekap deskriptif dari satu lembar dua sisi. Persentase salah memakai sampel pemeriksa. Penurunan awal, tanjakan akhir dan norma tidak dihitung.",
+    "entry": {
+      "version": "Pauli 60 menit · 20 interval",
+      "instructions": "Masukkan capaian dari 20 interval masing-masing 3 menit. Masukkan juga jumlah penjumlahan yang diperiksa dan jumlah salah dari sampel yang sama.",
+      "operation": "PAULI",
+      "fields": [
+        {
+          "label": "Dikerjakan interval 1",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 2",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 3",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 4",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 5",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 6",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 7",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 8",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 9",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 10",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 11",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 12",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 13",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 14",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 15",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 16",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 17",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 18",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 19",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Dikerjakan interval 20",
+          "minimum": 0,
+          "maximum": 5310
+        },
+        {
+          "label": "Jumlah diperiksa",
+          "minimum": 1,
+          "maximum": 5310
+        },
+        {
+          "label": "Jumlah salah dari yang diperiksa",
+          "minimum": 0,
+          "maximum": 5310
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "personality_test",
+    "edition": "Label katalog · kandidat EPQ-R",
+    "section": "1, 4–6",
+    "method": "Panduan mencatat aturan EPQ-R sebagai kandidat. Identitas formulir di bawah label ini belum dikonfirmasi.",
+    "interpretation": "Interpretasi baru dapat ditetapkan setelah instrumen dan edisinya cocok.",
+    "limitation": "Rekap berlaku hanya pada laporan dengan edisi EPQ-RS terkonfirmasi. Label Personality Test dapat merujuk ke alat lain. Skala P bukan diagnosis psikosis.",
+    "entry": {
+      "version": "EPQ-RS 48 · kandidat pada folder",
+      "instructions": "Gunakan rekap hanya jika laporan pemeriksa menyebut EPQ-R Short Scale 48 butir, dengan 12 item per skala.",
+      "operation": "PROFILE",
+      "fields": [
+        {
+          "label": "E Ekstraversi",
+          "minimum": 0,
+          "maximum": 12
+        },
+        {
+          "label": "N Neurotisisme",
+          "minimum": 0,
+          "maximum": 12
+        },
+        {
+          "label": "P Psikotisisme",
+          "minimum": 0,
+          "maximum": 12
+        },
+        {
+          "label": "L Gaya respons",
+          "minimum": 0,
+          "maximum": 12
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "rmib",
+    "edition": "RMIB · 9 kelompok × 12 peringkat",
+    "section": "4–6",
+    "method": "Jumlahkan setiap kategori dari matriks tangga. Periksa bahwa total kategori 702. Urutkan skor terkecil lebih dahulu.",
+    "interpretation": "Skor lebih kecil menunjukkan minat yang relatif lebih kuat. Skor sama berbagi posisi.",
+    "limitation": "Total 702 diperlukan tetapi tidak membuktikan bahwa setiap kelompok bebas duplikasi. Periksa kelompok asli dan pilihan bebas.",
+    "entry": {
+      "version": "RMIB 9 × 12",
+      "instructions": "Gunakan rekap lembar RMIB 9 × 12 yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "LOW_FIRST",
+      "fields": [
+        {
+          "label": "Outdoor",
+          "minimum": 9,
+          "maximum": 108
+        },
+        {
+          "label": "Mechanical",
+          "minimum": 9,
+          "maximum": 108
+        },
+        {
+          "label": "Computational",
+          "minimum": 9,
+          "maximum": 108
+        },
+        {
+          "label": "Scientific",
+          "minimum": 9,
+          "maximum": 108
+        },
+        {
+          "label": "Personal Contact",
+          "minimum": 9,
+          "maximum": 108
+        },
+        {
+          "label": "Aesthetic",
+          "minimum": 9,
+          "maximum": 108
+        },
+        {
+          "label": "Literary",
+          "minimum": 9,
+          "maximum": 108
+        },
+        {
+          "label": "Musical",
+          "minimum": 9,
+          "maximum": 108
+        },
+        {
+          "label": "Social Service",
+          "minimum": 9,
+          "maximum": 108
+        },
+        {
+          "label": "Clerical",
+          "minimum": 9,
+          "maximum": 108
+        },
+        {
+          "label": "Practical",
+          "minimum": 9,
+          "maximum": 108
+        },
+        {
+          "label": "Medical",
+          "minimum": 9,
+          "maximum": 108
+        }
+      ],
+      "requiredTotal": 702
+    }
+  },
+  {
+    "instrumentId": "spm",
+    "edition": "Raven SPM standar · 60 butir",
+    "section": "4–6",
+    "method": "Hitung benar per set A sampai E (total 60 butir). Klasifikasi mengacu pada norma Grade I–V resmi Raven.",
+    "interpretation": "Mengukur kapasitas eductive ability non-verbal murni (Spearman g-factor) dalam memecahkan relasi pola visual abstrak.",
+    "limitation": "Tes power non-verbal murni, bukan tes verbal atau fungsi adaptif. Satu skor bukan diagnosis disabilitas intelektual.",
+    "entry": {
+      "version": "Raven SPM standar 60 butir",
+      "instructions": "Gunakan rekap lembar Raven SPM standar 60 butir yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "TOTAL",
+      "fields": [
+        {
+          "label": "Set A",
+          "minimum": 0,
+          "maximum": 12
+        },
+        {
+          "label": "Set B",
+          "minimum": 0,
+          "maximum": 12
+        },
+        {
+          "label": "Set C",
+          "minimum": 0,
+          "maximum": 12
+        },
+        {
+          "label": "Set D",
+          "minimum": 0,
+          "maximum": 12
+        },
+        {
+          "label": "Set E",
+          "minimum": 0,
+          "maximum": 12
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "srq-29",
+    "edition": "SRQ-29 Indonesia (Kemenkes RI)",
+    "section": "4–5",
+    "method": "Jawaban Ya bernilai 1. Evaluasi skor per domain: GME (cut-off >=6), Penggunaan Zat, Gejala Psikotik, dan Gejala PTSD.",
+    "interpretation": "Mendeteksi indikasi masalah kesehatan jiwa dalam 30 hari terakhir untuk menentukan kebutuhan tindak lanjut atau rujukan.",
+    "limitation": "Instrumen skrining awal komunitas/layanan primer; bukan penegak diagnosis medis psikiatri.",
+    "entry": {
+      "version": "SRQ-29 Kemenkes RI 4 Domain",
+      "instructions": "Masukkan jumlah jawaban Ya untuk masing-masing dari 4 domain skrining SRQ-29.",
+      "operation": "SRQ29",
+      "fields": [
+        {
+          "label": "GME / Neurotik (Item 1–20)",
+          "minimum": 0,
+          "maximum": 20
+        },
+        {
+          "label": "Penggunaan Zat (Item 21)",
+          "minimum": 0,
+          "maximum": 1
+        },
+        {
+          "label": "Gejala Psikotik (Item 22–24)",
+          "minimum": 0,
+          "maximum": 3
+        },
+        {
+          "label": "Gejala PTSD (Item 25–29)",
+          "minimum": 0,
+          "maximum": 5
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "tiu_5",
+    "edition": "UI-10144-96 · 30 butir",
+    "section": "4–6",
+    "method": "Hitung jawaban benar sesuai kunci resmi UI-10144-96. Raw Score (0–30) dikonversi ke Weighted Score (WS 0–20).",
+    "interpretation": "WS (0–20) dipetakan ke kategori: Baik Sekali (17–20), Baik (13–16), Sedang (9–12), Kurang (5–8), Kurang Sekali (1–4).",
+    "limitation": "TIU 5 mengukur nalar figural non-verbal. Padukan dengan tes kognitif komprehensif untuk estimasi kapasitas inteligensi menyeluruh.",
+    "entry": {
+      "version": "TIU 5 UI-10144-96",
+      "instructions": "Gunakan rekap lembar TIU 5 UI-10144-96 yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "TOTAL",
+      "fields": [
+        {
+          "label": "Benar butir 1–15",
+          "minimum": 0,
+          "maximum": 15
+        },
+        {
+          "label": "Benar butir 16–30",
+          "minimum": 0,
+          "maximum": 15
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "tiu_6",
+    "edition": "UI-10154-96 · 40 butir",
+    "section": "4–5",
+    "method": "Hitung benar sesuai kunci cetakan TIU 6. Gunakan empat puluh butir inti, tanpa soal contoh.",
+    "interpretation": "Norma SKALA TIU 6 (1–5) baku LPSP3 UI. Mengukur kapasitas abstraksi visual-spasial, rotasi mental, dan manipulasi bangun ruang 2D ke 3D.",
+    "limitation": "Mengukur penalaran visual-spasial terfokus (faktor Gv). Rekapitulasi mengacu pada norma Skala 1–5 resmi UI-10154-96.",
+    "entry": {
+      "version": "TIU 6 UI-10154-96",
+      "instructions": "Masukkan jumlah jawaban benar untuk butir 1–20 dan butir 21–40 dari lembar jawaban TIU 6 yang sudah diperiksa.",
+      "operation": "TOTAL",
+      "fields": [
+        {
+          "label": "Benar butir 1–20",
+          "minimum": 0,
+          "maximum": 20
+        },
+        {
+          "label": "Benar butir 21–40",
+          "minimum": 0,
+          "maximum": 20
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "vak",
+    "edition": "VAK · format 30 pilihan A/B/C",
+    "section": "4A, 5–6",
+    "method": "Hitung pilihan A, B, dan C. Bagi setiap jumlah dengan total jawaban untuk mendapatkan proporsi.",
+    "interpretation": "Profil hanya merangkum pilihan modalitas yang dilaporkan pada lembar ini.",
+    "limitation": "Hasil tidak menetapkan gaya belajar tetap atau strategi belajar yang terbukti lebih efektif.",
+    "entry": {
+      "version": "VAK A/B/C · 30 butir",
+      "instructions": "Gunakan rekap lembar VAK A/B/C · 30 butir yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "VAK",
+      "fields": [
+        {
+          "label": "Visual (A)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Auditori (B)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Kinestetik (C)",
+          "minimum": 0,
+          "maximum": 30
+        }
+      ],
+      "requiredTotal": 30
+    }
+  },
+  {
+    "instrumentId": "wartegg",
+    "edition": "Wartegg · sistem Kinget",
+    "section": "4–5",
+    "method": "Pemeriksa menilai stimulus dan eksekusi 8 kotak, merangkum skor kuantitatif ke dalam 4 fungsi dasar kepribadian.",
+    "interpretation": "Mengevaluasi dinamika fungsi emosi, imajinasi, intelektual, dan aktivitas dalam konteks pemeriksaan psikologis.",
+    "limitation": "Interpretasi bersifat proyektif holistik, bukan indikator mandiri sifat tanpa wawancara dan tes objektif pendukung.",
+    "entry": {
+      "version": "Wartegg Kinget 8 Kotak Stimulus",
+      "instructions": "Masukkan skor koding kuantitatif Kinget untuk 8 kotak stimulus baku Wartegg.",
+      "operation": "WARTEGG",
+      "fields": [
+        {
+          "label": "Kotak 1 (Ego/Pusat Diri)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Kotak 2 (Sensitivitas Emosi)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Kotak 3 (Ambisi/Prestasi)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Kotak 4 (Koping Tekanan)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Kotak 5 (Dinamisme/Aksi)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Kotak 6 (Penalaran Analitis)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Kotak 7 (Kepekaan Relasi)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "Kotak 8 (Perlindungan/Norma)",
+          "minimum": 0,
+          "maximum": 30
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "wpt",
+    "edition": "WPT-R · 50 butir",
+    "section": "4A, 5–6",
+    "method": "Jumlahkan jawaban benar pada lembar WPT-R 50 butir. Skor mentah (RS 0–50) dikonversikan ke norma IQ Wonderlic baku (59–146) serta klasifikasi kognitif resmi.",
+    "interpretation": "Skor mentah dikonversikan ke estimasi IQ Wonderlic baku (59–146), klasifikasi kognitif, dan benchmark jabatan okupasi.",
+    "limitation": "Wonderlic adalah instrumen skrining kecepatan kognitif (speed-power hybrid test) 12 menit; interpretasi komprehensif disarankan melengkapi observasi klinis dan asesmen pendukung.",
+    "entry": {
+      "version": "WPT-R 50 butir",
+      "instructions": "Gunakan rekap lembar WPT-R 50 butir yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "TOTAL",
+      "fields": [
+        {
+          "label": "Benar butir 1–25",
+          "minimum": 0,
+          "maximum": 25
+        },
+        {
+          "label": "Benar butir 26–50",
+          "minimum": 0,
+          "maximum": 25
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "vrt",
+    "edition": "Basagni et al. · 49 butir",
+    "section": "2–4",
+    "method": "Pemeriksa menilai jawaban lisan sesuai rubrik nol sampai dua per butir, lalu menjumlahkan tujuh subtes.",
+    "interpretation": "Rekap hanya menjumlahkan skor dari pemeriksa. Perbandingan klinis memerlukan kelompok norma, bahasa, dan konteks yang sesuai.",
+    "limitation": "Manual koreksi lengkap tidak tersedia untuk menilai jawaban bebas. Jangan gunakan rekap ini untuk formulir VRT lain.",
+    "entry": {
+      "version": "VRT Basagni · 49 butir",
+      "instructions": "Gunakan rekap lembar VRT Basagni · 49 butir yang sudah lengkap dan diperiksa sesuai panduannya.",
+      "operation": "TOTAL",
+      "fields": [
+        {
+          "label": "Absurdities",
+          "minimum": 0,
+          "maximum": 14
+        },
+        {
+          "label": "Intruders",
+          "minimum": 0,
+          "maximum": 14
+        },
+        {
+          "label": "Relationships",
+          "minimum": 0,
+          "maximum": 14
+        },
+        {
+          "label": "Differences",
+          "minimum": 0,
+          "maximum": 14
+        },
+        {
+          "label": "Idiomatic Expressions",
+          "minimum": 0,
+          "maximum": 14
+        },
+        {
+          "label": "Family Relations",
+          "minimum": 0,
+          "maximum": 14
+        },
+        {
+          "label": "Classifications",
+          "minimum": 0,
+          "maximum": 14
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "mseai",
+    "edition": "Kecerdasan Emosional & Penyesuaian Sosial",
+    "section": "1–3",
+    "method": "Jumlahkan penilaian skor pada 4 domain kompetensi kecerdasan emosional dan penyesuaian sosial.",
+    "interpretation": "Memberikan gambaran profil kesadaran diri, pengelolaan diri, kesadaran sosial, dan hubungan interpersonal.",
+    "limitation": "Singkatan dipertahankan sesuai inventori lokal; interpretasi untuk pengembangan diri, bukan diagnosis psikologis.",
+    "entry": {
+      "version": "Kecerdasan Emosional & Penyesuaian Sosial (4 Domain)",
+      "instructions": "Masukkan skor penilaian untuk 4 domain kompetensi kecerdasan emosional dan penyesuaian sosial.",
+      "operation": "TOTAL",
+      "fields": [
+        {
+          "label": "Kesadaran Diri (Self-Awareness)",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Manajemen Diri (Self-Management)",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Kesadaran Sosial (Social Awareness)",
+          "minimum": 5,
+          "maximum": 25
+        },
+        {
+          "label": "Pengelolaan Relasi (Relationship Management)",
+          "minimum": 5,
+          "maximum": 25
+        }
+      ]
+    }
+  },
+  {
+    "instrumentId": "rorschach",
+    "edition": "Exner Comprehensive System (CS)",
+    "section": "4–6",
+    "method": "Kode 10 kartu pada lokasi, determinan, kualitas bentuk, dan respons populer untuk tabulasi psikogram.",
+    "interpretation": "Rangkum rasio EB, toleransi stres D-Score, efisiensi Lambda, akurasi uji realitas, dan konstelasi klinis.",
+    "limitation": "Hipotesis proyektif dinamika kepribadian dan koping; bukan diagnosis medis mandiri tanpa wawancara klinis.",
+    "entry": {
+      "version": "Tes Rorschach · Rekap Psikogram Exner",
+      "instructions": "Salin skor ringkasan struktural Exner hasil tabulasi protokol Rorschach untuk interpretasi otomatis dan konsultasi konseling.",
+      "operation": "PROFILE",
+      "fields": [
+        {
+          "label": "M (Human Movement)",
+          "minimum": 0,
+          "maximum": 15
+        },
+        {
+          "label": "WSumC (Weighted Color)",
+          "minimum": 0,
+          "maximum": 20
+        },
+        {
+          "label": "EA (Experience Actual)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "es (Stimulation)",
+          "minimum": 0,
+          "maximum": 30
+        },
+        {
+          "label": "D-Score (-5 s.d. +5)",
+          "minimum": -5,
+          "maximum": 5
+        },
+        {
+          "label": "Lambda (x100)",
+          "minimum": 0,
+          "maximum": 500
+        },
+        {
+          "label": "X+% (Reality Testing)",
+          "minimum": 0,
+          "maximum": 100
+        },
+        {
+          "label": "X-% (Distortion)",
+          "minimum": 0,
+          "maximum": 100
+        },
+        {
+          "label": "P (Popular Count)",
+          "minimum": 0,
+          "maximum": 10
+        }
+      ]
+    }
+  }
+]

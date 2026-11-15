@@ -78,9 +78,17 @@ object DocumentGroundingIntentDetector {
             "definition|causes?|symptoms?|effects?|benefits?|risks?|dosage|diagnosis)\\b"
     )
 
-    /** Factual questions need grounded evidence; personal coping requests remain GENERAL_SAFE. */
+    fun isAssessmentDiscussion(userText: String): Boolean =
+        userText.startsWith("Halo AI Counselor, saya baru saja menyelesaikan asesmen") ||
+            userText.startsWith("Halo AI Counselor, tolong jelaskan panduan asesmen") ||
+            userText.contains("Rincian Skor") ||
+            userText.contains("Interpretasi Klinis:") ||
+            userText.contains("Metode skoring:")
+
+    /** Factual questions need grounded evidence; personal coping requests and assessment discussions remain GENERAL_SAFE. */
     fun requiresLocalEvidence(userText: String): Boolean {
         val normalized = userText.trim()
+        if (isAssessmentDiscussion(normalized)) return false
         return explicitDocumentPattern.containsMatchIn(normalized) ||
             (factualQuestionPattern.containsMatchIn(normalized) && clinicalFactPattern.containsMatchIn(normalized)) ||
             (

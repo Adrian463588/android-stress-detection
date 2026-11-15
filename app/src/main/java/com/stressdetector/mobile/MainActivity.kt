@@ -56,6 +56,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,19 +97,27 @@ import com.stressdetector.mobile.ui.MetricRow
 import com.stressdetector.mobile.ui.MonitoringScreen
 import com.stressdetector.mobile.ui.PremiumCard
 import com.stressdetector.mobile.ui.Screen
-import com.stressdetector.mobile.ui.StatusDot
 import com.stressdetector.mobile.ui.StressDetectorTheme
 import com.stressdetector.mobile.ui.home.HomeEvent
 import com.stressdetector.mobile.ui.home.HomeSessionStatusCard
 import com.stressdetector.mobile.ui.home.HomeUiState
+import com.stressdetector.mobile.ui.home.PermissionGateCard
+import com.stressdetector.mobile.ui.home.PermissionOnboardingSheet
+import com.stressdetector.mobile.ui.home.PermissionOnboardingState
+import com.stressdetector.mobile.ui.home.onboardingRuntimePermissions
+import com.stressdetector.mobile.ui.home.permissionChecklistEntries
+import com.stressdetector.mobile.ui.home.shouldOfferPermissionSettingsRecovery
+import com.stressdetector.mobile.ui.home.watchRuntimePermissions
 import com.stressdetector.mobile.ui.parentDestinationFor
 import com.stressdetector.mobile.ui.screens.AiCounselorScreen
+import com.stressdetector.mobile.ui.screens.AssessmentScreen
 import com.stressdetector.mobile.ui.screens.CounselorNavigation
 import com.stressdetector.mobile.ui.screens.CounselorPersonaScreen
 import com.stressdetector.mobile.ui.screens.DocumentLibraryScreen
 import com.stressdetector.mobile.ui.screens.HistoryDetailScreen
 import com.stressdetector.mobile.ui.screens.ProfileScreen
 import com.stressdetector.mobile.ui.viewmodels.AiReminderViewModel
+import com.stressdetector.mobile.ui.viewmodels.AssessmentViewModel
 import com.stressdetector.mobile.ui.viewmodels.CounselorPersonaViewModel
 import com.stressdetector.mobile.ui.viewmodels.CounselorViewModel
 import com.stressdetector.mobile.ui.viewmodels.DocumentLibraryViewModel
@@ -142,6 +151,13 @@ class MainActivity : ComponentActivity() {
     @Suppress("LongMethod")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val hardeningReport = com.stressdetector.mobile.security.AppHardeningManager.performAudit(
+            context = this,
+            enforceSignatureCheck = !BuildConfig.DEBUG
+        )
+        if (hardeningReport.isCompromised) {
+            android.util.Log.w("AppHardening", "Security posture audit notes: ${hardeningReport.detectedAnomalies}")
+        }
         handleReminderIntent(intent)
 
         setContent {
@@ -158,6 +174,7 @@ class MainActivity : ComponentActivity() {
                     val counselorViewModel: CounselorViewModel = viewModel(factory = CounselorViewModel.Factory(this))
                     val profileViewModel: ProfileViewModel = viewModel(factory = ProfileViewModel.Factory(this))
                     var notificationPermissionGranted by remember { mutableStateOf(currentNotificationPermissionGranted()) }
+                    var microphonePermissionGranted by remember { mutableStateOf(currentMicrophonePermissionGranted()) }
                     val aiReminderViewModel: AiReminderViewModel = viewModel(
                         factory = AiReminderViewModel.factory(this, notificationPermissionGranted)
                     )
@@ -166,17 +183,28 @@ class MainActivity : ComponentActivity() {
                     val historyDetailViewModel: HistoryDetailViewModel = viewModel(factory = HistoryDetailViewModel.Factory)
 
                     var permissionStatus by remember { mutableStateOf(currentPermissionStatus()) }
+                    var onboardingPermissionsMissing by remember { mutableStateOf(missingOnboardingPermissions()) }
+                    var showPermissionSheet by remember { mutableStateOf(false) }
+                    var permissionRequestAttempted by remember { mutableStateOf(false) }
                     var pendingReminderEnable by remember { mutableStateOf(false) }
                     val incomingReminderId by reminderIntentId.collectAsState()
 
                     val permissionLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestMultiplePermissions()
-                    ) { permissionStatus = currentPermissionStatus() }
+                    ) {
+                        permissionStatus = currentPermissionStatus()
+                        onboardingPermissionsMissing = missingOnboardingPermissions()
+                        microphonePermissionGranted = currentMicrophonePermissionGranted()
+                        notificationPermissionGranted = currentNotificationPermissionGranted()
+                        aiReminderViewModel.setNotificationPermissionGranted(notificationPermissionGranted)
+                    }
 
                     val settingsLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.StartActivityForResult()
                     ) {
                         permissionStatus = currentPermissionStatus()
+                        onboardingPermissionsMissing = missingOnboardingPermissions()
+                        microphonePermissionGranted = currentMicrophonePermissionGranted()
                         notificationPermissionGranted = currentNotificationPermissionGranted()
                         aiReminderViewModel.setNotificationPermissionGranted(notificationPermissionGranted)
                         if (pendingReminderEnable) {
@@ -212,12 +240,32 @@ class MainActivity : ComponentActivity() {
                         counselorPersonaViewModel = counselorPersonaViewModel,
                         historyDetailViewModel = historyDetailViewModel,
                         permissionStatus = permissionStatus,
+                        microphonePermissionGranted = microphonePermissionGranted,
+                        notificationsEnabled = notificationPermissionGranted,
+                        showPermissionSheet = showPermissionSheet,
+                        onboardingRuntimePermissionsGranted = onboardingPermissionsMissing.isEmpty(),
+                        showSettingsRecovery = shouldOfferPermissionSettingsRecovery(
+                            requestAttempted = permissionRequestAttempted,
+                            shouldShowRationale = onboardingPermissionsMissing.any(::shouldShowRequestPermissionRationale),
+                            allGranted = onboardingPermissionsMissing.isEmpty()
+                        ),
+                        onPermissionSheetDismiss = { showPermissionSheet = false },
+                        onRefreshPermissions = {
+                            permissionStatus = currentPermissionStatus()
+                            onboardingPermissionsMissing = missingOnboardingPermissions()
+                            microphonePermissionGranted = currentMicrophonePermissionGranted()
+                            notificationPermissionGranted = currentNotificationPermissionGranted()
+                        },
                         windowSizeClass = windowWidthSizeClass,
                         onGrantPermissions = {
-                            val missing = missingMobilePermissions()
+                            val missing = missingOnboardingPermissions()
+                            onboardingPermissionsMissing = missing
                             if (missing.isEmpty()) {
                                 permissionStatus = currentPermissionStatus()
+                                microphonePermissionGranted = currentMicrophonePermissionGranted()
+                                notificationPermissionGranted = currentNotificationPermissionGranted()
                             } else {
+                                permissionRequestAttempted = true
                                 permissionLauncher.launch(missing.toTypedArray())
                             }
                         },
@@ -229,6 +277,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                         },
+                        onOpenPermissionSheet = { showPermissionSheet = true },
                         onRequestNotificationPermission = {
                             pendingReminderEnable = true
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -262,7 +311,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun currentPermissionStatus(): PermissionStatus {
-        val missing = missingMobilePermissions()
+        val missing = missingWatchPermissions()
         return PermissionStatus(
             allGranted = missing.isEmpty(),
             missingPermissions = missing,
@@ -270,7 +319,11 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun missingMobilePermissions(): List<String> = requiredMobilePermissions().filter {
+    private fun missingWatchPermissions(): List<String> = requiredWatchPermissions().filter {
+        ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun missingOnboardingPermissions(): List<String> = onboardingRuntimePermissions(Build.VERSION.SDK_INT).filter {
         ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
     }
 
@@ -281,26 +334,18 @@ class MainActivity : ComponentActivity() {
         ) &&
         NotificationManagerCompat.from(this).areNotificationsEnabled()
 
+    private fun currentMicrophonePermissionGranted(): Boolean = ContextCompat.checkSelfPermission(
+        this,
+        Manifest.permission.RECORD_AUDIO
+    ) == PackageManager.PERMISSION_GRANTED
+
     companion object {
         const val ACTION_OPEN_AI_PLUS = "com.stressdetector.mobile.action.OPEN_AI_PLUS"
         const val EXTRA_REMINDER_ID = "com.stressdetector.mobile.extra.REMINDER_ID"
     }
 }
 
-private fun requiredMobilePermissions(): Array<String> {
-    val permissions = mutableListOf<String>()
-    permissions.add(Manifest.permission.RECORD_AUDIO)
-
-    if (Build.VERSION.SDK_INT >= 31) {
-        permissions.add(Manifest.permission.BLUETOOTH_SCAN)
-        permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
-    } else {
-        permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
-        permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
-    }
-
-    return permissions.toTypedArray()
-}
+private fun requiredWatchPermissions(): List<String> = watchRuntimePermissions(Build.VERSION.SDK_INT)
 
 // ─── Root App Scaffold ────────────────────────────────────────────────────────
 
@@ -316,7 +361,15 @@ private fun StressDetectorApp(
     counselorPersonaViewModel: CounselorPersonaViewModel,
     historyDetailViewModel: HistoryDetailViewModel,
     permissionStatus: PermissionStatus,
+    microphonePermissionGranted: Boolean,
+    notificationsEnabled: Boolean,
+    showPermissionSheet: Boolean,
+    onboardingRuntimePermissionsGranted: Boolean,
+    showSettingsRecovery: Boolean,
+    onPermissionSheetDismiss: () -> Unit,
+    onRefreshPermissions: () -> Unit,
     windowSizeClass: WindowWidthSizeClass,
+    onOpenPermissionSheet: () -> Unit,
     onGrantPermissions: () -> Unit,
     onOpenSettings: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
@@ -330,11 +383,30 @@ private fun StressDetectorApp(
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
     val selectedDestination = parentDestinationFor(currentRoute)
     val lifecycleOwner = LocalLifecycleOwner.current
+    val refreshPermissions by rememberUpdatedState(onRefreshPermissions)
     val verbatimCommandBusy = verbatimState.sessionCommandState !is SessionCommandState.Idle &&
         verbatimState.sessionCommandState !is SessionCommandState.Error
     val verbatimBusy = verbatimState.isSessionActive ||
         verbatimState.isFinalizing ||
         verbatimCommandBusy
+
+    if (showPermissionSheet) {
+        PermissionOnboardingSheet(
+            state = PermissionOnboardingState(
+                entries = permissionChecklistEntries(
+                    apiLevel = Build.VERSION.SDK_INT,
+                    watchPermissionsGranted = permissionStatus.allGranted,
+                    microphoneGranted = microphonePermissionGranted,
+                    notificationsEnabled = notificationsEnabled
+                ),
+                runtimePermissionsGranted = onboardingRuntimePermissionsGranted,
+                showSettingsRecovery = showSettingsRecovery
+            ),
+            onRequestAppPermissions = onGrantPermissions,
+            onOpenSettings = onOpenSettings,
+            onDismiss = onPermissionSheetDismiss
+        )
+    }
 
     fun navigateToRoot(destination: Screen) {
         navController.navigate(destination.route) {
@@ -354,11 +426,11 @@ private fun StressDetectorApp(
 
     DisposableEffect(lifecycleOwner, currentRoute, permissionStatus.allGranted) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME &&
-                currentRoute == Screen.Home.route &&
-                permissionStatus.allGranted
-            ) {
-                viewModel.onHomeResumed()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshPermissions()
+                if (currentRoute == Screen.Home.route && permissionStatus.allGranted) {
+                    viewModel.onHomeResumed()
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -456,7 +528,14 @@ private fun StressDetectorApp(
             } else {
                 Scaffold(
                     bottomBar = {
-                        if (windowSizeClass == WindowWidthSizeClass.Compact) {
+                        val isRootDestination = currentRoute in setOf(
+                            Screen.Home.route,
+                            Screen.History.route,
+                            Screen.Verbatim.route,
+                            Screen.Chat.route,
+                            Screen.Profile.route
+                        )
+                        if (windowSizeClass == WindowWidthSizeClass.Compact && isRootDestination) {
                             AppBottomNav(
                                 selectedDestination = selectedDestination,
                                 onSelect = ::navigateToRoot
@@ -498,10 +577,7 @@ private fun StressDetectorApp(
                                                 permissionStatus = permissionStatus,
                                                 windowSizeClass = windowSizeClass
                                             ),
-                                            permissionActions = PermissionActions(
-                                                onGrant = onGrantPermissions,
-                                                onOpenSettings = onOpenSettings
-                                            ),
+                                            onOpenPermissionSheet = onOpenPermissionSheet,
                                             onNavigateToProfile = { navigateToRoot(Screen.Profile) }
                                         )
                                     },
@@ -542,7 +618,15 @@ private fun StressDetectorApp(
                                                     }
                                                 },
                                                 onNavigateToProfile = { navigateToRoot(Screen.Profile) },
-                                                onRequestNotificationPermission = onRequestNotificationPermission
+                                                onRequestNotificationPermission = onRequestNotificationPermission,
+                                                onOpenAssessments = {
+                                                    navController.navigate(Screen.AssessmentCatalog.route) { launchSingleTop = true }
+                                                },
+                                                onOpenAssessment = { id ->
+                                                    navController.navigate(Screen.AssessmentDetail.createRoute(id)) {
+                                                        launchSingleTop = true
+                                                    }
+                                                }
                                             )
                                         )
                                     },
@@ -585,6 +669,26 @@ private fun StressDetectorApp(
                                                     launchSingleTop = true
                                                 }
                                             }
+                                        )
+                                    },
+                                    assessmentScreen = { id ->
+                                        val context = androidx.compose.ui.platform.LocalContext.current
+                                        val assessmentViewModel: AssessmentViewModel = viewModel(
+                                            factory = AssessmentViewModel.Factory(context, id)
+                                        )
+                                        AssessmentScreen(
+                                            isCatalog = id == null,
+                                            viewModel = assessmentViewModel,
+                                            onOpenInstrument = { instrumentId ->
+                                                navController.navigate(Screen.AssessmentDetail.createRoute(instrumentId)) {
+                                                    launchSingleTop = true
+                                                }
+                                            },
+                                            onDiscussWithAi = { prompt ->
+                                                counselorViewModel.sendMessage(prompt)
+                                                navigateToRoot(Screen.Chat)
+                                            },
+                                            onBack = { navController.popBackStack() }
                                         )
                                     },
                                     documentDetailScreen = { documentId ->
@@ -647,12 +751,7 @@ private fun AppNavigationRail(selectedDestination: Screen?, onSelect: (Screen) -
 // ─── Session Tab ──────────────────────────────────────────────────────────────
 
 @Composable
-private fun sessionTab(
-    viewModel: StressViewModel,
-    config: SessionUi,
-    permissionActions: PermissionActions,
-    onNavigateToProfile: () -> Unit
-) {
+private fun sessionTab(viewModel: StressViewModel, config: SessionUi, onOpenPermissionSheet: () -> Unit, onNavigateToProfile: () -> Unit) {
     val homeState = HomeUiState.from(config.state, config.permissionStatus)
     val horizontalPadding = when (config.windowSizeClass) {
         WindowWidthSizeClass.Expanded -> AppSpacing.Large
@@ -670,19 +769,17 @@ private fun sessionTab(
 
         if (!config.permissionStatus.allGranted) {
             item {
-                PermissionGateCard(
-                    status = config.permissionStatus,
-                    onGrantPermissions = permissionActions.onGrant,
-                    onOpenSettings = permissionActions.onOpenSettings
-                )
+                PermissionGateCard(onOpenPermissionSheet = onOpenPermissionSheet)
             }
         }
 
-        item {
-            HomeSessionStatusCard(
-                state = homeState,
-                onEvent = { event -> handleHomeEvent(viewModel, event, onNavigateToProfile) }
-            )
+        if (config.permissionStatus.allGranted) {
+            item {
+                HomeSessionStatusCard(
+                    state = homeState,
+                    onEvent = { event -> handleHomeEvent(viewModel, event, onNavigateToProfile) }
+                )
+            }
         }
 
         if (config.state.hasChartData()) {
@@ -694,8 +791,6 @@ private fun sessionTab(
 }
 
 private data class SessionUi(val state: MobileUiState, val permissionStatus: PermissionStatus, val windowSizeClass: WindowWidthSizeClass)
-
-private data class PermissionActions(val onGrant: () -> Unit, val onOpenSettings: () -> Unit)
 
 @Composable
 private fun sessionHeader() {
@@ -758,84 +853,6 @@ private fun modelWindowStatus(availability: PredictionAvailability.WarmingUp): S
         .toInt()
         .coerceIn(0, STRESS_MODEL_WINDOW_SECONDS)
     return "model window $seconds/$STRESS_MODEL_WINDOW_SECONDS}s"
-}
-
-// ─── Permission Gate Card ─────────────────────────────────────────────────────
-
-@Composable
-private fun PermissionGateCard(status: PermissionStatus, onGrantPermissions: () -> Unit, onOpenSettings: () -> Unit) {
-    if (status.allGranted) {
-        PermissionGrantedCard()
-        return
-    }
-
-    PermissionMissingCard(status, onGrantPermissions, onOpenSettings)
-}
-
-@Composable
-private fun PermissionGrantedCard() {
-    PremiumCard {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            StatusDot(color = NeonEmerald)
-            Text("Izin sudah diberikan", color = NeonEmerald, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-@Composable
-private fun PermissionMissingCard(status: PermissionStatus, onGrantPermissions: () -> Unit, onOpenSettings: () -> Unit) {
-    val isPermanentlyDenied = !status.shouldShowRationale && status.missingPermissions.isNotEmpty()
-
-    PremiumCard(
-        borderColor = AlertRed.copy(alpha = 0.6f),
-        backgroundColor = AlertRed.copy(alpha = 0.08f)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatusDot(color = AlertRed)
-                Text(
-                    text = "Izin diperlukan",
-                    color = AlertRed,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.labelLarge
-                )
-            }
-            Text(
-                text = "Diperlukan: ${status.missingPermissions.joinToString { it.substringAfterLast('.') }}",
-                color = TextSecondary,
-                style = MaterialTheme.typography.bodySmall
-            )
-            if (isPermanentlyDenied) {
-                Text(
-                    text = "Izin ditolak. Aktifkan kembali melalui pengaturan Android.",
-                    color = WarnAmber,
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Button(
-                    onClick = onOpenSettings,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = WarnAmber, contentColor = Color.Black)
-                ) {
-                    Text("Buka pengaturan aplikasi", fontWeight = FontWeight.Bold)
-                }
-            } else {
-                Button(
-                    onClick = onGrantPermissions,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AlertRed, contentColor = Color.White)
-                ) {
-                    Text("Izinkan akses", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
 }
 
 // ─── Session Progress Card ────────────────────────────────────────────────────

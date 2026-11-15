@@ -119,6 +119,9 @@ class StressInferenceRuntime(
 
     private fun traceContext(preparedWindow: PreparedPpgWindow, extracted: ExtractedFeatures): InferenceTraceContext =
         InferenceTraceContext(
+            sourceRateHz = preparedWindow.sourceRateHz,
+            modelRateHz = preparedWindow.modelRateHz,
+            samplingRatePolicy = preparedWindow.samplingRatePolicy,
             sessionId = preparedWindow.sessionId,
             windowId = preparedWindow.windowId,
             trackerContract = "PDSATU_LITERAL_${preparedWindow.type.name}",

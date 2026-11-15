@@ -10,6 +10,7 @@ import androidx.navigation.navArgument
 import com.stressdetector.mobile.ui.Screen
 
 @Composable
+@Suppress("LongParameterList")
 fun AppNavGraph(
     navController: NavHostController,
     innerPadding: PaddingValues,
@@ -21,7 +22,8 @@ fun AppNavGraph(
     profileScreen: @Composable () -> Unit,
     counselorPersonaScreen: @Composable () -> Unit,
     documentLibraryScreen: @Composable () -> Unit,
-    documentDetailScreen: @Composable (String) -> Unit
+    documentDetailScreen: @Composable (String) -> Unit,
+    assessmentScreen: @Composable (String?) -> Unit = {}
 ) {
     NavHost(
         navController = navController,
@@ -44,6 +46,15 @@ fun AppNavGraph(
         }
         composable(Screen.Chat.route) {
             counselorScreen()
+        }
+        composable(Screen.AssessmentCatalog.route) {
+            assessmentScreen(null)
+        }
+        composable(
+            route = Screen.AssessmentDetail.route,
+            arguments = listOf(navArgument("instrumentId") { type = NavType.StringType })
+        ) { entry ->
+            assessmentScreen(entry.arguments?.getString("instrumentId").orEmpty())
         }
         composable(Screen.Profile.route) {
             profileScreen()

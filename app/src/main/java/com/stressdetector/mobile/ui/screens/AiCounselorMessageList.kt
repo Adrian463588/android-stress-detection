@@ -85,7 +85,8 @@ private fun LazyListScope.counselorMessageItems(model: CounselorScreenModel) {
                 onSpeak = runtime.viewModel::toggleVoiceReply,
                 onStopSpeaking = runtime.viewModel::stopVoiceReply,
                 onOpenCitation = { rawUrl -> openCitation(model.layout.context, rawUrl) },
-                onOpenCrisisSupport = { action -> openCrisisSupport(model.layout.context, action) }
+                onOpenCrisisSupport = { action -> openCrisisSupport(model.layout.context, action) },
+                onOpenAssessment = model.navigation.onOpenAssessment
             )
         )
     }

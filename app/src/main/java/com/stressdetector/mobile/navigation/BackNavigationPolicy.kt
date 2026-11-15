@@ -27,7 +27,9 @@ object BackNavigationPolicy {
         this?.startsWith("history/") == true ||
         this == DOCUMENT_LIBRARY_ROUTE ||
         this == DOCUMENT_DETAIL_ROUTE ||
-        this?.startsWith("documents/") == true
+        this?.startsWith("documents/") == true ||
+        this == "assessments" ||
+        this?.startsWith("assessments/") == true
 
     private const val HOME_ROUTE = "home"
     private const val PERSONA_ROUTE = "counselor-persona"

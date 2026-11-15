@@ -1,6 +1,9 @@
 package com.stressdetector.inference
 
 import com.google.gson.Gson
+import com.stressdetector.shared.PpgSamplingPolicy
+import kotlin.math.abs
+import kotlin.math.round
 
 private const val MAX_MIN_DISTANCE_SECONDS = 2.0
 private const val MAX_PROMINENCE_MAD_MULTIPLIER = 5.0
@@ -8,6 +11,7 @@ private const val MIN_CONFIGURED_PEAK_COUNT = 3
 private const val MIN_CONFIGURED_ADJACENT_IBI_COUNT = 1
 private const val MIN_CONFIGURED_MORPHOLOGY_SUPPORT = 1
 private const val DEFAULT_GREEN_DETECTOR_RATE_HZ = 25.0
+private const val INTEGER_RATE_RELATIVE_TOLERANCE = 0.01
 private const val DEFAULT_MIN_DISTANCE_SECONDS = 0.30
 private const val DEFAULT_PROMINENCE_MAD_MULTIPLIER = 0.40
 private const val MILLIS_PER_SECOND = 1_000.0
@@ -196,13 +200,22 @@ object BackendPpgPeakDetector {
         contract.requireValid()
         require(values.isNotEmpty() && values.all(Double::isFinite)) { "non_finite_detector_input" }
         require(samplingRateHz.isFinite() && samplingRateHz > 0.0) { "invalid_detector_input_rate" }
-        require(detectorValuesCloseEnough(samplingRateHz, contract.model_rate_hz)) {
+        // The frozen rate describes the training cohort. Model-bound Gold uses
+        // (sample count - 1) / observed endpoint span for each feature window.
+        require(PpgSamplingPolicy.isCompatible(samplingRateHz, contract.model_rate_hz)) {
             "detector_input_rate_mismatch"
         }
 
         val (peaks, troughs) = when (contract.detector_method) {
             "neurokit2_ppg_charlton_msptdfast" -> {
-                val msptdPeaks = msptdFast(values, contract.detector_sampling_rate_hz).first
+                // Match peak_detection.py: round only the integer-only detector
+                // parameter; intervals and morphology retain the feature rate.
+                val detectorRate = round(samplingRateHz)
+                require(
+                    detectorRate > 0.0 &&
+                        abs(samplingRateHz - detectorRate) <= INTEGER_RATE_RELATIVE_TOLERANCE * detectorRate
+                ) { "detector_integer_sampling_rate_mismatch" }
+                val msptdPeaks = msptdFast(values, detectorRate).first
                 // Green uses MSPTDfast peaks and the adaptive SciPy negative-signal trough semantics.
                 val scipyTroughs = scipyAdaptive(values, samplingRateHz, contract).second
                 msptdPeaks to scipyTroughs

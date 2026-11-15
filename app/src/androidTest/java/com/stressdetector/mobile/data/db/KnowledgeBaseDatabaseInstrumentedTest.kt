@@ -3,11 +3,13 @@ package com.stressdetector.mobile.data.db
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.stressdetector.mobile.data.repository.AssessmentRepository
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -73,6 +75,23 @@ class KnowledgeBaseDatabaseInstrumentedTest {
         assertEquals(1, result.size)
         assertEquals("chunk-$generationId", result.single().chunkId)
         assertNotNull(result.single().rank)
+    }
+
+    @Test
+    fun markedAssessmentKeepsScoreInterpretationAndSourceAcrossEncryptedDatabaseReopen() = runBlocking {
+        database = KnowledgeBaseDatabase.openForTests(context, PASSPHRASE, databaseName)
+        val repository = AssessmentRepository(context) { requireNotNull(database).assessmentResultDao() }
+
+        val saved = repository.saveMarkedSheet("frt", listOf(36, 7, 2))
+        assertEquals(34.25, saved.scores.first().value, 0.0)
+        assertEquals("FRT 45 · koreksi menebak", saved.version)
+        assertEquals("PsikoTest/FRT/FRT_Acuan_dan_Skoring.md · §4A, 5–6", saved.sourceLocator)
+
+        database?.close()
+        database = KnowledgeBaseDatabase.openForTests(context, PASSPHRASE, databaseName)
+        assertEquals(saved, repository.getResult("frt"))
+        repository.delete("frt")
+        assertNull(repository.getResult("frt"))
     }
 
     private companion object {

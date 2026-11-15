@@ -1,5 +1,6 @@
 package com.stressdetector.mobile.signal
 
+import com.stressdetector.shared.PpgSamplingPolicy
 import com.stressdetector.shared.PredictionWindowConfig
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -61,8 +62,17 @@ class PreparedPpgWindowSlicer(
         val startMillis = elapsed[indices.first()]
         val endMillis = elapsed[indices.last()]
         val motionSamples = source.accelerometerSamples.filter { it.elapsedMillis in startMillis..endMillis }
+        val timestamps = LongArray(indices.size) { source.timestampsMillis[indices[it]] }
+        val observedRate = PpgSamplingPolicy.observedRateHz(timestamps)
         return source.copy(
-            timestampsMillis = LongArray(indices.size) { source.timestampsMillis[indices[it]] },
+            timestampsMillis = timestamps,
+            windowId = "${source.windowId}:$startMillis-$endMillis",
+            modelRateHz = if (source.samplingRatePolicy == PpgSamplingPolicy.RECORDING_OBSERVED_V1) {
+                observedRate
+            } else {
+                source.modelRateHz
+            },
+            observedCadenceHz = observedRate,
             filteredValues = filtered,
             rawValues = raw,
             rawValuesSha256 = raw.takeIf { it.isNotEmpty() }?.let(::sha256Csv) ?: "",

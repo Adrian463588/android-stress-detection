@@ -1,7 +1,154 @@
 {
   "schema_version": "bundled_knowledge_manifest_v1",
-  "corpus_version": "none",
-  "corpus_status": "EMPTY",
-  "manifest_sha256": "01f5334e4d2b0cca6cf772a5dcf9003080a37b84f0f1eeef80910a283c5cf749",
-  "documents": []
+  "corpus_version": "counseling_kb_v1",
+  "corpus_status": "READY",
+  "documents": [
+    {
+      "document_id": "bk_01_dasar_dan_etika",
+      "title": "Dasar-dasar, Prinsip, dan Kode Etik Bimbingan Konseling",
+      "asset_path": "ai/counseling/bk_01_dasar_dan_etika.md",
+      "format": "markdown",
+      "source_sha256": "fe5e50aa144d5348d2787012be90f079327d730b9df78c0327efdf8189c23985",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Kemendikbud & Buku Ajar BK Terverifikasi",
+      "source_locator": "ai/counseling/bk_01_dasar_dan_etika.md"
+    },
+    {
+      "document_id": "bk_02_bidang_layanan",
+      "title": "Empat Bidang Pelayanan Bimbingan dan Konseling",
+      "asset_path": "ai/counseling/bk_02_bidang_layanan.md",
+      "format": "markdown",
+      "source_sha256": "aab074ecff7bfd98dbd0fbf13b85892f5a7e4483499dccec37c70c9a8aa2eb62",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Kemendikbud & Buku Ajar BK Terverifikasi",
+      "source_locator": "ai/counseling/bk_02_bidang_layanan.md"
+    },
+    {
+      "document_id": "bk_03_teori_dan_intervensi",
+      "title": "Teori dan Teknik Intervensi Konseling Individual",
+      "asset_path": "ai/counseling/bk_03_teori_dan_intervensi.md",
+      "format": "markdown",
+      "source_sha256": "e7795bee6c9f844eb155ff67d1993e977d1f08d67b46760bf821c27cba43c317",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Kemendikbud & Buku Ajar BK Terverifikasi",
+      "source_locator": "ai/counseling/bk_03_teori_dan_intervensi.md"
+    },
+    {
+      "document_id": "bk_04_kelompok_dan_klasikal",
+      "title": "Bimbingan dan Konseling Kelompok serta Layanan Klasikal",
+      "asset_path": "ai/counseling/bk_04_kelompok_dan_klasikal.md",
+      "format": "markdown",
+      "source_sha256": "003a367b744bdb5adfd43bc7997febedcb3e26626a46ffac02b525068a0a2fa8",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Kemendikbud & Buku Ajar BK Terverifikasi",
+      "source_locator": "ai/counseling/bk_04_kelompok_dan_klasikal.md"
+    },
+    {
+      "document_id": "bk_05_keterampilan_mikro",
+      "title": "Keterampilan Mikro Konseling Profesional",
+      "asset_path": "ai/counseling/bk_05_keterampilan_mikro.md",
+      "format": "markdown",
+      "source_sha256": "e52bbf56d918afa021c73762942406c8dc68a55d463d20c7eee78c3039442779",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Kemendikbud & Buku Ajar BK Terverifikasi",
+      "source_locator": "ai/counseling/bk_05_keterampilan_mikro.md"
+    },
+    {
+      "document_id": "bk_06_asesmen_dan_tindak_lanjut",
+      "title": "Asesmen dalam Bimbingan Konseling dan Integrasi Psikometri",
+      "asset_path": "ai/counseling/bk_06_asesmen_dan_tindak_lanjut.md",
+      "format": "markdown",
+      "source_sha256": "6ce2cd90cf506619c9aab4209d1ab6e47290e5cc68be63f87bf854622656f512",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Kemendikbud & Buku Ajar BK Terverifikasi",
+      "source_locator": "ai/counseling/bk_06_asesmen_dan_tindak_lanjut.md"
+    },
+    {
+      "document_id": "rorschach_projective_assessment",
+      "title": "Modul Klinis Asesmen Proyektif: Tes Rorschach (Exner CS & R-PAS)",
+      "asset_path": "ai/counseling/rorschach_projective_assessment.md",
+      "format": "markdown",
+      "source_sha256": "c6a8acb7dc8264152ff24155b1e63417de49d2747ebfa22052e334ea7c1350d5",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Sistem Komprehensif Exner Terverifikasi",
+      "source_locator": "ai/counseling/rorschach_projective_assessment.md"
+    },
+    {
+      "document_id": "wpt_cognitive_assessment",
+      "title": "Modul Konseling Klinis & Karir: Wonderlic Personnel Test (WPT)",
+      "asset_path": "ai/counseling/wpt_cognitive_assessment.md",
+      "format": "markdown",
+      "source_sha256": "1b164092008cbb5c6d09d0b1c4d183389eeb06e0e326127cb7fb97ceb56b21d3",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Manual Wonderlic Terverifikasi",
+      "source_locator": "ai/counseling/wpt_cognitive_assessment.md"
+    },
+    {
+      "document_id": "tiu5_cognitive_assessment",
+      "asset_path": "ai/counseling/tiu5_cognitive_assessment.md",
+      "title": "Modul Konseling Klinis & Karir: Tes Inteligensi Umum 5 (TIU 5 Figural)",
+      "category": "psychometrics_cognitive",
+      "source_sha256": "b1600998e1e366aa38009835920bf2497f837398628eddc53fa59b193f0d6ce5",
+      "format": "markdown",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Acuan Skoring TIU 5 Terverifikasi",
+      "source_locator": "ai/counseling/tiu5_cognitive_assessment.md"
+    },
+    {
+      "document_id": "tiu6_spatial_assessment",
+      "asset_path": "ai/counseling/tiu6_spatial_assessment.md",
+      "title": "Modul Konseling Klinis & Karir: Tes Inteligensi Umum 6 (TIU 6 Penalaran Spasial)",
+      "category": "psychometrics_cognitive",
+      "source_sha256": "943b682c20931d592bbd7f330b32fd7065bd7110e07d319913f7c368635ce455",
+      "format": "markdown",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Acuan Skoring TIU 6 Terverifikasi",
+      "source_locator": "ai/counseling/tiu6_spatial_assessment.md"
+    },
+    {
+      "document_id": "spm_matrices_assessment",
+      "asset_path": "ai/counseling/spm_matrices_assessment.md",
+      "title": "Modul Konseling Klinis dan Karir: Raven Standard Progressive Matrices (SPM)",
+      "category": "psychometrics_cognitive",
+      "source_sha256": "6c503a19271577f3ef339a9dd14eb976735e1a7e13543fbc80654f4e8e47891d",
+      "format": "markdown",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis dan Acuan Skoring SPM Terverifikasi",
+      "source_locator": "ai/counseling/spm_matrices_assessment.md"
+    },
+    {
+      "document_id": "cfit_scale3_assessment",
+      "asset_path": "ai/counseling/cfit_scale3_assessment.md",
+      "title": "Modul Konseling Klinis & Karir: Culture Fair Intelligence Test (CFIT Skala 3 Bentuk A)",
+      "category": "psychometrics_cognitive",
+      "source_sha256": "3c77afd98295a1fa43f4b5d6db853e45d40c0166834e8f26140cf30b3c79bfe0",
+      "format": "markdown",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Acuan Skoring CFIT 3A Terverifikasi",
+      "source_locator": "ai/counseling/cfit_scale3_assessment.md"
+    },
+    {
+      "document_id": "cfit_scale2_assessment",
+      "asset_path": "ai/counseling/cfit_scale2_assessment.md",
+      "title": "Modul Konseling Klinis & Edukasi: Culture Fair Intelligence Test (CFIT Skala 2 Bentuk A)",
+      "category": "psychometrics_cognitive",
+      "source_sha256": "c64251191fbf8b9d5f92d74240efc763fd7e3b0e166d784b9ede9f8d0c89c301",
+      "format": "markdown",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Acuan Skoring CFIT 2A Terverifikasi",
+      "source_locator": "ai/counseling/cfit_scale2_assessment.md"
+    },
+    {
+      "document_id": "army_alpha_cognitive_assessment",
+      "asset_path": "ai/counseling/army_alpha_cognitive_assessment.md",
+      "title": "Modul Konseling Klinis & Karir: Army Alpha Intelligence Test (UI-10013-96)",
+      "category": "psychometrics_cognitive",
+      "source_sha256": "6ecec7537399a0530ee61aa97c3c17d59e66794711b41610fa0c155316ecff50",
+      "format": "markdown",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Acuan Skoring Army Alpha Terverifikasi",
+      "source_locator": "ai/counseling/army_alpha_cognitive_assessment.md"
+    }
+  ],
+  "manifest_sha256": "d81b1dc975f03119900d0b8464a6ea8b6cc96bdbd3d8ccf8f10c2596d9f9d445"
 }

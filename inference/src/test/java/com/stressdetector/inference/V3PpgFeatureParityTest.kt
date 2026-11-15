@@ -2,7 +2,11 @@ package com.stressdetector.inference
 
 import com.google.gson.Gson
 import com.google.gson.JsonParser
+import com.stressdetector.shared.PpgSamplingPolicy
+import com.stressdetector.shared.PpgType
 import java.io.File
+import kotlin.math.PI
+import kotlin.math.floor
 import kotlin.math.sin
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -12,14 +16,44 @@ import org.junit.Test
 /** Host-side run-scoped model evidence and extractor contract checks. */
 class V3PpgFeatureParityTest {
     @Test
-    fun rejectsWindowShorterThanCanonicalOneHundredEightySeconds() {
-        val values = DoubleArray(25 * 180 - 1) { index -> sin(index / 5.0) }
+    fun accepts179Point9SecondBoundaryJitterForBothChannelsWithoutPadding() {
+        PpgType.inferenceChannels.forEach { type ->
+            // Numeric boundary regression only, not physiological or device evidence.
+            val count = (179.9 * type.sourceRateHz).toInt() + 1
+            val timestamps = LongArray(count) { index -> (179_900.0 * index / (count - 1)).toLong() }
+            val values = DoubleArray(count) { index -> sin(2.0 * PI * 1.2 * timestamps[index] / 1_000.0) }
+            val observedRate = PpgSamplingPolicy.observedRateHz(timestamps)
 
-        try {
-            V3PpgFeatureExtractor.extract(values, samplingRateHz = 25.0)
-            fail("A canonical model window must span 180 seconds")
-        } catch (error: IllegalArgumentException) {
-            assertEquals("insufficient_window_samples", error.message)
+            val extracted = V3PpgFeatureExtractor.extract(
+                PpgFeatureExtractionInput(
+                    values = values,
+                    samplingRateHz = observedRate,
+                    timestampsMillis = timestamps,
+                    detectorContract = PpgDetectorContract.defaultFor(type.assetSuffix, type.modelRateHz.toDouble())
+                )
+            )
+
+            assertEquals(179_900L, timestamps.last() - timestamps.first())
+            assertEquals(count, values.size)
+            assertTrue(extracted.peakIndices.isNotEmpty())
+            assertTrue(extracted.values.values.all(Float::isFinite))
+            assertEquals(observedRate.toFloat(), requireNotNull(extracted.values["sampling_rate_hz"]), 0f)
+        }
+    }
+
+    @Test
+    fun rejectsWindowsBelowPythonBoundaryToleranceForBothChannels() {
+        PpgType.inferenceChannels.forEach { type ->
+            val rate = type.modelRateHz.toDouble()
+            val count = floor((180.0 - 0.5) * rate).toInt() - 1
+            val values = DoubleArray(count) { index -> sin(index / 5.0) }
+
+            try {
+                V3PpgFeatureExtractor.extract(values, samplingRateHz = rate)
+                fail("${type.assetSuffix} must reject below Python's minimum sample count")
+            } catch (error: IllegalArgumentException) {
+                assertEquals("insufficient_window_samples", error.message)
+            }
         }
     }
 

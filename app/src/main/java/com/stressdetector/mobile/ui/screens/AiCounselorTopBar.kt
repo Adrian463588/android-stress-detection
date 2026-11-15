@@ -81,7 +81,6 @@ internal fun counselorHorizontalPadding(windowSizeClass: WindowWidthSizeClass): 
 @Composable
 private fun CounselorTopBarActions(model: CounselorScreenModel, dialogs: CounselorDialogState) {
     val navigation = model.navigation
-    val state = model.runtime.state
     if (navigation.windowSizeClass == WindowWidthSizeClass.Compact) {
         Box {
             IconButton(onClick = { dialogs.onHeaderMenuChanged(true) }) {
@@ -107,31 +106,51 @@ private fun CounselorTopBarActions(model: CounselorScreenModel, dialogs: Counsel
                         navigation.onNavigateToLibrary()
                     }
                 )
+                DropdownMenuItem(
+                    text = { Text("Asesmen psikometri") },
+                    onClick = {
+                        dialogs.onHeaderMenuChanged(false)
+                        navigation.onOpenAssessments()
+                    }
+                )
             }
         }
     } else {
-        IconButton(onClick = { dialogs.onWebSearchModeChanged(true) }) {
-            Icon(
-                Icons.Default.Language,
-                contentDescription = when (state.webSearchMode) {
-                    WebSearchMode.Disabled -> "Aktifkan pencarian web"
-                    WebSearchMode.NextMessage -> "Pencarian web aktif untuk pesan berikutnya"
-                    WebSearchMode.Persistent -> if (state.automaticWebAllowed) {
-                        "Pencarian web topik publik otomatis aktif bila sumber lokal belum cukup"
-                    } else {
-                        "Konfirmasi pencarian web bila sumber lokal belum cukup"
-                    }
-                },
-                tint = if (state.webSearchMode == WebSearchMode.Disabled) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+        CounselorWebAction(model.runtime.state) { dialogs.onWebSearchModeChanged(true) }
+        CounselorDestinationActions(navigation)
+    }
+}
+
+@Composable
+private fun CounselorWebAction(state: CounselorUiState, onClick: () -> Unit) {
+    IconButton(onClick = onClick) {
+        Icon(
+            Icons.Default.Language,
+            contentDescription = when (state.webSearchMode) {
+                WebSearchMode.Disabled -> "Aktifkan pencarian web"
+                WebSearchMode.NextMessage -> "Pencarian web aktif untuk pesan berikutnya"
+                WebSearchMode.Persistent -> if (state.automaticWebAllowed) {
+                    "Pencarian web topik publik otomatis aktif bila sumber lokal belum cukup"
                 } else {
-                    MaterialTheme.colorScheme.primary
+                    "Konfirmasi pencarian web bila sumber lokal belum cukup"
                 }
-            )
-        }
-        TextButton(onClick = navigation.onNavigateToLibrary, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text("Dokumen")
-        }
+            },
+            tint = if (state.webSearchMode == WebSearchMode.Disabled) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.primary
+            }
+        )
+    }
+}
+
+@Composable
+private fun CounselorDestinationActions(navigation: CounselorNavigation) {
+    TextButton(onClick = navigation.onNavigateToLibrary, modifier = Modifier.heightIn(min = 48.dp)) {
+        Text("Dokumen")
+    }
+    TextButton(onClick = navigation.onOpenAssessments, modifier = Modifier.heightIn(min = 48.dp)) {
+        Text("Asesmen")
     }
 }
 
