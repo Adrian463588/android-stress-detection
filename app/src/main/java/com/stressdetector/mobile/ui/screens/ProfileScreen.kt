@@ -66,6 +66,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.stressdetector.mobile.BuildConfig
 import com.stressdetector.mobile.domain.engine.CounselingInteractionMode
 import com.stressdetector.mobile.domain.engine.ResponseProfile
 import com.stressdetector.mobile.domain.voice.VoiceLanguage
@@ -273,6 +274,31 @@ fun ProfileScreen(
                     title = "Data lokal",
                     supporting = "Ekspor, koneksi folder, dan hapus data dengan konfirmasi",
                     onClick = { openDetail(ProfileDetail.DATA) }
+                )
+            }
+        }
+        item {
+            ProfileOverviewSection(title = "Tentang aplikasi") {
+                ListItem(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 64.dp)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = "Stress Detector versi ${BuildConfig.VERSION_NAME}, build ${BuildConfig.VERSION_CODE}"
+                        },
+                    headlineContent = {
+                        Text(
+                            text = "Stress Detector · v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = "Purwarupa penelitian & edukasi nonkomersial · 40 instrumen psikometri · Offline-first",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
         }

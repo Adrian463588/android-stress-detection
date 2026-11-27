@@ -231,6 +231,18 @@ private fun WearScreen(permissionStatus: PermissionStatus, permissionRequestAtte
                     onStop = actions.onStop
                 )
             }
+
+            item {
+                Text(
+                    text = "Stress Watch · v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    style = MaterialTheme.typography.caption3,
+                    color = WearMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp)
+                )
+            }
         }
     }
 }

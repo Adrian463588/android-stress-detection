@@ -1,0 +1,71 @@
+Research, Educational and Non-Commercial Use Only License
+
+Copyright (c) 2026 Adrian Syahbidin. All rights reserved.
+
+CLASSIFICATION NOTICE:
+This license governs source-available academic research software. It is NOT
+the GNU General Public License (GPL-3.0) and is NOT an Open Source Initiative
+(OSI)-approved Open Source License because it restricts commercial use and
+professional clinical deployment.
+
+1. Definitions
+- "Software" means the source code, documentation, build scripts, schemas, and
+  original software assets authored by the Copyright Holder in this repository
+  (excluding Third-Party Components and Psychometric Materials defined below).
+- "Copyright Holder" means Adrian Syahbidin.
+- "You" means an individual or academic/research institution exercising rights
+  under this License.
+
+2. Permitted Uses (Non-Commercial Academic, Educational & Personal)
+Subject to full compliance with this License, the Copyright Holder grants You a
+worldwide, royalty-free, non-exclusive, revocable license to view, copy,
+compile, execute, modify, and redistribute the Software solely for:
+a) Personal learning and coursework;
+b) Educational demonstrations and academic instruction;
+c) Non-commercial scientific and psychological research prototypes, including
+   reproducibility audits, software evaluation, and internal expert-judgment
+   reviews under appropriate institutional oversight.
+
+Any permitted modification or redistribution must:
+- Retain all original copyright notices (`Copyright (c) 2026 Adrian Syahbidin`);
+- Clearly attribute Adrian Syahbidin as the original author;
+- Include a complete copy of this License and `THIRD_PARTY_NOTICES.md`;
+- License any distributed derivative works of the Software strictly under these
+  same Research, Educational and Non-Commercial Use Only terms; and
+- Clearly state any modifications made.
+
+3. Explicit Restrictions (Prohibited Uses)
+You may NOT, directly or indirectly:
+a) Commercial Use: Sell, sublicense, rent, lease, monetize, bundle in a paid
+   product, offer as a paid or commercial Software-as-a-Service (SaaS), or
+   otherwise use the Software for any commercial or revenue-generating purpose.
+b) Professional Clinical or Psychological Services: Use the Software, its
+   biosignal predictions, its psychometric outputs, or its AI Counselor responses
+   to provide professional psychological consultation, counseling, clinical
+   assessment, medical or psychological diagnosis, triage, crisis intervention,
+   or therapy services to real clients or patients.
+c) Legal Rights Misrepresentation: Represent the Software as certified medical
+   or clinical diagnostic equipment, or redistribute third-party proprietary
+   materials outside their respective licenses.
+
+Any use outside Section 2 requires prior express written permission from the
+Copyright Holder.
+
+4. Third-Party Components & Psychometric Instruments
+This License applies strictly to the original Software authored by the Copyright
+Holder. Open-source libraries, proprietary SDKs (including Samsung Health Sensor
+SDK), pre-trained AI models (including Gemma 4 and Sherpa-ONNX), audEERING
+openSMILE, and psychometric instruments/manuals included with or referenced by
+this repository remain governed exclusively by their respective owners and
+licenses as documented in `THIRD_PARTY_NOTICES.md`. Nothing in this License
+revokes rights already granted under upstream open-source licenses for those
+independent third-party components.
+
+5. Disclaimer of Warranty & Clinical Liability
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, ACCURACY OF PHYSIOLOGICAL OR PSYCHOMETRIC PREDICTIONS, OR NON-
+INFRINGEMENT. THE SOFTWARE IS A RESEARCH PROTOTYPE ONLY AND CARRIES NO CLINICAL,
+DIAGNOSTIC, OR THERAPEUTIC VALIDITY GUARANTEE. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES ARISING FROM ANY USE OF THE SOFTWARE.
