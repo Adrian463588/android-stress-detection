@@ -19,6 +19,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig true
         compose true
     }
 
@@ -36,6 +37,8 @@ android {
             debuggable false
             minifyEnabled true
             shrinkResources true
+            // Preserve shared keystore identity required by Wear Data Layer with phone :app.
+            signingConfig signingConfigs.debug
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), rootProject.file("proguard-rules.pro")
         }
     }
