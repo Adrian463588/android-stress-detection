@@ -1,22 +1,22 @@
 # Stress Detector & Clinical Psychological Companion untuk Android dan Galaxy Watch
 
-Aplikasi pendamping klinis offline yang merekam biosinyal PPG dari Samsung Galaxy Watch (Green, IR, Red) untuk klasifikasi stres real-time menggunakan ONNX Runtime, dilengkapi dengan **Bank Asesmen & Materi Konseling (35+ alat tes psikometri kognitif & kepribadian)**, konseling berbasis **Offline RAG & Persona Adaptation (AI+)**, analisis rekaman audio sesi konseling **Verbatim+**, serta pengamanan menyeluruh **Mobile App Hardening (OWASP MASVS-RESILIENCE)**.
+Aplikasi pendamping klinis offline yang merekam biosinyal PPG dari Samsung Galaxy Watch (Green, IR, Red) untuk klasifikasi stres real-time menggunakan ONNX Runtime, dilengkapi dengan **Bank Asesmen & Materi Konseling (40 instrumen psikometri terintegrasi termasuk tes proyektif multimodal lokal)**, konseling berbasis **Offline RAG & Adaptive Counseling Router (`AI+`)**, analisis sesi multimodal **Verbatim+** (audio/prosodi + PPG/HR + pemantauan suhu kulit kandidat + paket SAF ZIP), serta pengamanan menyeluruh **Mobile App Hardening (OWASP MASVS-RESILIENCE)**.
 
 Hasil fisiologis dan psikometri adalah **bantuan pengambilan keputusan (decision-support tool)**, bukan diagnosis medis mutlak atau pendeteksi kebohongan.
 
 ---
 
-## 🚀 Release Candidate (RC) — Phone v0.1.6-rc1 (Build Production Release)
+## 🚀 Release Candidate (RC) — Phone v0.1.8-rc1 / Watch v0.1.2-rc1 (Build Production Release)
 
-- **Unduh Release Candidate**: [`app-production-release.apk`](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.6-rc1/app-production-release.apk) · [Rincian Rilis v0.1.6-rc1](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.6-rc1)
+- **Unduh Release Candidate**: [`app-production-release.apk`](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.8-rc1/app-production-release.apk) · [Rincian Rilis v0.1.8-rc1](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.8-rc1) · [RC Sebelumnya v0.1.7-rc1](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.7-rc1)
 - **Target Arsitektur (ABI)**: `arm64-v8a` (dioptimasi penuh), `armeabi-v7a`, `x86_64`
-- **Konfigurasi Android**: Package `com.stressdetector`, Min SDK 26 (Android 8.0 Oreo), Target SDK 34 (Android 14 UpsideDownCake), Compile SDK 35 (Android 15 VanillaIceCream), Version Code `7`, Version Name `0.1.6-rc1`.
-- **Ukuran File**: `286,793,076 byte` (~273.5 MB, memuat offline speech model Sherpa-ONNX, openSMILE config, model ONNX biosinyal, dan katalog offline psikometri).
-- **Integritas & Checksum SHA-256**:
-  ```text
-  A0B291F55B150824F430BCE26B6FA61F873A8F412731C08FA0F2D5156246539E  app-production-release.apk
-  ```
-- **Status Verifikasi Perangkat Nyata**: Teruji dan berjalan mulus pada Samsung Galaxy S20 Ultra (`SM-G988B`, serial `RRCN3008VYE`) dan Xiaomi 14 (`2412DPC0AG`). Seluruh modul (Home, History, Verbatim+, AI Counselor, Bank Asesmen, dan Profile) berfungsi 100% offline tanpa ketergantungan server luar.
+- **Konfigurasi Android**: Phone Package `com.stressdetector`, Min SDK 26 (Android 8.0 Oreo), Target SDK 34 (Android 14 UpsideDownCake), Compile SDK 35 (Android 15 VanillaIceCream), Version Code `9`, Version Name `0.1.8-rc1`; Wear Companion Version Code `3`, Version Name `0.1.2-rc1`.
+- **Ukuran File (`app-production-release.apk`)**: `288,074,875 byte` (~274.7 MB, memuat offline speech model Sherpa-ONNX, openSMILE config, model ONNX biosinyal, korpus RAG lokal, dan katalog 40 instrumen psikometri).
+- **SHA-256 APK**: `976C2ABB173CDDE71A5BCACC094B3279197DD3C7167AA90D24B7CF2654977E2A`
+- **Status Verifikasi**:
+  - Build & unit test multi-modul lulus (`:shared:test` 45, `:inference:testProductionDebugUnitTest` 34, `:wear:testProductionDebugUnitTest` 35, `:app:testProductionDebugUnitTest` 956, `:app:testProductionReleaseUnitTest` 956; nol gagal/skip), `:app:lintVitalProductionRelease` dan `:app:assembleProductionRelease` lulus lokal.
+  - Perangkat fisik Samsung Galaxy S20 Ultra (`SM-G988B`, serial `RRCN3008VYE`, Android 13) terverifikasi untuk alur universal 40 instrumen psikometri (`Assessment → Scoring → Visualization → Interpretation → AI+`), analisis visi multimodal lokal Gemma 4 E2B pada kanvas proyektif, migrasi Room `v24 → v25`, dan ekspor/impor SAF ZIP Verbatim+.
+  - Batasan uji perangkat keras & klinis: uji active stylus (`S Pen`) fisik, penangkapan suhu kulit langsung pada Samsung Galaxy Watch 5, serta validasi norma populasi / *expert judgment* psikolog klinis masih tertunda (`NOT RUN` / `BLOCKED` di luar perangkat uji saat ini).
 
 ---
 
@@ -60,33 +60,25 @@ Aplikasi beroperasi secara **100% offline** tanpa transmisi ke cloud atau server
 
 ---
 
-## 🧠 Bank Asesmen & Materi Konseling (35+ Alat Tes Psikometri)
+## 🧠 Bank Asesmen & Materi Konseling (40 Instrumen Psikometri)
 
-Aplikasi menyediakan bank asesmen psikologi terlengkap yang dapat dikerjakan langsung secara digital di perangkat Android (dengan input sentuhan jari maupun stylus Samsung S Pen) maupun dihitung melalui kalkulator rekapitulasi skor:
+Aplikasi menyediakan **40 instrumen psikometri terintegrasi** untuk pengerjaan digital, rekapitulasi skor manual, maupun simulasi demonstrasi eksploratif melalui alur universal `Assessment → Scoring → Visualization → Interpretation → AI+` tanpa pemblokiran defensif:
 
-### 1. Asesmen Kognitif & Inteligensi (Pengerjaan Langsung & Skoring Otomatis)
-- **Wonderlic Personnel Test (WPT)**: 50 butir soal kognitif penalaran logika, numerik, dan verbal otentik dengan batas waktu ketat 12 menit. Dilengkapi konversi skor mentah ke norma inteligensi umum dan interpretasi kapasitas belajar kerja.
-- **TIU 5 (Tes Inteligensi Umum 5)**: 30 butir soal penalaran figural (analogi dan serial bentuk gambar geometris) dengan stimulus gambar tajam, skoring otomatis, dan konversi ke norma standar kognitif.
-- **TIU 6 (Tes Inteligensi Umum 6 - Spatial Net / Jaring-Jaring 3D)**: 40 butir stimulus jaring-jaring bangun ruang (9 ragam bentuk: balok, kubus, prisma, piramida, kerucut terpancung) dalam 8 baris soal. Opsi toggle respons interaktif ("Dapat Dilipat Utuh" / "Tidak Dapat Dilipat").
-- **Raven's Standard Progressive Matrices (SPM)**: 60 butir soal penalaran non-verbal (Set A, B, C, D, E) lengkap dengan stimulus matriks pola dan potongan gambar pilihan jawaban. Menghasilkan skor mentah, persentil, dan grade inteligensi (Grade I s.d. Grade V).
-- **Culture Fair Intelligence Test (CFIT 3A & CFIT 2A)**: 50 butir (Skala 3A) dan 46 butir (Skala 2A) bebas budaya yang terbagi ke dalam 4 subtes: Seri Gambar, Klasifikasi Bentuk, Matriks Pola, dan Kondisi Topologis Persyaratan Titik. Pemotongan gambar presisi tinggi dengan konversi IQ standar Cattell.
-- **Army Alpha Intelligence Test (Form A / UI-10013-96)**: 12 subtes pengukuran ketangkasan mental dan eksekusi instruksi lisan/visual (instruksi lingkaran/angka, aritmatika, praktis, sinonim-antonim, deret angka, analogi verbal, hingga peribahasa). Dilengkapi interpretasi IQ dan grade mental.
-- **Intelligenz Struktur Test (IST)**: 9 subtes terintegrasi (SE, WA, AN, GE, ME, RA, ZR, FA, WU) dengan psikogram komprehensif.
+### 1. Asesmen Kognitif & Inteligensi
+- **Wonderlic Personnel Test (WPT)**: 50 butir soal penalaran logika, numerik, dan verbal dengan batas waktu ketat 12 menit, indikator skor mentah, dan interpretasi deskriptif.
+- **TIU 5 (Tes Inteligensi Umum 5)**: 30 butir soal penalaran figural dengan stimulus gambar tajam dan skoring deterministik.
+- **TIU 6 (Tes Inteligensi Umum 6 - Spatial Net / Jaring-Jaring 3D)**: 40 butir stimulus jaring-jaring bangun ruang dalam 8 baris soal dengan kontrol respons interaktif ("Dapat Dilipat Utuh" / "Tidak Dapat Dilipat").
+- **Raven's Standard Progressive Matrices (SPM)**: 60 butir soal penalaran non-verbal (Set A–E) lengkap dengan breakdown bar per set.
+- **Culture Fair Intelligence Test (CFIT 3A & CFIT 2A)**: 50 butir (Skala 3A) dan 46 butir (Skala 2A) pada 4 subtes (`Series`, `Classification`, `Matrices`, `Topology`), menampilkan skor mentah per subtes secara jujur dan mengosongkan IQ (`—`) saat norma populasi resmi belum diterapkan.
+- **Army Alpha Intelligence Test (Form A / UI-10013-96)**: 12 subtes dengan kanvas gambar digital otentik (input jari dan active stylus), mesin evaluasi geometris otomatis, skoring LPSP3 UI Skala Tertimbang 1–5, dan integrasi AI Counselor on-device.
+- **Pencarian Asesmen Dinamis, Pin Rekomendasi & Riwayat Unik**: Search bar real-time, chip riwayat pencarian (*pinned chips*), serta riwayat tersimpan per `resultId`.
+- **Intelligenz Struktur Test (IST)** & **Figure Reasoning Test (FRT)**: Profil multi-subtes (9 subtes IST) dan skoring terkoreksi `R - 0.25W` (FRT).
 
-### 2. Asesmen Kepribadian, Sikap Kerja, & Minat
-- **PAPI Kostick (20 Dimensi Kerja)**: 90 pasang pernyataan preferensi kerja (kebutuhan kerja dan peran kepemimpinan). Menghasilkan psikogram diagram jaring laba-laba (*spider web chart*).
-- **Edward Personal Preference Schedule (EPPS)**: 225 pasang pilihan paksa (*forced-choice*) mengukur 15 kebutuhan psikologis Murray dan skor konsistensi kejujuran (Consistency Score).
-- **Management Style Diagnosis Test (MSDT)**: 64 butir gaya kepemimpinan Reddin (Dedicated, Integrated, Related, Separated, Developer, Benevolent Autocrat, Bureaucrat, Compromiser, Missionary, Autocrat, Deserter, Executive).
-- **Management Skills Assessment Instrument (MSAI)**: 12 kompetensi manajerial Quin.
-- **Enneagram**: 9 tipe kepribadian adaptif dengan identifikasi *wing* dan level integrasi/disintegrasi.
-- **Self-Reporting Questionnaire (SRQ-29)**: Skrining 29 gejala gangguan mental emosional, neurotik, psikotik, dan penyalahgunaan zat.
-- **Visual-Auditory-Kinesthetic (VAK)**: Modalitas gaya belajar dominan.
-- **Tes Pauli & Kraepelin**: Tes ketahanan kerja, kecepatan, ketelitian, dan stabilitas emosi melalui kalkulasi penjumlahan angka acak.
-- **16PF, MBTI, DISC, RMIB (Rothwell-Miller Interest Blank)**.
+### 2. Asesmen Kepribadian, Sikap Kerja, Minat & Eksploratif
+- **PAPI Kostick (20 Dimensi Kerja)**, **EPPS (225 pasang / 15 kebutuhan Murray + konsistensi)**, **MSDT (64 butir Reddin)**, **MSAI (60 butir / 12 kompetensi Quin)**, **Enneagram (180 butir / 9 tipe)**, **16PF**, **MBTI**, **DISC (Kurva Most/Least/Selisih)**, **Big Five (IPIP-BFM-50)**, **MMPI**, **SRQ-29**, **BDI-II**, **CBI / CBI-TBI**, **Holland RIASEC**, **RMIB**, **Kuder Preference Record**, **Adversity Quotient (`AQ-15` matriks `Q/Ca/Cl` sesuai workbook & ARP 20-butir)**, **MIT**, **VAK**, **MSEAI**, **ESJ**, **VRT**, **Tes Pauli**, dan **Kraepelin**.
 
-### 3. Asesmen Proyektif Klinis
-- **Tes Rorschach (Inkblot Test)**: 10 kartu bercak tinta otentik (Kartu I s.d. X) dengan alur fase respon (*Response Phase*) dan fase penelusuran (*Inquiry Phase*). Dilengkapi protokol *Exner Comprehensive System (CS)* untuk koding Lokasi (W, D, Dd, S), Perkembangan Bentuk (DQ), Determinan (F, M, FM, m, C, CF, FC, T, Y, V), Kualitas Bentuk (FQ), Konten (H, (H), A, (A), Art, Id), dan Popular (P), serta indeks EB, EA, es, D-Score, CDI, S-CON, dan DEPI.
-- **Tes Wartegg (8 Kotak Stimulus)**: Analisis gambar arketipal 8 figur dengan urutan penarikan garis, profil kepribadian, dan dinamika emosi.
+### 3. Asesmen Proyektif Klinis & AI Multimodal Lokal
+- **Tes Wartegg (8 Kotak), House-Tree-Person (HTP, 3 Panel: Rumah/Pohon/Orang), Draw-A-Person (DAP, 2 Panel), Baum Test (Tes Pohon, 1 Panel), & Tes Rorschach (10 Kartu + Protokol Inquiry Exner CS / R-PAS + Anotasi Lokasi Opsional)**: Memakai kanvas proyektif terpadu (`MotionEvent` + koordinat historis, mode filter `Auto / Jari / Stylus`, `Penghapus`, `Undo`, `Redo`, `Hapus`), ekstraksi telemetri kinematik/temporal/spasial (`speed`, `accel`, `jerk`, kelengkungan, jeda `>= 250 ms`, `revisionCount`, kepadatan ruang, `roughnessIndex`, serta tekanan/kemiringan/orientasi hardware dengan preservasi nilai `null`), grafik deret waktu pada layar hasil, dan analisis gambar PNG lokal oleh **Gemma 4 E2B multimodal** (`LiteRTLlmEngine.analyzeMultimodal`).
 
 ---
 
@@ -179,20 +171,25 @@ Model yang dikemas dikunci ke run **20260916T132736Z**. Green dan IR dievaluasi 
 
 | Aplikasi | Versi | Package | SHA-256 | Unduhan |
 | --- | --- | --- | --- | --- |
-| Phone | 0.1.5 · versionCode 6 | com.stressdetector | 073531f002e8f9a41fd600a0629b43916331c0bac0ccb68cff7abafae9f838d3 | [APK](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/app-production-debug.apk) |
-| Watch | 0.1.1 · versionCode 2 | com.stressdetector | 3ea5fd86c13105244350eab8ea7713cc793df0fbde8d1ba626f3b09a8bc8cf96 | [APK](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/wear-production-debug.apk) |
+| Phone | 0.1.8-rc1 · versionCode 9 | com.stressdetector | `976C2ABB173CDDE71A5BCACC094B3279197DD3C7167AA90D24B7CF2654977E2A` | [APK Release](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.8-rc1/app-production-release.apk) |
+| Watch | 0.1.2-rc1 · versionCode 3 | com.stressdetector | — *(build sumber `:wear` pada branch ini)* | [Source `:wear`](wear/) |
+| Phone (v0.1.5 debug historis) | 0.1.5 · versionCode 6 | com.stressdetector | `073531f002e8f9a41fd600a0629b43916331c0bac0ccb68cff7abafae9f838d3` | [APK](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/app-production-debug.apk) |
+| Watch (v0.1.1 historis) | 0.1.1 · versionCode 2 | com.stressdetector | `3ea5fd86c13105244350eab8ea7713cc793df0fbde8d1ba626f3b09a8bc8cf96` | [APK](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/wear-production-debug.apk) |
 
 - [Catatan rilis v0.1.5](docs/releases/android-v0.1.5.md)
 - [File checksum rilis](https://github.com/Adrian463588/android-stress-detection/releases/download/android-v0.1.5/SHA256SUMS-0.1.5.txt)
 - [Halaman rilis v0.1.5](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.5)
 
-Angka checksum di atas dibandingkan dengan digest aset GitHub pada 18 Oktober 2026. Repository privat berarti pengunduh tanpa akses tidak dapat mengambil APK.
+Checksum `0.1.8-rc1` dihitung langsung dari artefak lokal `:app:assembleProductionRelease` (`288,074,875 byte`); checksum historis `0.1.5` dibandingkan dengan digest aset GitHub pada 18 Oktober 2026. Repository privat berarti pengunduh tanpa akses tidak dapat mengambil APK.
 
 ### Riwayat versi
 
 | Tag | Phone | Watch | Status |
 | --- | --- | --- | --- |
-| [android-v0.1.5](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.5) | 0.1.5 | 0.1.1 | Prerelease terbaru; internal debug |
+| [android-v0.1.8-rc1](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.8-rc1) | 0.1.8-rc1 (`versionCode 9`) | 0.1.2-rc1 (`versionCode 3`) | Release Candidate terbaru (`app-production-release.apk`) |
+| [android-v0.1.7-rc1](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.7-rc1) | 0.1.7-rc1 (`versionCode 8`) | 0.1.1 (`versionCode 2`) | Release Candidate sebelumnya (OWASP MASVS hardening + Army Alpha) |
+| [android-v0.1.6-rc1](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.6-rc1) | 0.1.6-rc1 (`versionCode 7`) | 0.1.1 (`versionCode 2`) | Release Candidate (R8 + instrumen psikometri) |
+| [android-v0.1.5](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.5) | 0.1.5 | 0.1.1 | Historis; internal debug |
 | [android-v0.1.2](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.2) | 0.1.2 | 0.1.1 | Historis |
 | [android-v0.1.1](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.1) | 0.1.1 | 0.1.0 | Historis |
 | [android-v0.1.0](https://github.com/Adrian463588/android-stress-detection/releases/tag/android-v0.1.0) | 0.1.0 | 0.1.0 | Rilis non-prerelease yang ditandai GitHub sebagai “Latest” |
