@@ -1,6 +1,6 @@
 # Third-Party Notices & Attributions
 
-This document lists third-party software libraries, native runtimes, AI models, SDKs, and assessment materials referenced or used by **Stress Detector — Clinical Psychological Companion**. Original project code (`Copyright (c) 2026 Adrian Syahbidin`) is governed separately by [`LICENSE`](LICENSE). Nothing in `LICENSE` modifies or restricts upstream rights granted under open-source licenses for independent third-party libraries.
+This document lists third-party software libraries, native runtimes, AI models, SDKs, and assessment materials referenced or used by **Stress Detector — Clinical Psychological Companion**. Original project code (`Copyright (c) 2026 Adrian Syah Abidin`) is governed separately by [`LICENSE`](LICENSE). Nothing in `LICENSE` modifies or restricts upstream rights granted under open-source licenses for independent third-party libraries.
 
 ---
 

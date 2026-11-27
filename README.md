@@ -207,7 +207,7 @@ Rincian lengkap metrik pengujian multi-modul, ukuran APK, sidik jari sertifikat 
 
 Karya perangkat lunak asli dalam repositori ini didistribusikan di bawah ketentuan khusus [**Research, Educational and Non-Commercial Use Only License**](LICENSE):
 
-- **Penggunaan yang Diizinkan:** Pembelajaran pribadi, kegiatan akademik dan pengajaran, penelitian ilmiah nonkomersial, serta evaluasi purwarupa akademik. Modifikasi dan distribusi ulang secara nonkomersial diperbolehkan selama mencantumkan atribusi kepada penulis asli (**Adrian Syahbidin**), mempertahankan pemberitahuan hak cipta, dan menerapkan ketentuan lisensi yang sama.
+- **Penggunaan yang Diizinkan:** Pembelajaran pribadi, kegiatan akademik dan pengajaran, penelitian ilmiah nonkomersial, serta evaluasi purwarupa akademik. Modifikasi dan distribusi ulang secara nonkomersial diperbolehkan selama mencantumkan atribusi kepada penulis asli (**Adrian Syah Abidin**), mempertahankan pemberitahuan hak cipta, dan menerapkan ketentuan lisensi yang sama.
 - **Larangan Tegas:**
   1. Dilarang menjual, memonetisasi, menyewakan, atau menggunakan perangkat lunak ini untuk keperluan komersial dalam bentuk apa pun tanpa izin tertulis dari pemegang hak cipta.
   2. Dilarang menggunakan aplikasi ini beserta seluruh keluaran biosinyal, skor psikotes, atau jawaban `AI+` sebagai layanan konsultasi, konseling, asesmen psikologis resmi, diagnosis, maupun terapi profesional terhadap klien atau pasien nyata.
@@ -220,7 +220,7 @@ Karya perangkat lunak asli dalam repositori ini didistribusikan di bawah ketentu
 
 <div align="center">
 
-**Developed by Adrian Syahbidin**  
-Copyright © 2026 Adrian Syahbidin.
+**Developed by Adrian Syah Abidin**  
+Copyright © 2026 Adrian Syah Abidin.
 
 </div>
