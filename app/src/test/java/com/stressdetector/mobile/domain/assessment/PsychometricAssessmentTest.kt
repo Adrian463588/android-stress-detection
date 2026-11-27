@@ -10,6 +10,7 @@ import com.stressdetector.mobile.domain.engine.OnDeviceLlmEngine
 import com.stressdetector.mobile.domain.engine.PromptAsset
 import com.stressdetector.mobile.domain.engine.PromptAssetProvider
 import com.stressdetector.mobile.domain.engine.PromptBudget
+import com.stressdetector.mobile.domain.engine.RagMode
 import java.io.File
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -150,7 +151,7 @@ class PsychometricAssessmentTest {
 
         val warteggScores = entry("wartegg").score(List(8) { 20 })
         assertEquals(20.0, warteggScores.first().value, 0.0)
-        assertEquals(4, warteggScores.size) // 4 fungsi dasar kepribadian
+        assertEquals(8, warteggScores.size)
 
         val mitScores = entry("mit").score(listOf(45, 40, 35, 30, 25, 20, 15, 10))
         assertEquals("Linguistik", mitScores.first().label)
@@ -197,7 +198,7 @@ class PsychometricAssessmentTest {
         val engine = RecordingAssessmentEngine()
         val discussion = AssessmentDiscussion(engine, prompts) { true }
         assertEquals(catalog.instruments.map { it.id }.toSet(), protocols.keys)
-        assertEquals(35, protocols.size)
+        assertEquals(40, protocols.size)
         catalog.instruments.forEach { instrument ->
             val protocol = protocols.getValue(instrument.id)
             val guide = assessmentGuideEvidence(protocol)
@@ -256,7 +257,7 @@ class PsychometricAssessmentTest {
     }
 
     @Test
-    fun discInteractiveScoringProducesLine123AndArchetype() {
+    fun discInteractiveScoringProducesProfilesABC() {
         val form = requireNotNull(catalog.find("disc")?.form)
         assertEquals(24, form.items.size)
         val answers = mutableMapOf<Int, Int>()
@@ -266,10 +267,10 @@ class PsychometricAssessmentTest {
         }
         assertTrue(AssessmentScoring.canScore(form, answers))
         val (scores, interpretation) = AssessmentEnrichers.enrich("disc", form, answers, emptyList())
-        assertTrue(scores.any { it.label.contains("Grafik 1 (Mask)") })
-        assertTrue(scores.any { it.label.contains("Grafik 2 (Core)") })
-        assertTrue(scores.any { it.label.contains("Grafik 3 (Mirror)") })
-        assertTrue(interpretation.contains("Profil DISC menunjukkan tipe dominan"))
+        assertTrue(scores.any { it.label.contains("Profil A (Most)") })
+        assertTrue(scores.any { it.label.contains("Profil B (Least)") })
+        assertTrue(scores.any { it.label.contains("Profil C (Selisih Most-Least)") })
+        assertTrue(interpretation.contains("Skor mentah DISC-24"))
     }
 
     @Test
@@ -279,18 +280,18 @@ class PsychometricAssessmentTest {
         val answers = (0 until 338).associateWith { 0 }.toMutableMap()
         answers[92] = 1
         answers[119] = 1
-        val (scores, interpretation) = AssessmentEnrichers.enrich("mmpi", form, answers, emptyList())
-        val suiScore = scores.first { it.label.contains("SUI") }
+        val outcome = AssessmentEnrichers.enrichDetailed("mmpi", form, answers, emptyList())
+        val suiScore = outcome.scores.first { it.label.contains("SUI") }
         assertEquals(2.0, suiScore.value, 0.001)
-        assertTrue(interpretation.contains("PERINGATAN KESELAMATAN KLINIS"))
+        assertTrue(outcome.interpretation.contains("PERINGATAN KESELAMATAN SUI"))
+        assertEquals(ExaminerReviewStatus.PENDING, outcome.reviewStatus)
     }
 
     @Test
-    fun tiu6SpatialScoringMapsToWeightedNormScale() {
+    fun tiu6SpatialScoringComputesRawScoreAndFamilies() {
         val form = requireNotNull(catalog.find("tiu_6")?.form)
         assertEquals(40, form.items.size)
 
-        // Verify all 40 items have authentic imageAssetPath and binary choices
         form.items.forEachIndexed { idx, item ->
             val expectedImg = "ai/psychometrics/images/tiu6/tiu6_item_${idx + 1}.webp"
             assertEquals("Item ${idx + 1} must reference its authentic spatial stimulus image", expectedImg, item.imageAssetPath)
@@ -303,36 +304,29 @@ class PsychometricAssessmentTest {
             0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 0, 1,
             1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1
         )
-        // Test 1: Full correct (40/40) -> Skala 5 -> BAIK SEKALI
         val answers = keys.mapIndexed { index, k -> index to if (k == 1) 0 else 1 }.toMap()
         val (scores, interpretation) = AssessmentEnrichers.enrich("tiu_6", form, answers, emptyList())
         val rawScore = scores.first { it.label.contains("Total Jawaban Benar") }
         assertEquals(40.0, rawScore.value, 0.001)
-        val ws = scores.first { it.label.contains("Skor Baku") }
-        assertEquals(5.0, ws.value, 0.001)
-        assertTrue(interpretation.contains("BAIK SEKALI"))
+        assertFalse(scores.any { it.label.contains("Skor Baku") })
+        assertTrue(interpretation.contains("40 dari 40"))
 
-        // Test 2: Recap marked sheet (15 + 12 = 27/40) -> Skala 4 -> BAIK
         val (recapScores, recapInterp) = AssessmentEnrichers.enrichTiu6Recap(15, 12)
         val rawRecap = recapScores.first { it.label.contains("Total Jawaban Benar") }
         assertEquals(27.0, rawRecap.value, 0.001)
-        val wsRecap = recapScores.first { it.label.contains("Skor Baku") }
-        assertEquals(4.0, wsRecap.value, 0.001)
-        assertTrue(recapInterp.contains("BAIK (Skala 4)"))
+        assertTrue(recapInterp.contains("27/40"))
     }
 
     @Test
-    fun tiu5FiguralScoringMapsToWeightedScoreAndNorms() {
+    fun tiu5FiguralScoringComputesRawScoreAndHalves() {
         val form = requireNotNull(catalog.find("tiu_5")?.form)
         assertEquals(30, form.items.size)
-        // Verify all 30 items have non-null imageAssetPath
         form.items.forEachIndexed { idx, item ->
             val expectedImg = "ai/psychometrics/images/tiu5/tiu5_item_${idx + 1}.webp"
             assertEquals("Item ${idx + 1} must reference its authentic figural diagram", expectedImg, item.imageAssetPath)
             assertEquals(5, item.choices?.size)
         }
 
-        // Test 1: Full correct (30/30) -> WS 18 -> BS
         val keys = listOf(
             2, 5, 4, 4, 5, 4, 5, 1, 5, 3,
             5, 4, 5, 3, 2, 3, 2, 3, 4, 4,
@@ -340,23 +334,19 @@ class PsychometricAssessmentTest {
         )
         val fullAnswers = keys.mapIndexed { index, k -> index to k - 1 }.toMap()
         val (scoresFull, interpFull) = AssessmentEnrichers.enrich("tiu_5", form, fullAnswers, emptyList())
-        val rawFull = scoresFull.first { it.label.contains("Raw Score") }
+        val rawFull = scoresFull.first { it.label.contains("Total Skor Mentah") }
         assertEquals(30.0, rawFull.value, 0.001)
-        val wsFull = scoresFull.first { it.label.contains("Weighted Score") }
-        assertEquals(18.0, wsFull.value, 0.001)
-        assertTrue(interpFull.contains("Baik Sekali (BS)"))
+        assertFalse(scoresFull.any { it.label.contains("Weighted Score") })
+        assertTrue(interpFull.contains("30/30"))
 
-        // Test 2: Recap marked sheet (12 + 11 = 23/30) -> WS 14 -> B
         val (recapScores, recapInterp) = AssessmentEnrichers.enrichTiu5Recap(12, 11)
         val rawRecap = recapScores.first { it.label.contains("Total Skor Mentah") }
         assertEquals(23.0, rawRecap.value, 0.001)
-        val wsRecap = recapScores.first { it.label.contains("Weighted Score") }
-        assertEquals(14.0, wsRecap.value, 0.001)
-        assertTrue(recapInterp.contains("Baik (B)"))
+        assertTrue(recapInterp.contains("23/30"))
     }
 
     @Test
-    fun spmMatrixScoringEvaluatesGradeAndSets() {
+    fun spmMatrixScoringComputesRawScoreAndSets() {
         val form = requireNotNull(catalog.find("spm")?.form)
         assertEquals(60, form.items.size)
         val spmKeys = listOf(
@@ -370,7 +360,8 @@ class PsychometricAssessmentTest {
         val (scores, interpretation) = AssessmentEnrichers.enrich("spm", form, answers, emptyList())
         val total = scores.first { it.label.contains("Total Skor Mentah") }
         assertEquals(60.0, total.value, 0.001)
-        assertTrue(interpretation.contains("Grade I"))
+        assertFalse(scores.any { it.label.contains("Grade") })
+        assertTrue(interpretation.contains("tabel norma usia"))
     }
 
     @Test
@@ -391,20 +382,17 @@ class PsychometricAssessmentTest {
     }
 
     @Test
-    fun spmRecapScoringComputesAccurateGradesAndConsistency() {
+    fun spmRecapScoringComputesRawTotalsAndConsistency() {
         val (scoresGrade1, interpGrade1) = AssessmentEnrichers.enrichSpmRecap(12, 12, 12, 12, 12)
         assertEquals(60.0, scoresGrade1.first { it.label.contains("Total Skor Mentah") }.value, 0.001)
-        assertTrue(interpGrade1.contains("Grade I"))
         assertTrue(interpGrade1.contains("Konsistensi antar-set menunjukkan progresi wajar"))
 
-        val (scoresGrade3, interpGrade3) = AssessmentEnrichers.enrichSpmRecap(10, 9, 8, 7, 6)
+        val (scoresGrade3, _) = AssessmentEnrichers.enrichSpmRecap(10, 9, 8, 7, 6)
         assertEquals(40.0, scoresGrade3.first { it.label.contains("Total Skor Mentah") }.value, 0.001)
-        assertTrue(interpGrade3.contains("Grade III"))
 
         val (scoresAtypical, interpAtypical) = AssessmentEnrichers.enrichSpmRecap(2, 3, 2, 2, 10)
         assertEquals(19.0, scoresAtypical.first { it.label.contains("Total Skor Mentah") }.value, 0.001)
         assertTrue(interpAtypical.contains("Catatan Konsistensi"))
-        assertTrue(interpAtypical.contains("Grade V"))
     }
 
     @Test
@@ -419,62 +407,49 @@ class PsychometricAssessmentTest {
     }
 
     @Test
-    fun sixteenPfInteractiveScoringComputes16FactorsAndStenNorms() {
+    fun sixteenPfInteractiveScoringComputes16PrimaryRawFactorsAndMd() {
         val form = requireNotNull(catalog.find("16pf")?.form)
         assertEquals(105, form.items.size)
 
-        // Simulate answers: answer middle (1) for personality, and all correct for factor B
         val factorBKeys = mapOf(2 to 1, 19 to 2, 36 to 1, 53 to 2, 70 to 0, 87 to 2, 103 to 0, 104 to 1)
         val answers = (0 until 105).associateWith { idx ->
             factorBKeys[idx] ?: 1
         }
 
         val (scores, interpretation) = AssessmentEnrichers.enrich("16pf", form, answers, emptyList())
-        assertEquals(22, scores.size) // 16 primary factors + MD + 5 global factors
+        assertEquals(17, scores.size)
 
         val factorBScore = scores.first { it.label.contains("Faktor B:") }
-        assertEquals(10.0, factorBScore.value, 0.001) // 8 correct = Sten 10 in norm table
-        assertTrue(factorBScore.meaning.contains("Raw: 8"))
-
-        val exScore = scores.first { it.label.contains("Extraversion") }
-        assertTrue(exScore.value in 1.0..10.0)
-
-        val axScore = scores.first { it.label.contains("Anxiety") }
-        assertTrue(axScore.value in 1.0..10.0)
-
-        assertTrue(interpretation.contains("16PF Form C Cattell"))
+        assertEquals(8.0, factorBScore.value, 0.001)
+        assertTrue(factorBScore.meaning.contains("8/8"))
+        assertTrue(scores.any { it.label.contains("Skala Validitas MD") })
+        assertTrue(interpretation.contains("16PF Form C"))
+        assertTrue(interpretation.contains("usia & jenis kelamin"))
     }
 
     @Test
-    fun armyAlphaInteractiveScoringEvaluates12InstructionsAndScale() {
+    fun armyAlphaInteractiveScoringEvaluates12InstructionsAndSubtests() {
         val form = requireNotNull(catalog.find("army_alpha")?.form)
         assertEquals(12, form.items.size)
 
-        // Perfect score: all 12 items answered with choice 0 ('a')
         val perfectAnswers = (0 until 12).associateWith { 0 }
         val (scores, interpretation) = AssessmentEnrichers.enrich("army_alpha", form, perfectAnswers, emptyList())
 
         val totalScore = scores.first { it.label.contains("Total Benar Army Alpha") }
         assertEquals(12.0, totalScore.value, 0.001)
 
-        val scaleScore = scores.first { it.label.contains("Skala Army Alpha (Weighted)") }
-        assertEquals(5.0, scaleScore.value, 0.001)
-        assertTrue(scaleScore.meaning.contains("Baik Sekali (Skala 5)"))
-
         val dirScore = scores.first { it.label.contains("Subtes Following Commands") }
         assertEquals(7.0, dirScore.value, 0.001)
 
         val speedScore = scores.first { it.label.contains("Subtes Speed & Accuracy") }
         assertEquals(5.0, speedScore.value, 0.001)
+        assertTrue(interpretation.contains("alat bantu heuristik"))
+        assertFalse(scores.any { it.label.contains("Skala Army Alpha") })
 
-        assertTrue(interpretation.contains("Baik Sekali (Skala 5)"))
-
-        // Low score: only 3 items correct
         val lowAnswers = (0 until 12).associateWith { if (it < 3) 0 else 1 }
         val (lowScores, lowInterp) = AssessmentEnrichers.enrich("army_alpha", form, lowAnswers, emptyList())
-        val lowScale = lowScores.first { it.label.contains("Skala Army Alpha (Weighted)") }
-        assertEquals(1.0, lowScale.value, 0.001)
-        assertTrue(lowInterp.contains("Kurang Sekali (Skala 1)"))
+        assertEquals(3.0, lowScores.first { it.label.contains("Total Benar Army Alpha") }.value, 0.001)
+        assertTrue(lowInterp.contains("3/12"))
     }
 
     @Test
@@ -489,49 +464,33 @@ class PsychometricAssessmentTest {
             4, 5, 3, 2, 6, 1, 4, 2, 6, 1, 2, 4, 1, 5, 2
         ).map { it - 1 }
 
-        // Test 1: Perfect score (all 45 correct)
         val perfectAnswers = frtKeys.mapIndexed { idx, k -> idx to k }.toMap()
         val (scores, interpretation) = AssessmentEnrichers.enrich("frt", form, perfectAnswers, emptyList())
 
         val rsScore = scores.first { it.label.contains("Skor Terkoreksi FRT") }
         assertEquals(45.0, rsScore.value, 0.001)
-        val rScore = scores.first { it.label.contains("Jumlah Benar (R)") }
-        assertEquals(45.0, rScore.value, 0.001)
-        val wScore = scores.first { it.label.contains("Jumlah Salah (W)") }
-        assertEquals(0.0, wScore.value, 0.001)
-        val oScore = scores.first { it.label.contains("Jumlah Kosong (O)") }
-        assertEquals(0.0, oScore.value, 0.001)
+        assertEquals(45.0, scores.first { it.label.contains("Jumlah Benar (R)") }.value, 0.001)
+        assertEquals(0.0, scores.first { it.label.contains("Jumlah Salah (W)") }.value, 0.001)
+        assertEquals(0.0, scores.first { it.label.contains("Jumlah Kosong (O)") }.value, 0.001)
+        assertEquals(15.0, scores.first { it.label.contains("Tahap Asosiatif") }.value, 0.001)
+        assertEquals(15.0, scores.first { it.label.contains("Tahap Sintesis") }.value, 0.001)
+        assertEquals(15.0, scores.first { it.label.contains("Tahap Analisis") }.value, 0.001)
+        assertTrue(interpretation.contains("tabel persentil FRT"))
 
-        val asoScore = scores.first { it.label.contains("Tahap Asosiatif") }
-        assertEquals(15.0, asoScore.value, 0.001)
-        val sinScore = scores.first { it.label.contains("Tahap Sintesis") }
-        assertEquals(15.0, sinScore.value, 0.001)
-        val anaScore = scores.first { it.label.contains("Tahap Analisis") }
-        assertEquals(15.0, anaScore.value, 0.001)
-
-        assertTrue(interpretation.contains("Very Superior"))
-
-        // Test 2: Partial answers with guessing penalty
-        // 20 correct, 8 wrong, 17 omitted -> RS = 20 - 0.25 * 8 = 18.0 (Average)
         val partialAnswers = mutableMapOf<Int, Int>()
         for (i in 0 until 20) partialAnswers[i] = frtKeys[i]
         for (i in 20 until 28) partialAnswers[i] = (frtKeys[i] + 1) % 6
-        // items 28..44 not answered (omitted)
 
         val (pScores, pInterp) = AssessmentEnrichers.enrich("frt", form, partialAnswers, emptyList())
-        val pRsScore = pScores.first { it.label.contains("Skor Terkoreksi FRT") }
-        assertEquals(18.0, pRsScore.value, 0.001)
-        val pR = pScores.first { it.label.contains("Jumlah Benar (R)") }
-        assertEquals(20.0, pR.value, 0.001)
-        val pW = pScores.first { it.label.contains("Jumlah Salah (W)") }
-        assertEquals(8.0, pW.value, 0.001)
-        val pO = pScores.first { it.label.contains("Jumlah Kosong (O)") }
-        assertEquals(17.0, pO.value, 0.001)
-        assertTrue(pInterp.contains("Average (Rata-Rata)"))
+        assertEquals(18.0, pScores.first { it.label.contains("Skor Terkoreksi FRT") }.value, 0.001)
+        assertEquals(20.0, pScores.first { it.label.contains("Jumlah Benar (R)") }.value, 0.001)
+        assertEquals(8.0, pScores.first { it.label.contains("Jumlah Salah (W)") }.value, 0.001)
+        assertEquals(17.0, pScores.first { it.label.contains("Jumlah Kosong (O)") }.value, 0.001)
+        assertTrue(pInterp.contains("18.00/45"))
     }
 
     @Test
-    fun cfit2aInteractiveScoringEvaluatesFourSubtestsAndIq() {
+    fun cfit2aInteractiveScoringEvaluatesFourSubtestsRaw() {
         val form = requireNotNull(catalog.find("cfit_2a")?.form)
         assertEquals(46, form.items.size)
         assertTrue(form.items.all { it.imageAssetPath != null && it.imageAssetPath.startsWith("ai/psychometrics/images/cfit2a/") })
@@ -542,43 +501,28 @@ class PsychometricAssessmentTest {
         val subtest4Keys = listOf(2, 1, 0, 3, 2, 2, 0, 1)
         val allKeys = subtest1Keys + subtest2Keys + subtest3Keys + subtest4Keys
 
-        // Test 1: Perfect score (46/46)
         val perfectAnswers = allKeys.mapIndexed { idx, k -> idx to k }.toMap()
         val (scores, interpretation) = AssessmentEnrichers.enrich("cfit_2a", form, perfectAnswers, emptyList())
 
-        val totalScore = scores.first { it.label.contains("Total Skor Mentah CFIT 2A") }
-        assertEquals(46.0, totalScore.value, 0.001)
-
-        val iqScore = scores.first { it.label.contains("Estimasi IQ Cattell") }
-        assertEquals(176.0, iqScore.value, 0.001)
-        assertTrue(iqScore.meaning.contains("Very Superior"))
-
-        val s1 = scores.first { it.label.contains("Subtes 1: Seriasi") }
-        assertEquals(12.0, s1.value, 0.001)
-        val s2 = scores.first { it.label.contains("Subtes 2: Klasifikasi") }
-        assertEquals(14.0, s2.value, 0.001)
-        val s3 = scores.first { it.label.contains("Subtes 3: Matriks") }
-        assertEquals(12.0, s3.value, 0.001)
-        val s4 = scores.first { it.label.contains("Subtes 4: Persyaratan Titik") }
-        assertEquals(8.0, s4.value, 0.001)
-
+        assertEquals(46.0, scores.first { it.label.contains("Total Skor Mentah CFIT 2A") }.value, 0.001)
+        assertFalse(scores.any { it.label.contains("Estimasi IQ Cattell") })
+        assertEquals(12.0, scores.first { it.label.contains("Subtes 1: Seriasi") }.value, 0.001)
+        assertEquals(14.0, scores.first { it.label.contains("Subtes 2: Klasifikasi") }.value, 0.001)
+        assertEquals(12.0, scores.first { it.label.contains("Subtes 3: Matriks") }.value, 0.001)
+        assertEquals(8.0, scores.first { it.label.contains("Subtes 4: Persyaratan Titik") }.value, 0.001)
         assertTrue(interpretation.contains("Total Skor Mentah 46/46"))
 
-        // Test 2: Average score (24/46 -> IQ 109)
         val avgAnswers = (0 until 24).associateWith { allKeys[it] }
         val (avgScores, avgInterp) = AssessmentEnrichers.enrich("cfit_2a", form, avgAnswers, emptyList())
-        val avgIq = avgScores.first { it.label.contains("Estimasi IQ Cattell") }
-        assertEquals(109.0, avgIq.value, 0.001)
-        assertTrue(avgInterp.contains("Average"))
+        assertEquals(24.0, avgScores.first { it.label.contains("Total Skor Mentah CFIT 2A") }.value, 0.001)
+        assertTrue(avgInterp.contains("tabel norma usia resmi"))
     }
 
     @Test
-    fun cfit3aInteractiveScoringEvaluatesFourSubtestsIncludingMultiSelectClassification() {
+    fun cfit3aInteractiveScoringEvaluatesFourSubtestsWithoutStigmatizingIq() {
         val form = requireNotNull(catalog.find("cfit_3a")?.form)
         assertEquals(50, form.items.size)
         assertTrue(form.items.all { it.imageAssetPath != null && it.imageAssetPath.startsWith("ai/psychometrics/images/cfit3a/") })
-
-        // Check Subtest 2 is marked multiSelect
         assertTrue((13..26).all { form.items[it].multiSelect && form.items[it].maxSelections == 2 })
 
         val subtest1Keys = listOf(1, 2, 1, 3, 4, 1, 3, 1, 5, 2, 1, 1, 4)
@@ -586,7 +530,6 @@ class PsychometricAssessmentTest {
         val subtest3Keys = listOf(4, 4, 4, 1, 2, 3, 4, 4, 0, 0, 5, 2, 2)
         val subtest4Keys = listOf(1, 0, 3, 3, 0, 1, 2, 3, 0, 3)
 
-        // Test 1: Perfect score (50/50 -> IQ 183)
         val perfectAnswers = mutableMapOf<Int, Int>()
         subtest1Keys.forEachIndexed { i, k -> perfectAnswers[i] = k }
         subtest2Masks.forEachIndexed { i, m -> perfectAnswers[13 + i] = m }
@@ -594,67 +537,34 @@ class PsychometricAssessmentTest {
         subtest4Keys.forEachIndexed { i, k -> perfectAnswers[40 + i] = k }
 
         val (scores, interpretation) = AssessmentEnrichers.enrich("cfit_3a", form, perfectAnswers, emptyList())
-
-        val totalScore = scores.first { it.label.contains("Total Skor Mentah CFIT 3A") }
-        assertEquals(50.0, totalScore.value, 0.001)
-
-        val iqScore = scores.first { it.label.contains("Standard IQ Cattell") }
-        assertEquals(183.0, iqScore.value, 0.001)
-        assertTrue(iqScore.meaning.contains("Genius"))
-
-        val s1 = scores.first { it.label.contains("Subtes 1: Deret") }
-        assertEquals(13.0, s1.value, 0.001)
-        val s2 = scores.first { it.label.contains("Subtes 2: Klasifikasi") }
-        assertEquals(14.0, s2.value, 0.001)
-        val s3 = scores.first { it.label.contains("Subtes 3: Matriks") }
-        assertEquals(13.0, s3.value, 0.001)
-        val s4 = scores.first { it.label.contains("Subtes 4: Persyaratan Topologi") }
-        assertEquals(10.0, s4.value, 0.001)
-
+        assertEquals(50.0, scores.first { it.label.contains("Total Skor Mentah CFIT 3A") }.value, 0.001)
+        assertFalse(scores.any { it.label.contains("Standard IQ Cattell") })
+        assertFalse(interpretation.contains("Mentally Retardation"))
+        assertEquals(13.0, scores.first { it.label.contains("Subtes 1: Deret") }.value, 0.001)
+        assertEquals(14.0, scores.first { it.label.contains("Subtes 2: Klasifikasi") }.value, 0.001)
+        assertEquals(13.0, scores.first { it.label.contains("Subtes 3: Matriks") }.value, 0.001)
+        assertEquals(10.0, scores.first { it.label.contains("Subtes 4: Persyaratan Topologi") }.value, 0.001)
         assertTrue(interpretation.contains("50/50"))
-
-        // Test 2: Moderate score (22/50 -> IQ 100)
-        val modAnswers = mutableMapOf<Int, Int>()
-        // 13 correct in S1, 9 correct in S2
-        subtest1Keys.forEachIndexed { i, k -> modAnswers[i] = k }
-        subtest2Masks.take(9).forEachIndexed { i, m -> modAnswers[13 + i] = m }
-
-        val (modScores, modInterp) = AssessmentEnrichers.enrich("cfit_3a", form, modAnswers, emptyList())
-        val modTotal = modScores.first { it.label.contains("Total Skor Mentah CFIT 3A") }
-        assertEquals(22.0, modTotal.value, 0.001)
-        val modIq = modScores.first { it.label.contains("Standard IQ Cattell") }
-        assertEquals(100.0, modIq.value, 0.001)
-        assertTrue(modInterp.contains("Average"))
     }
 
     @Test
     fun cfit2aRecapEnrichmentMatchesInteractiveScoring() {
         val (scores, interp) = AssessmentEnrichers.enrichCfit2aRecap(10, 11, 9, 6)
-        val totalScore = scores.first { it.label.contains("Total Skor Mentah CFIT 2A") }
-        assertEquals(36.0, totalScore.value, 0.001)
-
-        val iqScore = scores.first { it.label.contains("Estimasi IQ Cattell") }
-        assertEquals(145.0, iqScore.value, 0.001)
-        assertTrue(iqScore.meaning.contains("Very Superior"))
+        assertEquals(36.0, scores.first { it.label.contains("Total Skor Mentah CFIT 2A") }.value, 0.001)
         assertTrue(interp.contains("36/46"))
-        assertTrue(interp.contains("145"))
+        assertTrue(interp.contains("tabel norma usia resmi"))
     }
 
     @Test
     fun cfit3aRecapEnrichmentMatchesInteractiveScoring() {
         val (scores, interp) = AssessmentEnrichers.enrichCfit3aRecap(10, 9, 8, 7)
-        val totalScore = scores.first { it.label.contains("Total Skor Mentah CFIT 3A") }
-        assertEquals(34.0, totalScore.value, 0.001)
-
-        val iqScore = scores.first { it.label.contains("Standard IQ Cattell") }
-        assertEquals(137.0, iqScore.value, 0.001)
-        assertTrue(iqScore.meaning.contains("Superior"))
+        assertEquals(34.0, scores.first { it.label.contains("Total Skor Mentah CFIT 3A") }.value, 0.001)
         assertTrue(interp.contains("34/50"))
-        assertTrue(interp.contains("137"))
+        assertTrue(interp.contains("tabel norma usia dan pendidikan resmi"))
     }
 
     @Test
-    fun assessmentDiscussionPromptGeneratesRichCounselingHandoff() {
+    fun assessmentDiscussionAdmitsSavedScoresSeparatelyFromTheChatMessage() {
         val result = AssessmentResult(
             resultId = "res-123",
             instrumentId = "cbi",
@@ -668,16 +578,30 @@ class PsychometricAssessmentTest {
             itemCount = 19,
             scores = listOf(
                 AssessmentScore("Kelelahan personal", 87.5, 0.0, 100.0, "Tinggi"),
-                AssessmentScore("Kelelahan kerja", 85.71, 0.0, 100.0, "Tinggi")
+                AssessmentScore("Kelelahan kerja", 85.71, 0.0, 100.0, "Tinggi"),
+                AssessmentScore("Kategori kelelahan", 87.5, 0.0, 100.0, "Tinggi")
             ),
             interpretation = "Tingkat keletihan dan kejenuhan kerja berada pada level Tinggi."
         )
 
         val prompt = result.toCounselorDiscussionPrompt()
         assertTrue(prompt.contains("Copenhagen Burnout Inventory"))
-        assertTrue(prompt.contains("Kelelahan personal: 87,5 (0–100)") || prompt.contains("Kelelahan personal: 87.5"))
-        assertTrue(prompt.contains("Tingkat keletihan dan kejenuhan kerja berada pada level Tinggi."))
-        assertTrue(prompt.contains("Berdasarkan hasil asesmen ini dan materi konseling yang relevan"))
+        assertFalse(prompt.contains("87,5"))
+        val request = CounselorGenerationRequest(
+            promptAsset = PromptAsset("test", "1", "AI Counselor", "{user_message}"),
+            userMessage = prompt,
+            ragMode = RagMode.GENERAL_SAFE,
+            retrievedCitations = emptyList(),
+            stressHistoryContext = "",
+            assessmentDiscussion = true,
+            assessmentResult = result
+        )
+        val prepared = CounselorPromptBuilder().prepare(request)
+        assertTrue(prepared.systemInstruction.contains("Kelelahan personal: 87,5 (0–100)"))
+        assertTrue(prepared.systemInstruction.contains("CBI Standard"))
+        assertTrue(prepared.systemInstruction.contains(result.interpretation))
+        assertTrue(prepared.systemInstruction.contains("Kategori kelelahan: Tinggi"))
+        assertFalse(prepared.userPrompt.contains("87,5"))
 
         val instrument = AssessmentInstrument(
             id = "cbi",
@@ -695,13 +619,18 @@ class PsychometricAssessmentTest {
     }
 
     @Test
-    fun enneagramEnrichmentAccuratelyIdentifiesDominantTypeAndWing() {
+    fun savedResultLookupSelectsOneNamedInstrumentOnly() {
+        assertEquals("tiu_5", catalog.findNamedInstrument("Jelaskan skor TIU-5 saya")?.id)
+        assertEquals(null, catalog.findNamedInstrument("Bahas skor TIU-5 dan TIU-6"))
+        assertEquals(null, catalog.findNamedInstrument("Jelaskan skor saya"))
+    }
+
+    @Test
+    fun enneagramEnrichmentRanksRawScoresWithoutWingOverclaim() {
         val form = requireNotNull(catalog.find("enneagram")?.form)
         assertEquals(180, form.items.size)
         assertEquals(180, form.minimumAnswers)
 
-        // Type 3 items: [0, 5, 12, 20, 50, 55, 66, 72, 74, 85, 89, 111, 113, 134, 138, 142, 150, 162, 168, 173]
-        // Give Type 3 answers = 3 (score 60/60). Give Type 2 answers = 2 (score 40/60). Others 0.
         val type3Indices = setOf(0, 5, 12, 20, 50, 55, 66, 72, 74, 85, 89, 111, 113, 134, 138, 142, 150, 162, 168, 173)
         val type2Indices = setOf(10, 11, 18, 25, 33, 37, 43, 59, 60, 73, 75, 80, 83, 88, 93, 96, 98, 133, 160, 167)
 
@@ -715,28 +644,21 @@ class PsychometricAssessmentTest {
         }
 
         val (scores, interpretation) = AssessmentEnrichers.enrich("enneagram", form, answers, emptyList())
-        val dominantScore = scores.first { it.label.contains("Tipe Dominan") }
-        assertEquals(3.0, dominantScore.value, 0.001)
-        assertTrue(dominantScore.label.contains("3w2"))
-        assertTrue(dominantScore.meaning.contains("3w2"))
-
-        val s3 = scores.first { it.label.contains("Tipe 3") }
-        assertEquals(60.0, s3.value, 0.001)
-        val s2 = scores.first { it.label.contains("Tipe 2") }
-        assertEquals(40.0, s2.value, 0.001)
-
-        assertTrue(interpretation.contains("Tipe 3"))
-        assertTrue(interpretation.contains("The Achiever"))
-        assertTrue(interpretation.contains("3w2"))
+        assertEquals(9, scores.size)
+        assertTrue(scores.first().label.contains("Tipe 3"))
+        assertFalse(scores.any { it.label.contains("Tipe Dominan") })
+        assertEquals(60.0, scores.first { it.label.contains("Tipe 3") }.value, 0.001)
+        assertEquals(40.0, scores.first { it.label.contains("Tipe 2") }.value, 0.001)
+        assertTrue(interpretation.contains("Tipe 3 (60/60)"))
+        assertFalse(interpretation.contains("3w2"))
     }
 
     @Test
-    fun istEnrichmentCalculatesAmthauerIqAndClustersWithFullCorrectAnswers() {
+    fun istEnrichmentCalculatesRawSubtestsWithoutSyntheticIq() {
         val form = requireNotNull(catalog.find("ist")?.form)
         assertEquals(176, form.items.size)
         assertEquals(176, form.minimumAnswers)
 
-        // Verify image assets exist for FA (117-136) and WU (137-156)
         for (i in 116 until 156) {
             val item = form.items[i]
             assertTrue("Item ${i + 1} must have imageAssetPath", !item.imageAssetPath.isNullOrBlank())
@@ -756,9 +678,7 @@ class PsychometricAssessmentTest {
         seKeys.forEachIndexed { i, k -> answers[i] = k }
         waKeys.forEachIndexed { i, k -> answers[20 + i] = k }
         anKeys.forEachIndexed { i, k -> answers[40 + i] = k }
-        for (i in 0 until 16) {
-            answers[60 + i] = 0 // Option A gives 2 points -> 32 points total -> RW 20
-        }
+        for (i in 0 until 16) answers[60 + i] = 0
         raKeys.forEachIndexed { i, k -> answers[76 + i] = k }
         zrKeys.forEachIndexed { i, k -> answers[96 + i] = k }
         faKeys.forEachIndexed { i, k -> answers[116 + i] = k }
@@ -766,29 +686,14 @@ class PsychometricAssessmentTest {
         meKeys.forEachIndexed { i, k -> answers[156 + i] = k }
 
         val (scores, interpretation) = AssessmentEnrichers.enrich("ist", form, answers, emptyList())
-
-        val iqScore = scores.first { it.label.contains("Skor IQ Amthauer") }
-        assertTrue("IQ must be >= 135 for all correct, was ${iqScore.value}", iqScore.value >= 135.0)
-        assertTrue(iqScore.meaning.contains("Superior"))
-
-        val totalSw = scores.first { it.label.contains("Total Standard Score") }
-        assertTrue("Total SW must be > 1100, was ${totalSw.value}", totalSw.value > 1100.0)
-
-        val verbal = scores.first { it.label.contains("Klaster Verbal") }
-        assertTrue(verbal.value >= 120.0)
-
-        val numerik = scores.first { it.label.contains("Klaster Numerik") }
-        assertTrue(numerik.value >= 120.0)
-
-        val spasial = scores.first { it.label.contains("Klaster Figural-Spasial") }
-        assertTrue(spasial.value >= 120.0)
-
-        assertTrue(interpretation.contains("Intelligenz-Struktur-Test"))
-        assertTrue(interpretation.contains("Superior"))
+        assertFalse(scores.any { it.label.contains("Skor IQ Amthauer") })
+        assertEquals(180.0, scores.first { it.label.contains("Total Skor Mentah IST") }.value, 0.001)
+        assertTrue(interpretation.contains("176/176 butir terisi"))
+        assertTrue(interpretation.contains("Subtes GE menggunakan pilihan ganda adaptasi"))
     }
 
     @Test
-    fun kuderEnrichmentCalculatesValidityAndTenScales() {
+    fun kuderEnrichmentCalculatesValidityAndTenRawScales() {
         val form = requireNotNull(catalog.find("kuder")?.form)
         assertEquals(168, form.items.size)
         assertEquals(168, form.minimumAnswers)
@@ -798,20 +703,14 @@ class PsychometricAssessmentTest {
             answers[g * 2] = 0
             answers[g * 2 + 1] = 2
         }
-
         assertTrue(AssessmentScoring.canScore(form, answers))
 
         val (scores, interpretation) = AssessmentEnrichers.enrich("kuder", form, answers, emptyList())
         assertEquals(11, scores.size)
-
-        val vScore = scores.first { it.label.contains("Validitas") }
-        assertTrue(vScore.value in 0.0..63.0)
-
-        val outdoorScore = scores.first { it.label.contains("Outdoor") }
-        assertTrue(outdoorScore.value in 0.0..100.0)
-
+        assertTrue(scores.first { it.label.contains("Validitas") }.value in 0.0..63.0)
+        assertTrue(scores.first { it.label.contains("Outdoor") }.value >= 0.0)
         assertTrue(interpretation.contains("Kuder"))
-        assertTrue(interpretation.contains("Tiga area minat vokasional"))
+        assertTrue(interpretation.contains("jenis kelamin"))
     }
 
     @Test
@@ -827,53 +726,33 @@ class PsychometricAssessmentTest {
             answers[100 + col] = if (col % 3 == 0) 1 else 0
             answers[200 + col] = if (col % 4 == 0) 1 else 0
         }
-
         assertTrue(AssessmentScoring.canScore(form, answers))
 
-        val (scores, interpretation) = AssessmentEnrichers.enrich("kraepelin", form, answers, emptyList())
-        assertEquals(4, scores.size)
-
-        val panker = scores.first { it.label.contains("PANKER") }
-        assertEquals(16.2, panker.value, 0.01)
-
-        val tianker = scores.first { it.label.contains("TIANKER") }
-        assertTrue("Tianker should be > 0, was ${tianker.value}", tianker.value > 0.0)
-
-        val janker = scores.first { it.label.contains("JANKER") }
-        assertTrue("Janker should be > 0, was ${janker.value}", janker.value > 0.0)
-
-        val hanker = scores.first { it.label.contains("HANKER") }
-        assertTrue("Hanker slope should be positive, was ${hanker.value}", hanker.value > 0.0)
-
-        assertTrue(interpretation.contains("Kraepelin"))
-        assertTrue(interpretation.contains("Panker"))
+        val outcome = AssessmentEnrichers.enrichDetailed("kraepelin", form, answers, emptyList())
+        assertEquals(4, outcome.scores.size)
+        assertEquals(10, outcome.observations.size)
+        assertEquals(16.2, outcome.scores.first { it.label.contains("PANKER") }.value, 0.01)
+        assertTrue(outcome.scores.first { it.label.contains("TIANKER") }.value > 0.0)
+        assertTrue(outcome.scores.first { it.label.contains("JANKER") }.value > 0.0)
+        assertTrue(outcome.scores.first { it.label.contains("HANKER") }.value > 0.0)
+        assertTrue(outcome.interpretation.contains("Kraepelin"))
     }
 
     @Test
-    fun multipleIntelligencesEnrichmentCalculatesGardnerDimensions() {
+    fun multipleIntelligencesEnrichmentCalculatesGardnerRawDimensions() {
         val form = requireNotNull(catalog.find("mit")?.form)
         assertEquals(56, form.items.size)
         assertEquals(56, form.minimumAnswers)
 
-        val answers = mutableMapOf<Int, Int>()
-        for (i in 0 until 56) {
-            answers[i] = if (i in 7..13) 3 else 1
-        }
-
+        val answers = (0 until 56).associateWith { i -> if (i in 7..13) 3 else 1 }
         assertTrue(AssessmentScoring.canScore(form, answers))
 
         val (scores, interpretation) = AssessmentEnrichers.enrich("mit", form, answers, emptyList())
         assertEquals(8, scores.size)
-
-        val logicalScore = scores.first { it.label.contains("Logis-Matematis") }
-        assertEquals(28.0, logicalScore.value, 0.01)
-        assertTrue(logicalScore.meaning.contains("Tinggi"))
-
-        val linguisticScore = scores.first { it.label.contains("Linguistik") }
-        assertEquals(14.0, linguisticScore.value, 0.01)
-
+        assertEquals(28.0, scores.first { it.label.contains("Logis-Matematis") }.value, 0.01)
+        assertEquals(14.0, scores.first { it.label.contains("Linguistik") }.value, 0.01)
         assertTrue(interpretation.contains("Multiple Intelligences"))
-        assertTrue(interpretation.contains("Logis-Matematis"))
+        assertTrue(interpretation.contains("refleksi diri deskriptif"))
     }
 
     @Test
@@ -882,19 +761,13 @@ class PsychometricAssessmentTest {
         assertEquals(60, form.items.size)
         assertEquals(1, form.minimumAnswers)
 
-        val answers = mutableMapOf<Int, Int>()
         val clanItems = setOf(5, 20, 24, 25, 47, 1, 13, 23, 48, 50, 12, 18, 21, 22, 49)
-        for (i in 0 until 60) {
-            val qNum = i + 1
-            answers[i] = if (qNum in clanItems) 4 else 1
-        }
-
+        val answers = (0 until 60).associateWith { i -> if ((i + 1) in clanItems) 4 else 1 }
         assertTrue(AssessmentScoring.canScore(form, answers))
 
         val (scores, interpretation) = AssessmentEnrichers.enrich("msai", form, answers, emptyList())
-        assertTrue(scores.size >= 16)
-        val dominant = scores.first()
-        assertTrue(dominant.label.contains("Clan"))
+        assertEquals(16, scores.size)
+        assertTrue(scores.first { it.label.contains("Clan") }.value == 5.0)
         assertTrue(interpretation.contains("Clan"))
         assertTrue(interpretation.contains("Competing Values Framework"))
     }
@@ -907,12 +780,13 @@ class PsychometricAssessmentTest {
         val answers = (0 until 64).associateWith { 0 }
         assertTrue(AssessmentScoring.canScore(form, answers))
 
-        val (scores, interpretation) = AssessmentEnrichers.enrich("msdt", form, answers, emptyList())
-        assertTrue(scores.size >= 10)
-        assertTrue(scores.any { it.label.contains("Task Orientation") })
-        assertTrue(scores.any { it.label.contains("Relationship Orientation") })
-        assertTrue(scores.any { it.label.contains("Effectiveness") })
-        assertTrue(interpretation.contains("Reddin"))
+        val outcome = AssessmentEnrichers.enrichDetailed("msdt", form, answers, emptyList())
+        assertEquals(11, outcome.scores.size)
+        assertEquals(AssessmentValidityStatus.VALID, outcome.validityStatus)
+        assertTrue(outcome.scores.any { it.label.contains("Task Orientation") })
+        assertTrue(outcome.scores.any { it.label.contains("Relationship Orientation") })
+        assertTrue(outcome.scores.any { it.label.contains("Effectiveness") })
+        assertTrue(outcome.interpretation.contains("Reddin"))
     }
 
     @Test
@@ -934,24 +808,18 @@ class PsychometricAssessmentTest {
         val form = requireNotNull(catalog.find("pauli")?.form)
         assertEquals(45, form.items.size)
 
-        val answers = mapOf(
-            0 to 20,
-            1 to 22,
-            2 to 25,
-            3 to 24,
-            4 to 26
-        )
+        val answers = mapOf(0 to 20, 1 to 22, 2 to 25, 3 to 24, 4 to 26)
         assertTrue(AssessmentScoring.canScore(form, answers))
 
-        val (scores, interpretation) = AssessmentEnrichers.enrich("pauli", form, answers, emptyList())
-        assertTrue(scores.size >= 5)
-        val totalScore = scores.first { it.label.contains("Hasil Kerja Total") }
-        assertEquals(117.0, totalScore.value, 0.01)
-        assertTrue(interpretation.contains("Pauli"))
+        val outcome = AssessmentEnrichers.enrichDetailed("pauli", form, answers, emptyList())
+        assertEquals(5, outcome.scores.size)
+        assertEquals(5, outcome.observations.size)
+        assertEquals(117.0, outcome.scores.first { it.label.contains("Total Penjumlahan") }.value, 0.01)
+        assertTrue(outcome.interpretation.contains("Pauli"))
     }
 
     @Test
-    fun personalityTestEpqrCalculatesDimensionsAndLieScale() {
+    fun personalityTestEpqrCalculatesRawDimensionsAndLieScale() {
         val form = requireNotNull(catalog.find("personality_test")?.form)
         assertEquals(48, form.items.size)
 
@@ -959,40 +827,40 @@ class PsychometricAssessmentTest {
         assertTrue(AssessmentScoring.canScore(form, answers))
 
         val (scores, interpretation) = AssessmentEnrichers.enrich("personality_test", form, answers, emptyList())
-        assertTrue(scores.size >= 5)
+        assertEquals(4, scores.size)
+        assertFalse(scores.any { it.label.contains("Tipe Temperamen") })
         assertTrue(scores.any { it.label.contains("Extraversion") })
         assertTrue(scores.any { it.label.contains("Neuroticism") })
         assertTrue(scores.any { it.label.contains("Psychoticism") })
         assertTrue(scores.any { it.label.contains("Lie Scale") })
-        assertTrue(interpretation.contains("EPQ-R"))
+        assertTrue(interpretation.contains("EPQ-RS"))
     }
 
     @Test
-    fun warteggEnrichmentCalculatesFourFunctionsAndDrawingSequence() {
+    fun warteggEnrichmentPreservesObservationsWithoutFakeFunctionScores() {
         val form = requireNotNull(catalog.find("wartegg")?.form)
         assertEquals(8, form.items.size)
 
         val answers = mapOf(
             0 to 10,
             1 to 22,
-            2 to 34,
+            2 to 30,
             3 to 41,
             4 to 53,
-            5 to 64,
-            6 to 74,
-            7 to 84
+            5 to 62,
+            6 to 70,
+            7 to 81
         )
         assertTrue(AssessmentScoring.canScore(form, answers))
 
-        val (scores, interpretation) = AssessmentEnrichers.enrich("wartegg", form, answers, emptyList())
-        assertTrue(scores.size >= 6)
-        assertTrue(scores.any { it.label.contains("Fungsi Emosi") })
-        assertTrue(scores.any { it.label.contains("Fungsi Imajinasi") })
-        assertTrue(scores.any { it.label.contains("Fungsi Intelektual") })
-        assertTrue(scores.any { it.label.contains("Fungsi Aktivitas") })
-        assertTrue(scores.any { it.label.contains("Keteraturan Urutan") })
-        assertTrue(scores.any { it.label.contains("Kotak Diselesaikan") })
-        assertTrue(interpretation.contains("Wartegg"))
+        val outcome = AssessmentEnrichers.enrichDetailed("wartegg", form, answers, emptyList())
+        assertTrue(outcome.scores.any { it.label == "Kotak Diselesaikan" && it.value == 8.0 })
+        assertFalse(outcome.scores.any { it.label.contains("Fungsi", ignoreCase = true) })
+        assertEquals(InstrumentImplementationStatus.EXAMINER_REVIEW_REQUIRED, outcome.scoringStatus)
+        assertEquals(ExaminerReviewStatus.PENDING, outcome.reviewStatus)
+        assertEquals(11, outcome.observations.size)
+        assertTrue(outcome.observations.first { it.key == "wartegg_completed" }.value == "8/8")
+        assertTrue(outcome.interpretation.contains("Wartegg"))
     }
 
     @Test
@@ -1008,44 +876,43 @@ class PsychometricAssessmentTest {
         }
         assertTrue(AssessmentScoring.canScore(form, answers))
 
-        val (scores, interpretation) = AssessmentEnrichers.enrich("rmib", form, answers, emptyList())
-        assertEquals(13, scores.size)
-        val invariantScore = scores.first { it.label.contains("Total Invarian RMIB") }
-        assertEquals(702.0, invariantScore.value, 0.001)
-        assertTrue(interpretation.contains("Rothwell–Miller"))
-        assertTrue(interpretation.contains("702"))
+        val outcome = AssessmentEnrichers.enrichDetailed("rmib", form, answers, emptyList())
+        assertEquals(13, outcome.scores.size)
+        assertEquals(AssessmentValidityStatus.VALID, outcome.validityStatus)
+        assertEquals(702.0, outcome.scores.first { it.label.contains("Total Skor RMIB") }.value, 0.001)
+        assertTrue(outcome.interpretation.contains("Rothwell–Miller"))
+        assertTrue(outcome.interpretation.contains("702"))
     }
 
     @Test
-    fun vrtEnrichmentCalculatesSevenSubtestsAndVerbalReasoningLevel() {
+    fun vrtEnrichmentEmitsRawSubtestsWithSourceIncompleteStatus() {
         val form = requireNotNull(catalog.find("vrt")?.form)
         assertEquals(49, form.items.size)
 
         val answers = (0 until 49).associateWith { 0 }
         assertTrue(AssessmentScoring.canScore(form, answers))
 
-        val (scores, interpretation) = AssessmentEnrichers.enrich("vrt", form, answers, emptyList())
-        assertEquals(8, scores.size)
-        val totalScore = scores.first { it.label.contains("Total Skor Penalaran Verbal") }
-        assertEquals(98.0, totalScore.value, 0.001)
-        assertTrue(interpretation.contains("VRT"))
-        assertTrue(interpretation.contains("Sangat Tinggi"))
+        val outcome = AssessmentEnrichers.enrichDetailed("vrt", form, answers, emptyList())
+        assertEquals(8, outcome.scores.size)
+        assertEquals(InstrumentImplementationStatus.SOURCE_INCOMPLETE, outcome.scoringStatus)
+        assertEquals(AssessmentValidityStatus.QUESTIONABLE, outcome.validityStatus)
+        assertEquals(98.0, outcome.scores.first { it.label.contains("Total Skor Penalaran Verbal") }.value, 0.001)
+        assertTrue(outcome.interpretation.contains("VRT"))
+        assertFalse(outcome.interpretation.contains("Sangat Tinggi"))
     }
 
     @Test
-    fun mseaiEnrichmentCalculatesFourDomainsAndAdjustmentLevel() {
+    fun mseaiEnrichmentComputesExploratoryScoresWithoutBlocking() {
         val form = requireNotNull(catalog.find("mseai")?.form)
         assertEquals(24, form.items.size)
 
         val answers = (0 until 24).associateWith { 4 }
-        assertTrue(AssessmentScoring.canScore(form, answers))
-
-        val (scores, interpretation) = AssessmentEnrichers.enrich("mseai", form, answers, emptyList())
-        assertEquals(5, scores.size)
-        val totalScore = scores.first { it.label.contains("Total Skor Adaptasi MSEAI") }
-        assertEquals(120.0, totalScore.value, 0.001)
-        assertTrue(interpretation.contains("MSEAI"))
-        assertTrue(interpretation.contains("Sangat Baik"))
+        val rawScores = AssessmentScoring.score(form, answers)
+        val outcome = AssessmentEnrichers.enrichDetailed("mseai", form, answers, rawScores)
+        assertTrue(outcome.scores.isNotEmpty())
+        assertEquals(InstrumentImplementationStatus.EXPLORATORY, outcome.scoringStatus)
+        assertEquals(AssessmentValidityStatus.VALID, outcome.validityStatus)
+        assertTrue(outcome.interpretation.contains("MSEAI"))
     }
 
     @Test
@@ -1058,73 +925,57 @@ class PsychometricAssessmentTest {
 
         val (scoresA, interpA) = AssessmentEnrichers.enrich("epps", form, allA, emptyList())
         assertEquals(17, scoresA.size)
-        val totalScoreA = scoresA.first { it.label.contains("Total Raw Score EPPS") }
-        assertEquals(210.0, totalScoreA.value, 0.001)
-        val consScoreA = scoresA.first { it.label.contains("Konsistensi Respons") }
-        assertEquals(15.0, consScoreA.value, 0.001)
+        assertEquals(210.0, scoresA.first { it.label.contains("Total Raw Score EPPS") }.value, 0.001)
+        assertEquals(15.0, scoresA.first { it.label.contains("Konsistensi Respons") }.value, 0.001)
         assertTrue(interpA.contains("EPPS"))
         assertTrue(interpA.contains("210"))
 
         val alt = (0 until 225).associateWith { it % 2 }
-        val (scoresAlt, interpAlt) = AssessmentEnrichers.enrich("epps", form, alt, emptyList())
-        val totalScoreAlt = scoresAlt.first { it.label.contains("Total Raw Score EPPS") }
-        assertEquals(210.0, totalScoreAlt.value, 0.001)
+        val (scoresAlt, _) = AssessmentEnrichers.enrich("epps", form, alt, emptyList())
+        assertEquals(210.0, scoresAlt.first { it.label.contains("Total Raw Score EPPS") }.value, 0.001)
     }
 
     @Test
-    fun rorschachEnrichmentCalculatesExnerStructuralSummaryAndConstellations() {
+    fun rorschachEnrichmentPreservesObservationsWithoutHeuristicConstellations() {
         val instrument = requireNotNull(catalog.find("rorschach"))
         val form = requireNotNull(instrument.form)
         assertEquals(10, form.items.size)
 
         val standardAnswers = (0 until 10).associateWith { idx ->
             val det = when (idx) {
-                1, 7, 9 -> 4 // FC
-                2, 6 -> 1    // M
-                5 -> 8       // T
-                8 -> 5       // CF
-                else -> 0    // F
+                1, 7, 9 -> 4
+                2, 6 -> 1
+                5 -> 8
+                8 -> 5
+                else -> 0
             }
             (0 * 100000) + (det * 1000) + (1 * 100) + (1 * 10) + 0
         }
         assertTrue(AssessmentScoring.canScore(form, standardAnswers))
 
-        val (scores, interp) = AssessmentEnrichers.enrich("rorschach", form, standardAnswers, emptyList())
-        assertEquals(12, scores.size)
-        val eb = scores.first { it.label.contains("EB") }
-        val ea = scores.first { it.label.contains("EA") }
-        val es = scores.first { it.label.contains("es") }
-        val dScore = scores.first { it.label.contains("D-Score") }
-        val lambda = scores.first { it.label.contains("Lambda") }
-        val xPlus = scores.first { it.label.contains("X+%") }
-        val sCon = scores.first { it.label.contains("S-CON") }
-        val depi = scores.first { it.label.contains("DEPI") }
-        val cdi = scores.first { it.label.contains("CDI") }
-        val pti = scores.first { it.label.contains("PTI") }
-
-        assertTrue(eb.meaning.contains("EB"))
-        assertTrue(xPlus.value >= 70.0)
-        assertTrue(interp.contains("Rorschach"))
-        assertTrue(interp.contains("Exner Comprehensive System"))
+        val outcome = AssessmentEnrichers.enrichDetailed("rorschach", form, standardAnswers, emptyList())
+        assertTrue(outcome.scores.any { it.label.contains("Total Respons") && it.value == 10.0 })
+        assertEquals(InstrumentImplementationStatus.EXAMINER_REVIEW_REQUIRED, outcome.scoringStatus)
+        assertEquals(AssessmentValidityStatus.INVALID, outcome.validityStatus)
+        assertEquals(ExaminerReviewStatus.PENDING, outcome.reviewStatus)
+        assertTrue(outcome.observations.any { it.key == "rorschach_r" && it.value == "10" })
+        assertTrue(outcome.observations.any { it.key == "rorschach_loc" && it.value.contains("W=10") })
+        assertFalse(outcome.interpretation.contains("S-CON"))
+        assertFalse(outcome.interpretation.contains("DEPI"))
     }
 
     @Test
-    fun wptLoadsAuthenticItemsAndCalculatesIqScores() {
+    fun wptLoadsAuthenticItemsAndComputesRawSubscales() {
         val instrument = requireNotNull(catalog.find("wpt"))
         val form = requireNotNull(instrument.form)
         assertEquals(50, form.items.size)
-
-        // Item 1 verification
         assertEquals("Bulan lalu pada awal tahun ini adalah...", form.items[0].text)
         assertEquals(5, requireNotNull(form.items[0].choices).size)
-
-        // Diagram items verification
         assertEquals("ai/psychometrics/wpt_item_7.webp", form.items[6].imageAssetPath)
         assertEquals("ai/psychometrics/wpt_item_38.webp", form.items[37].imageAssetPath)
         assertEquals("ai/psychometrics/wpt_item_42.webp", form.items[41].imageAssetPath)
         assertEquals("ai/psychometrics/wpt_item_49.webp", form.items[48].imageAssetPath)
 
-        // Test all correct answers (RS = 50 -> IQ = 146 -> Genius)
         val allCorrectKeys = listOf(
             3, 1, 2, 1, 2, 0, 2, 0, 0, 3,
             2, 2, 0, 1, 1, 1, 0, 1, 2, 0,
@@ -1134,31 +985,17 @@ class PsychometricAssessmentTest {
         )
         val perfectAnswers = allCorrectKeys.mapIndexed { index, ans -> index to ans }.toMap()
         val (scores50, interp50) = AssessmentEnrichers.enrich("wpt", form, perfectAnswers, emptyList())
-        val rsScore = scores50.first { it.label.contains("Total Skor Mentah") }
-        val iqScore = scores50.first { it.label.contains("Estimasi IQ Wonderlic") }
-        val benchScore = scores50.first { it.label.contains("Benchmark Jabatan") }
-        assertEquals(50.0, rsScore.value, 0.001)
-        assertEquals(146.0, iqScore.value, 0.001)
-        assertTrue(iqScore.meaning.contains("Genius"))
-        assertTrue(benchScore.meaning.contains("Tinggi / Analitis Kompleks"))
-        assertTrue(interp50.contains("Genius"))
+        assertEquals(50.0, scores50.first { it.label.contains("Total Skor Mentah") }.value, 0.001)
+        assertFalse(scores50.any { it.label.contains("Estimasi IQ Wonderlic") })
+        assertFalse(scores50.any { it.label.contains("Benchmark Jabatan") })
         assertTrue(interp50.contains("50/50"))
+        assertFalse(interp50.contains("Mentally Defective"))
 
-        // Test average answers (e.g. exactly 21 correct -> IQ 102 -> Average)
-        val avgAnswers = mutableMapOf<Int, Int>()
-        for (i in 0 until 50) {
-            avgAnswers[i] = if (i < 21) allCorrectKeys[i] else 4 // Wrong answer for rest
-        }
+        val avgAnswers = (0 until 50).associateWith { i -> if (i < 21) allCorrectKeys[i] else 4 }
         val (scores21, interp21) = AssessmentEnrichers.enrich("wpt", form, avgAnswers, emptyList())
-        val rs21 = scores21.first { it.label.contains("Total Skor Mentah") }
-        val iq21 = scores21.first { it.label.contains("Estimasi IQ Wonderlic") }
-        val bench21 = scores21.first { it.label.contains("Benchmark Jabatan") }
-        assertEquals(21.0, rs21.value, 0.001)
-        assertEquals(102.0, iq21.value, 0.001)
-        assertTrue(iq21.meaning.contains("Average"))
-        assertTrue(bench21.meaning.contains("Rata-Rata Operasional"))
-        assertTrue(interp21.contains("Average"))
+        assertEquals(21.0, scores21.first { it.label.contains("Total Skor Mentah") }.value, 0.001)
         assertTrue(interp21.contains("21/50"))
+        assertTrue(interp21.contains("12 menit"))
     }
 
     @Test
@@ -1170,35 +1007,22 @@ class PsychometricAssessmentTest {
             assertEquals("ai/psychometrics/images/army_alpha/item_${idx + 1}.png", item.imageAssetPath)
         }
 
-        // Test perfect score 12/12
         val perfectAnswers = (0 until 12).associateWith { 0 }
         val (scores12, interp12) = AssessmentEnrichers.enrich("army_alpha", form, perfectAnswers, emptyList())
-        val total12 = scores12.first { it.label.contains("Total Benar Army Alpha") }
-        val scale12 = scores12.first { it.label.contains("Skala Army Alpha") }
-        val dir12 = scores12.first { it.label.contains("Subtes Following Commands") }
-        val speed12 = scores12.first { it.label.contains("Subtes Speed & Accuracy") }
-
-        assertEquals(12.0, total12.value, 0.001)
-        assertEquals(5.0, scale12.value, 0.001)
-        assertEquals(7.0, dir12.value, 0.001)
-        assertEquals(5.0, speed12.value, 0.001)
-        assertTrue(scale12.meaning.contains("Baik Sekali"))
+        assertEquals(12.0, scores12.first { it.label.contains("Total Benar Army Alpha") }.value, 0.001)
+        assertEquals(7.0, scores12.first { it.label.contains("Subtes Following Commands") }.value, 0.001)
+        assertEquals(5.0, scores12.first { it.label.contains("Subtes Speed & Accuracy") }.value, 0.001)
         assertTrue(interp12.contains("12/12"))
 
-        // Test recap parity: part1=6, part2=6 -> total 12
         val (recapScores, recapInterp) = AssessmentEnrichers.enrichArmyAlphaRecap(6, 6)
-        val recapTotal = recapScores.first { it.label.contains("Total Benar Army Alpha") }
-        val recapScale = recapScores.first { it.label.contains("Skala Army Alpha") }
-        assertEquals(12.0, recapTotal.value, 0.001)
-        assertEquals(5.0, recapScale.value, 0.001)
+        assertEquals(12.0, recapScores.first { it.label.contains("Total Benar Army Alpha") }.value, 0.001)
+        assertEquals(6.0, recapScores.first { it.label.contains("Bagian 1") }.value, 0.001)
+        assertEquals(6.0, recapScores.first { it.label.contains("Bagian 2") }.value, 0.001)
         assertTrue(recapInterp.contains("12/12"))
 
-        // Test average score 7/12 (Scale 3 Rata-Rata)
         val midAnswers = (0 until 12).associateWith { if (it < 7) 0 else 1 }
-        val (scores7, interp7) = AssessmentEnrichers.enrich("army_alpha", form, midAnswers, emptyList())
-        val scale7 = scores7.first { it.label.contains("Skala Army Alpha") }
-        assertEquals(3.0, scale7.value, 0.001)
-        assertTrue(scale7.meaning.contains("Rata-Rata"))
+        val (scores7, _) = AssessmentEnrichers.enrich("army_alpha", form, midAnswers, emptyList())
+        assertEquals(7.0, scores7.first { it.label.contains("Total Benar Army Alpha") }.value, 0.001)
     }
 
 

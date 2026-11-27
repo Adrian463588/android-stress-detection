@@ -9,8 +9,11 @@ import com.stressdetector.mobile.audio.LocalSpeechRuntime
 import com.stressdetector.mobile.data.db.ConsentDao
 import com.stressdetector.mobile.data.db.UserConsentEntity
 import com.stressdetector.mobile.di.AppLocator
+import com.stressdetector.mobile.domain.engine.CounselingInteractionMode
+import com.stressdetector.mobile.domain.engine.CounselorPreferencesStore
 import com.stressdetector.mobile.domain.engine.LlmRuntimeReadiness
 import com.stressdetector.mobile.domain.engine.OnDeviceLlmEngine
+import com.stressdetector.mobile.domain.engine.ResponseProfile
 import com.stressdetector.mobile.domain.engine.SpeechRuntimeState
 import com.stressdetector.mobile.domain.stress.StressHistoryContextProvider
 import com.stressdetector.mobile.domain.stress.StressHistoryContextState
@@ -95,7 +98,10 @@ data class ProfileUiState(
     val durableSyncReport: DurableSyncReport? = null,
     val userBackup: SafUserBackupState = SafUserBackupState(),
     val useStressHistoryInAi: Boolean = true,
-    val stressHistoryContextStatus: String? = null
+    val stressHistoryContextStatus: String? = null,
+    val counselingMode: CounselingInteractionMode = CounselingInteractionMode.GENERAL_COUNSELING,
+    val responseProfile: ResponseProfile = ResponseProfile.STANDARD,
+    val includeBehavioralContext: Boolean = true
 )
 
 // Existing Profile composition boundary; keep dependencies explicit instead of hiding a service locator.
@@ -115,7 +121,8 @@ class ProfileViewModel(
     private val stressHistoryContextProvider: StressHistoryContextProvider? = null,
     private val documentIngestionService: DocumentIngestionService? = null,
     private val embeddingArtifactManager: EmbeddingArtifactManager,
-    private val userBackupService: SafUserBackupService? = null
+    private val userBackupService: SafUserBackupService? = null,
+    private val counselorPreferencesStore: CounselorPreferencesStore = CounselorPreferencesStore.InMemory()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -188,6 +195,17 @@ class ProfileViewModel(
                             voiceReplyEnabled = settings.replyEnabled
                         )
                     }
+                }
+            }
+        }
+        viewModelScope.launch {
+            counselorPreferencesStore.state.collect { prefs ->
+                _uiState.update {
+                    it.copy(
+                        counselingMode = prefs.interactionMode,
+                        responseProfile = prefs.responseProfile,
+                        includeBehavioralContext = prefs.includeBehavioralContext
+                    )
                 }
             }
         }
@@ -552,35 +570,32 @@ class ProfileViewModel(
 
     // UI error boundary: expose any I/O/validation error, but never consume coroutine cancellation.
     @Suppress("TooGenericExceptionCaught")
-    fun createSafBackup(passphrase: String) {
+    fun createSafBackup() {
         val backup = userBackupService ?: return
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isLifecycleOperationRunning = true, statusMessage = null) }
-            val secret = passphrase.toCharArray()
             try {
-                val generation = backup.createBackup(secret)
+                val generation = backup.createBackup()
                 _uiState.update {
-                    it.copy(statusMessage = "Cadangan terenkripsi tersimpan di SAF: $generation. Simpan kata sandi pemulihan Anda.")
+                    it.copy(statusMessage = "Cadangan terenkripsi tersimpan di SAF: $generation.")
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 _uiState.update { it.copy(statusMessage = error.message ?: "Cadangan SAF gagal.") }
             } finally {
-                secret.fill('\u0000')
                 _uiState.update { it.copy(isLifecycleOperationRunning = false) }
             }
         }
     }
 
     @Suppress("TooGenericExceptionCaught")
-    fun restoreSafBackup(passphrase: String) {
+    fun restoreSafBackup() {
         val backup = userBackupService ?: return
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isLifecycleOperationRunning = true, statusMessage = null) }
-            val secret = passphrase.toCharArray()
             try {
-                val generation = backup.restoreBackup(secret)
+                val generation = backup.restoreBackup()
                 _uiState.update {
                     it.copy(statusMessage = "Cadangan $generation dipulihkan. Buka ulang halaman untuk memuat ulang data.")
                 }
@@ -589,7 +604,6 @@ class ProfileViewModel(
             } catch (error: Exception) {
                 _uiState.update { it.copy(statusMessage = error.message ?: "Pemulihan SAF gagal.") }
             } finally {
-                secret.fill('\u0000')
                 _uiState.update { it.copy(isLifecycleOperationRunning = false) }
             }
         }
@@ -824,6 +838,12 @@ class ProfileViewModel(
         voiceSettingsRepository?.setReplyEnabled(enabled)
     }
 
+    fun setCounselingMode(mode: CounselingInteractionMode) = counselorPreferencesStore.setInteractionMode(mode)
+
+    fun setResponseProfile(profile: ResponseProfile) = counselorPreferencesStore.setResponseProfile(profile)
+
+    fun setIncludeBehavioralContext(enabled: Boolean) = counselorPreferencesStore.setIncludeBehavioralContext(enabled)
+
     fun setUseStressHistoryInAi(enabled: Boolean) {
         stressHistoryContextProvider?.setEnabled(enabled)
         _uiState.update {
@@ -905,7 +925,8 @@ class ProfileViewModel(
                 stressHistoryContextProvider = AppLocator.stressHistoryContextProvider(context),
                 documentIngestionService = AppLocator.documentIngestionService(context),
                 embeddingArtifactManager = AppLocator.embeddingArtifactManager(context),
-                userBackupService = AppLocator.userBackupService(context)
+                userBackupService = AppLocator.userBackupService(context),
+                counselorPreferencesStore = AppLocator.counselorPreferencesStore(context)
             ) as T
         }
     }

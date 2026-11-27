@@ -140,6 +140,21 @@ interface AnnotationDao {
 }
 
 @Dao
+interface SkinTemperatureDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(samples: List<SkinTemperatureSampleEntity>)
+
+    @Query("SELECT * FROM skin_temperature_samples WHERE sessionId = :sessionId ORDER BY elapsedMillis ASC, sequenceNumber ASC")
+    fun observeForSession(sessionId: String): Flow<List<SkinTemperatureSampleEntity>>
+
+    @Query("SELECT * FROM skin_temperature_samples WHERE sessionId = :sessionId ORDER BY elapsedMillis ASC, sequenceNumber ASC")
+    suspend fun getForSessionOnce(sessionId: String): List<SkinTemperatureSampleEntity>
+
+    @Query("DELETE FROM skin_temperature_samples WHERE sessionId = :sessionId")
+    suspend fun deleteForSession(sessionId: String)
+}
+
+@Dao
 interface ChatDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChatSession(session: ChatSessionEntity)

@@ -10,9 +10,11 @@ import com.stressdetector.mobile.data.db.ChatDao
 import com.stressdetector.mobile.data.db.ChatMessageEntity
 import com.stressdetector.mobile.data.db.ChatSessionEntity
 import com.stressdetector.mobile.data.repository.AssessmentRepository
+import com.stressdetector.mobile.data.repository.JournalAndGoalRepository
 import com.stressdetector.mobile.data.repository.RoomCrisisTurnRepository
 import com.stressdetector.mobile.data.repository.SharedPreferencesCounselorSessionSelectionStore
 import com.stressdetector.mobile.di.AppLocator
+import com.stressdetector.mobile.domain.assessment.AssessmentDiscussionRequest
 import com.stressdetector.mobile.domain.assessment.AssessmentInstrument
 import com.stressdetector.mobile.domain.assessment.AssessmentRecommendation
 import com.stressdetector.mobile.domain.counselor.CounselorPersonaProfile
@@ -20,12 +22,23 @@ import com.stressdetector.mobile.domain.counselor.CounselorPersonaRepository
 import com.stressdetector.mobile.domain.counselor.CounselorSessionSelectionStore
 import com.stressdetector.mobile.domain.counselor.CrisisTurn
 import com.stressdetector.mobile.domain.counselor.CrisisTurnRepository
+import com.stressdetector.mobile.domain.engine.AdaptiveCounselingRoute
+import com.stressdetector.mobile.domain.engine.AdaptiveCounselingRouter
+import com.stressdetector.mobile.domain.engine.AdaptiveRoutingDecision
+import com.stressdetector.mobile.domain.engine.AssessmentRecommendationBubblePayload
+import com.stressdetector.mobile.domain.engine.AssessmentResultBubblePayload
 import com.stressdetector.mobile.domain.engine.AssetPromptAssetProvider
 import com.stressdetector.mobile.domain.engine.CitationSource
+import com.stressdetector.mobile.domain.engine.ClinicalCounselingContext
+import com.stressdetector.mobile.domain.engine.ClinicalCounselingContextAssembler
 import com.stressdetector.mobile.domain.engine.ClinicalSafetyInterceptor
+import com.stressdetector.mobile.domain.engine.CompletionReason
 import com.stressdetector.mobile.domain.engine.ConversationTurn
+import com.stressdetector.mobile.domain.engine.CounselingInteractionMode
 import com.stressdetector.mobile.domain.engine.CounselorGenerationRequest
+import com.stressdetector.mobile.domain.engine.CounselorMessageType
 import com.stressdetector.mobile.domain.engine.CounselorOutputGuard
+import com.stressdetector.mobile.domain.engine.CounselorPreferencesStore
 import com.stressdetector.mobile.domain.engine.CounselorPromptBuilder
 import com.stressdetector.mobile.domain.engine.CrisisInterceptionResult
 import com.stressdetector.mobile.domain.engine.CrisisResponseTemplateProvider
@@ -33,19 +46,25 @@ import com.stressdetector.mobile.domain.engine.CrisisSupportAction
 import com.stressdetector.mobile.domain.engine.DocumentGroundingIntentDetector
 import com.stressdetector.mobile.domain.engine.EvidenceSourceTier
 import com.stressdetector.mobile.domain.engine.GenerationTextAssembler
+import com.stressdetector.mobile.domain.engine.GoalSuggestionPayload
 import com.stressdetector.mobile.domain.engine.GuardedCounselorOutput
 import com.stressdetector.mobile.domain.engine.IndonesianCrisisResponseTemplateProvider
+import com.stressdetector.mobile.domain.engine.JournalBubblePayload
 import com.stressdetector.mobile.domain.engine.KnowledgeCitation
 import com.stressdetector.mobile.domain.engine.LlmGenerationState
 import com.stressdetector.mobile.domain.engine.LlmRuntimeReadiness
 import com.stressdetector.mobile.domain.engine.OnDeviceLlmEngine
+import com.stressdetector.mobile.domain.engine.PlanReviewStatus
 import com.stressdetector.mobile.domain.engine.PreparedCounselorPrompt
 import com.stressdetector.mobile.domain.engine.PromptAsset
 import com.stressdetector.mobile.domain.engine.PromptAssetProvider
 import com.stressdetector.mobile.domain.engine.RagMode
 import com.stressdetector.mobile.domain.engine.RagRetrievalResult
 import com.stressdetector.mobile.domain.engine.RagRetriever
+import com.stressdetector.mobile.domain.engine.ResponseProfile
 import com.stressdetector.mobile.domain.engine.SafetyInterceptor
+import com.stressdetector.mobile.domain.engine.StructuredBubbleEnvelope
+import com.stressdetector.mobile.domain.engine.VerbatimSessionRepository
 import com.stressdetector.mobile.domain.interaction.IdempotentActionGate
 import com.stressdetector.mobile.domain.search.PublicCounselorQuery
 import com.stressdetector.mobile.domain.search.WebConsentStore
@@ -120,7 +139,19 @@ data class UiChatMessage(
     val promptVersion: String? = null,
     val retrievalMode: RagMode? = null,
     val crisisSupportActions: List<CrisisSupportAction> = emptyList(),
-    val assessmentRecommendations: List<AssessmentRecommendation> = emptyList()
+    val assessmentRecommendations: List<AssessmentRecommendation> = emptyList(),
+    val interactionMode: CounselingInteractionMode = CounselingInteractionMode.GENERAL_COUNSELING,
+    val responseProfile: ResponseProfile = ResponseProfile.STANDARD,
+    val isTruncated: Boolean = false,
+    val completionReason: CompletionReason? = null,
+    val planReviewStatus: PlanReviewStatus? = null,
+    val planReviewNote: String? = null,
+    val messageType: CounselorMessageType = CounselorMessageType.TEXT,
+    val adaptiveRoute: AdaptiveCounselingRoute? = null,
+    val journalPrompt: JournalBubblePayload? = null,
+    val goalSuggestion: GoalSuggestionPayload? = null,
+    val assessmentBubble: AssessmentRecommendationBubblePayload? = null,
+    val assessmentResultSummary: AssessmentResultBubblePayload? = null
 )
 
 data class UiChatSession(val id: String, val title: String, val startedAtMillis: Long, val lastMessageAtMillis: Long)
@@ -157,7 +188,13 @@ data class CounselorUiState(
     val pendingWebQuery: String? = null,
     val useStressHistory: Boolean = false,
     val stressHistoryStatus: String? = null,
-    val crisisPersistenceState: CrisisPersistenceState = CrisisPersistenceState.Idle
+    val crisisPersistenceState: CrisisPersistenceState = CrisisPersistenceState.Idle,
+    val interactionMode: CounselingInteractionMode = CounselingInteractionMode.GENERAL_COUNSELING,
+    val responseProfile: ResponseProfile = ResponseProfile.STANDARD,
+    val includeBehavioralContext: Boolean = true,
+    val activeContextSources: List<String> = emptyList(),
+    val activeJournalPrompt: JournalBubblePayload? = null,
+    val activeJournalMessageId: String? = null
 ) {
     val canCancel: Boolean get() = isGenerating || isRetrieving || webConsentRequired
 }
@@ -186,7 +223,10 @@ class CounselorViewModel(
     private val retrievalPolicyBinding: RetrievalPolicyBinding = RetrievalPolicyBinding.Uncalibrated(
         reason = "benchmark_artifact_missing"
     ),
-    private val assessmentRepository: AssessmentRepository? = null
+    private val assessmentRepository: AssessmentRepository? = null,
+    private val verbatimSessionRepository: VerbatimSessionRepository? = null,
+    private val preferencesStore: CounselorPreferencesStore = CounselorPreferencesStore.InMemory(),
+    private val journalAndGoalRepository: JournalAndGoalRepository? = null
 ) : ViewModel() {
 
     private val gson = Gson()
@@ -197,9 +237,17 @@ class CounselorViewModel(
 
     @Volatile private var turnEpoch = 0L
     private val promptBuilder = CounselorPromptBuilder()
+    private val contextAssembler by lazy {
+        ClinicalCounselingContextAssembler(
+            assessmentRepository = assessmentRepository,
+            verbatimRepository = verbatimSessionRepository,
+            journalAndGoalRepository = journalAndGoalRepository
+        )
+    }
     private var messageObservationJob: Job? = null
     private var voiceInputJob: Job? = null
     private var autoSentVoiceTranscript: String? = null
+    @Volatile private var activePinnedAssessment: AssessmentDiscussionRequest? = null
     private val actionGate = IdempotentActionGate<String>()
     private val sendMutex = Mutex()
     private val webPermissionMutex = Mutex()
@@ -222,6 +270,21 @@ class CounselorViewModel(
         observeStressHistoryContext()
         observeWebConsent()
         observeAutomaticWebPermission()
+        observePreferences()
+    }
+
+    private fun observePreferences() {
+        viewModelScope.launch {
+            preferencesStore.state.collect { prefs ->
+                _uiState.update {
+                    it.copy(
+                        interactionMode = prefs.interactionMode,
+                        responseProfile = prefs.responseProfile,
+                        includeBehavioralContext = prefs.includeBehavioralContext
+                    )
+                }
+            }
+        }
     }
 
     private fun observeAutomaticWebPermission() {
@@ -686,6 +749,11 @@ class CounselorViewModel(
         sendMessage(userText, "TEXT")
     }
 
+    fun discussAssessmentResult(request: AssessmentDiscussionRequest) {
+        activePinnedAssessment = request
+        sendMessage(request.prompt, "TEXT")
+    }
+
     private fun sendMessage(userText: String, inputMode: String = "TEXT") {
         val rawText = userText.trim()
         if (rawText.isBlank()) return
@@ -749,13 +817,12 @@ class CounselorViewModel(
             return
         }
 
-        val isDiscussionOrCompletedResult = rawText.startsWith("Halo AI Counselor, saya baru saja menyelesaikan asesmen") ||
-            rawText.startsWith("Halo AI Counselor, tolong jelaskan panduan asesmen") ||
-            rawText.contains("Rincian Skor") ||
-            rawText.contains("Interpretasi Klinis:") ||
-            rawText.contains("Metode skoring:")
+        val isDiscussionOrCompletedResult = DocumentGroundingIntentDetector.isAssessmentDiscussion(rawText)
+        val suppressInstrumentPicker = isDiscussionOrCompletedResult ||
+            _uiState.value.interactionMode != CounselingInteractionMode.GENERAL_COUNSELING ||
+            COUNSELING_TECHNIQUE_QUERY.containsMatchIn(rawText)
 
-        val recommendations = if (isDiscussionOrCompletedResult) {
+        val recommendations = if (suppressInstrumentPicker) {
             emptyList()
         } else {
             try {
@@ -766,16 +833,26 @@ class CounselorViewModel(
                 emptyList()
             }
         }
+        val adaptiveRouting = AdaptiveCounselingRouter.evaluate(
+            userMessage = rawText,
+            recommendedInstruments = recommendations
+        )
         requireCurrentTurn(dispatchEpoch, dispatchSessionId)
         if (recommendations.isNotEmpty()) {
             turnEpoch++
-            publishAssessmentTurn(userMessage, recommendations, dispatchSessionId, turnEpoch)
+            publishAssessmentTurn(
+                userMessage = userMessage,
+                instruments = recommendations,
+                bubblePayload = adaptiveRouting.assessmentRecommendation,
+                sessionId = dispatchSessionId,
+                epoch = turnEpoch
+            )
             return
         }
 
         val webMode = _uiState.value.webSearchMode
         turnEpoch++
-        if (!isDiscussionOrCompletedResult && webMode != WebSearchMode.Disabled) {
+        if (webMode.allowsFallback(isDiscussionOrCompletedResult)) {
             val request = PendingWebRequest(
                 rawText,
                 inputMode,
@@ -796,22 +873,34 @@ class CounselorViewModel(
             rawUserText = rawText,
             userMessage = userMessage,
             persistUserMessage = true,
-            inputMode = inputMode
+            inputMode = inputMode,
+            routingDecision = adaptiveRouting
         )
     }
 
     private suspend fun publishAssessmentTurn(
         userMessage: UiChatMessage,
         instruments: List<AssessmentInstrument>,
+        bubblePayload: AssessmentRecommendationBubblePayload?,
         sessionId: String,
         epoch: Long
     ) {
+        val envelope = bubblePayload?.let {
+            StructuredBubbleEnvelope(
+                messageType = CounselorMessageType.ASSESSMENT_RECOMMENDATION,
+                adaptiveRoute = AdaptiveCounselingRoute.ASSESSMENT_SUPPORT,
+                assessmentBubble = it
+            )
+        }
         val recommendation = UiChatMessage(
             id = UUID.randomUUID().toString(),
             sender = "counselor",
             content = assessmentRecommendationText(instruments),
             timestampMs = userMessage.timestampMs + 1,
-            assessmentRecommendations = instruments.map { AssessmentRecommendation(it.id, it.title) }
+            assessmentRecommendations = instruments.map { AssessmentRecommendation(it.id, it.title) },
+            messageType = envelope?.messageType ?: CounselorMessageType.ASSESSMENT_RECOMMENDATION,
+            adaptiveRoute = AdaptiveCounselingRoute.ASSESSMENT_SUPPORT,
+            assessmentBubble = bubblePayload
         )
         val metadata = gson.toJson(
             mapOf(
@@ -828,10 +917,20 @@ class CounselorViewModel(
             )
         )
         try {
+            if (bubblePayload != null) {
+                runCatching {
+                    journalAndGoalRepository?.recordRecommendation(bubblePayload, sessionId)
+                }.onFailure { if (it is CancellationException) throw it }
+            }
             chatDao.persistAssessmentTurn(
                 sessionFor(userMessage, sessionId),
                 userMessage.toEntity(sessionId),
-                recommendation.toEntity(sessionId, stressContext = metadata, promptVersion = ASSESSMENT_PROMPT_VERSION)
+                recommendation.toEntity(
+                    sessionId = sessionId,
+                    stressContext = metadata,
+                    promptVersion = ASSESSMENT_PROMPT_VERSION,
+                    structuredPayload = envelope?.let(gson::toJson)
+                )
             ) {
                 requireCurrentTurn(epoch, sessionId)
                 check(aiConsentGranted()) { "ai_consent_revoked" }
@@ -856,6 +955,97 @@ class CounselorViewModel(
                         lastFailedUserMessage = userMessage.content
                     )
                 }
+            }
+        }
+    }
+
+    fun openJournalSheet(messageId: String, prompt: JournalBubblePayload) {
+        _uiState.update { it.copy(activeJournalPrompt = prompt, activeJournalMessageId = messageId) }
+    }
+
+    fun dismissJournalSheet() {
+        _uiState.update { it.copy(activeJournalPrompt = null, activeJournalMessageId = null) }
+    }
+
+    fun saveQuickJournal(
+        messageId: String?,
+        prompt: JournalBubblePayload,
+        moodScore: Int,
+        moodLabel: String,
+        reflectionText: String,
+        allowAiContext: Boolean
+    ) {
+        viewModelScope.launch(ioDispatcher) {
+            val savedId = runCatching {
+                journalAndGoalRepository?.saveJournalEntry(
+                    moodScore = moodScore,
+                    moodLabel = moodLabel,
+                    reflectionText = reflectionText,
+                    tags = prompt.suggestedTags,
+                    aiContextAllowed = allowAiContext
+                )?.entryId
+            }.onFailure { if (it is CancellationException) throw it }.getOrNull() ?: "local-${System.currentTimeMillis()}"
+            _uiState.update { current ->
+                val updatedMessages = if (messageId == null) {
+                    current.messages
+                } else {
+                    current.messages.map { msg ->
+                        if (msg.id == messageId) {
+                            msg.copy(journalPrompt = prompt.copy(completedEntryId = savedId))
+                        } else {
+                            msg
+                        }
+                    }
+                }
+                current.copy(
+                    messages = updatedMessages,
+                    activeJournalPrompt = null,
+                    activeJournalMessageId = null,
+                    statusMessage = "Refleksi harian tersimpan."
+                )
+            }
+        }
+    }
+
+    fun acceptGoalSuggestion(messageId: String, suggestion: GoalSuggestionPayload) {
+        viewModelScope.launch(ioDispatcher) {
+            runCatching {
+                journalAndGoalRepository?.saveGoal(suggestion)
+            }.onFailure { if (it is CancellationException) throw it }
+            _uiState.update { current ->
+                current.copy(
+                    messages = current.messages.map { msg ->
+                        if (msg.id == messageId) {
+                            msg.copy(goalSuggestion = suggestion.copy(accepted = true))
+                        } else {
+                            msg
+                        }
+                    },
+                    statusMessage = "Target kebiasaan '${suggestion.title}' aktif."
+                )
+            }
+        }
+    }
+
+    fun respondToAssessmentRecommendation(
+        messageId: String,
+        payload: AssessmentRecommendationBubblePayload,
+        nextStatus: String
+    ) {
+        viewModelScope.launch(ioDispatcher) {
+            runCatching {
+                journalAndGoalRepository?.updateRecommendationStatus(payload.recommendationId, nextStatus)
+            }.onFailure { if (it is CancellationException) throw it }
+            _uiState.update { current ->
+                current.copy(
+                    messages = current.messages.map { msg ->
+                        if (msg.id == messageId) {
+                            msg.copy(assessmentBubble = payload.copy(status = nextStatus))
+                        } else {
+                            msg
+                        }
+                    }
+                )
             }
         }
     }
@@ -1142,7 +1332,7 @@ class CounselorViewModel(
             .firstOrNull { it.sender == USER_SENDER && it.content == rawText }
         if (existingUserMessage == null) {
             sendMessage(rawText)
-        } else if (webMode != WebSearchMode.Disabled) {
+        } else if (webMode.allowsFallback(DocumentGroundingIntentDetector.isAssessmentDiscussion(rawText))) {
             turnEpoch++
             val request = PendingWebRequest(
                 rawText = rawText,
@@ -1173,6 +1363,87 @@ class CounselorViewModel(
         retryLastMessage()
     }
 
+    fun setInteractionMode(mode: CounselingInteractionMode) {
+        preferencesStore.setInteractionMode(mode)
+        syncFromPreferences()
+    }
+
+    fun setResponseProfile(profile: ResponseProfile) {
+        preferencesStore.setResponseProfile(profile)
+        syncFromPreferences()
+    }
+
+    fun setIncludeBehavioralContext(enabled: Boolean) {
+        preferencesStore.setIncludeBehavioralContext(enabled)
+        syncFromPreferences()
+    }
+
+    private fun syncFromPreferences() {
+        val prefs = preferencesStore.state.value
+        _uiState.update {
+            it.copy(
+                interactionMode = prefs.interactionMode,
+                responseProfile = prefs.responseProfile,
+                includeBehavioralContext = prefs.includeBehavioralContext
+            )
+        }
+    }
+
+    fun reviewCounselingPlan(messageId: String, status: PlanReviewStatus, note: String? = null) {
+        val current = _uiState.value.messages.firstOrNull { it.id == messageId } ?: return
+        val sessionId = _uiState.value.activeChatSessionId
+        val updated = current.copy(planReviewStatus = status, planReviewNote = note?.trim()?.takeIf(String::isNotBlank))
+        _uiState.update { state ->
+            state.copy(
+                messages = ChatMessageListReducer.replace(state.messages, updated),
+                statusMessage = "Rencana ditandai: ${status.label}"
+            )
+        }
+        viewModelScope.launch {
+            runCatching {
+                val existingEntity = chatDao.getMessagesForSession(sessionId).first().firstOrNull { it.messageId == messageId }
+                val updatedJson = updatePersistedPlanReview(
+                    existingEntity?.stressContextJson,
+                    status = updated.planReviewStatus,
+                    note = updated.planReviewNote,
+                    interactionMode = updated.interactionMode,
+                    responseProfile = updated.responseProfile,
+                    isTruncated = updated.isTruncated,
+                    completionReason = updated.completionReason
+                )
+                chatDao.insertMessage(
+                    updated.toEntity(
+                        sessionId = sessionId,
+                        stressContext = updatedJson,
+                        promptVersion = updated.promptVersion,
+                        retrievalMode = updated.retrievalMode
+                    )
+                )
+            }
+        }
+    }
+
+    fun continueResponse(messageId: String) {
+        if (_uiState.value.canCancel) return
+        val messages = _uiState.value.messages
+        val targetIndex = messages.indexOfFirst { it.id == messageId }
+        if (targetIndex < 0) return
+        val target = messages[targetIndex]
+        val precedingUser = messages.subList(0, targetIndex).lastOrNull { it.sender == USER_SENDER }?.content
+            ?: _uiState.value.lastFailedUserMessage
+            ?: target.content.take(120)
+        turnEpoch++
+        startGeneration(
+            promptText = precedingUser,
+            rawUserText = precedingUser,
+            userMessage = null,
+            persistUserMessage = false,
+            inputMode = "TEXT",
+            continuationMessageId = target.id,
+            continuationPrefix = stripDisclaimerFooter(target.content)
+        )
+    }
+
     private fun startGeneration(
         promptText: String,
         rawUserText: String,
@@ -1181,35 +1452,54 @@ class CounselorViewModel(
         inputMode: String,
         localRetrievalOverride: RagRetrievalResult? = null,
         webGroundingOverride: WebGroundingResult? = null,
-        webStatusMessage: String? = null
+        webStatusMessage: String? = null,
+        continuationMessageId: String? = null,
+        continuationPrefix: String = "",
+        routingDecision: AdaptiveRoutingDecision? = null
     ) {
         crisisEscalationActive = false
         val sessionId = _uiState.value.activeChatSessionId
         val epoch = turnEpoch
-        val counselorMessageId = UUID.randomUUID().toString()
-        val typingMessage = UiChatMessage(
+        val existingTarget = continuationMessageId?.let { id -> _uiState.value.messages.firstOrNull { it.id == id } }
+        val activeMode = existingTarget?.interactionMode ?: _uiState.value.interactionMode
+        val activeProfile = existingTarget?.responseProfile ?: _uiState.value.responseProfile
+        val counselorMessageId = continuationMessageId ?: UUID.randomUUID().toString()
+        val typingMessage = existingTarget?.copy(isTruncated = false) ?: UiChatMessage(
             id = counselorMessageId,
             sender = "counselor",
             content = "",
             timestampMs = System.currentTimeMillis(),
-            citations = emptyList()
+            citations = emptyList(),
+            interactionMode = activeMode,
+            responseProfile = activeProfile
         )
         _uiState.update {
             it.copy(
-                messages = ChatMessageListReducer.append(
-                    if (userMessage == null) it.messages else ChatMessageListReducer.append(it.messages, userMessage),
-                    typingMessage
-                ),
+                messages = if (continuationMessageId != null) {
+                    it.messages
+                } else {
+                    ChatMessageListReducer.append(
+                        if (userMessage == null) it.messages else ChatMessageListReducer.append(it.messages, userMessage),
+                        typingMessage
+                    )
+                },
                 isGenerating = true,
                 isRetrieving = false,
                 phase = CounselorPhase.LOADING_MODEL,
-                statusMessage = null,
+                statusMessage = if (continuationPrefix.isNotBlank()) "Melanjutkan jawaban…" else null,
                 runtimeTechnicalMessage = null
             )
         }
 
         generationJob = viewModelScope.launch {
-            fun renderFinalAssistant(content: String, citations: List<KnowledgeCitation> = emptyList(), retrievalMode: RagMode? = null) {
+            fun renderFinalAssistant(
+                content: String,
+                citations: List<KnowledgeCitation> = emptyList(),
+                retrievalMode: RagMode? = null,
+                isTruncated: Boolean = false,
+                completionReason: CompletionReason? = null,
+                planReviewStatus: PlanReviewStatus? = existingTarget?.planReviewStatus
+            ) {
                 _uiState.update { state ->
                     state.copy(
                         messages = ChatMessageListReducer.replace(
@@ -1217,13 +1507,19 @@ class CounselorViewModel(
                             typingMessage.copy(
                                 content = content,
                                 citations = citations,
-                                retrievalMode = retrievalMode ?: typingMessage.retrievalMode
+                                retrievalMode = retrievalMode ?: typingMessage.retrievalMode,
+                                interactionMode = activeMode,
+                                responseProfile = activeProfile,
+                                isTruncated = isTruncated,
+                                completionReason = completionReason,
+                                planReviewStatus = planReviewStatus
                             )
                         )
                     )
                 }
             }
             fun removeTransientAssistant() {
+                if (continuationMessageId != null) return
                 _uiState.update { state ->
                     state.copy(messages = ChatMessageListReducer.remove(state.messages, counselorMessageId))
                 }
@@ -1285,13 +1581,40 @@ class CounselorViewModel(
                     return@launch
                 }
 
-                val retrieval = localRetrievalOverride ?: retrieveLocal(promptText)
+                val assessmentDiscussion = DocumentGroundingIntentDetector.isAssessmentDiscussion(rawUserText) ||
+                    activeMode != CounselingInteractionMode.GENERAL_COUNSELING
+                val clinicalContext: ClinicalCounselingContext = if (DocumentGroundingIntentDetector.isAssessmentGuide(rawUserText)) {
+                    ClinicalCounselingContext(enrichedRetrievalQuery = promptText)
+                } else {
+                    contextAssembler.assemble(
+                        userQuery = rawUserText,
+                        interactionMode = activeMode,
+                        includeBehavioralContext = _uiState.value.includeBehavioralContext,
+                        pinnedResultId = activePinnedAssessment?.resultId
+                    )
+                }
+                val assessmentResult = if (!DocumentGroundingIntentDetector.isAssessmentGuide(rawUserText)) {
+                    clinicalContext.primaryAssessmentResult
+                } else {
+                    null
+                }
+                val retrievalQuery = clinicalContext.enrichedRetrievalQuery.ifBlank { promptText }
+                val searched = localRetrievalOverride ?: retrieveLocal(retrievalQuery)
+                val wantsFollowUp = assessmentFollowUpTerms.containsMatchIn(rawUserText) ||
+                    activeMode == CounselingInteractionMode.COUNSELOR_PLANNING
+                val retrieval = if (assessmentResult != null && searched !is RagRetrievalResult.Retrieved && wantsFollowUp) {
+                    val kbRetry = retrieveLocal("${assessmentResult.title} teknik konseling REBT CBT intervensi")
+                    if (kbRetry is RagRetrievalResult.Retrieved) kbRetry else (assessmentRepository?.followUpReference() ?: searched)
+                } else {
+                    searched
+                }
                 requireCurrentTurn(epoch, sessionId)
                 val retrievalDecision = resolveWebGrounding(
                     rawUserText = rawUserText,
                     retrieval = retrieval,
                     webGroundingOverride = webGroundingOverride,
-                    webStatusMessage = webStatusMessage
+                    webStatusMessage = webStatusMessage,
+                    interactionMode = activeMode
                 ) ?: run {
                     removeTransientAssistant()
                     return@launch
@@ -1312,6 +1635,12 @@ class CounselorViewModel(
                     return@launch
                 }
                 val stressContext = readStressContext()
+                val stressSource = if (_uiState.value.useStressHistory && stressContext.sourceSessionIds.isNotEmpty()) {
+                    "Stres"
+                } else {
+                    null
+                }
+                val activeSources = (clinicalContext.activeSources + listOfNotNull(stressSource)).distinct()
                 val promptAsset = promptAssetProvider.getCounselorPrompt()
                 val persona = personaRepository.get()
                 val recentHistory = recentHistory(
@@ -1327,7 +1656,17 @@ class CounselorViewModel(
                     personaProfile = persona.profile,
                     personaVersion = persona.version.toInt(),
                     recentHistory = recentHistory,
-                    webCitations = retrievalDecision.webCitations
+                    webCitations = retrievalDecision.webCitations,
+                    assessmentDiscussion = assessmentDiscussion,
+                    assessmentResult = assessmentResult,
+                    interactionMode = activeMode,
+                    responseProfile = activeProfile,
+                    allAssessmentSummary = listOf(
+                        clinicalContext.assessmentSummary,
+                        clinicalContext.journalAndGoalSummary
+                    ).filter(String::isNotBlank).joinToString("\n\n"),
+                    verbatimContext = clinicalContext.verbatimSummary,
+                    continuationPrefix = continuationPrefix
                 )
                 val prepared = promptBuilder.prepare(rawRequest)
                 val citationRegistry = prepared.citationRegistry
@@ -1350,11 +1689,12 @@ class CounselorViewModel(
                             CounselorPhase.GENERAL_SAFE
                         },
                         retrievalMode = retrievalDecision.mode,
-                        statusMessage = retrievalDecision.statusMessage
+                        statusMessage = retrievalDecision.statusMessage,
+                        activeContextSources = activeSources
                     )
                 }
 
-                val responseAssembler = GenerationTextAssembler()
+                val responseAssembler = GenerationTextAssembler(maxChars = activeProfile.maxOutputChars)
                 var generationFailed = false
                 var receivedContent = false
                 try {
@@ -1412,11 +1752,22 @@ class CounselorViewModel(
                             )
                         }
                     }
-                    val bufferedText = responseAssembler.currentText()
+                    val answer = responseAssembler.finishPreservingPartial()
+                    val bufferedText = answer.text
                     requireCurrentTurn(epoch, sessionId)
                     check(aiConsentGranted()) { "ai_consent_revoked" }
                     check(retrievalDecision.mode != RagMode.WEB_GROUNDED || webConsentStore.granted.value) { "web_consent_revoked" }
                     check(stressContext.sourceSessionIds.isEmpty() || _uiState.value.useStressHistory) { "stress_history_consent_revoked" }
+                    if (!generationFailed && bufferedText.isBlank()) {
+                        removeTransientAssistant()
+                        _uiState.update {
+                            it.copy(
+                                phase = CounselorPhase.ERROR,
+                                statusMessage = "AI berhenti sebelum menyelesaikan jawaban. Coba lagi.",
+                                lastFailedUserMessage = rawUserText
+                            )
+                        }
+                    }
                     if (!generationFailed && bufferedText.isNotBlank() && _uiState.value.phase != CounselorPhase.ERROR) {
                         val initialGuard = outputGuard.validate(
                             text = bufferedText,
@@ -1440,7 +1791,9 @@ class CounselorViewModel(
                                 val admittedStressContext = stressContext.forPrompt(finalPrepared)
                                 val finalEvidence = finalPrepared.citationRegistry.bindings.map { it.citation }
                                 val contextReceipt = CounselorContextReceiptFactory.create(
-                                    retrieval = if (finalEvidence.isNotEmpty()) {
+                                    retrieval = if (retrieval is RagRetrievalResult.Retrieved && finalEvidence.isNotEmpty()) {
+                                        retrieval.copy(citations = finalEvidence, sourceTier = retrievalDecision.sourceTier)
+                                    } else if (finalEvidence.isNotEmpty()) {
                                         RagRetrievalResult.Retrieved(finalEvidence, sourceTier = retrievalDecision.sourceTier)
                                     } else {
                                         retrieval
@@ -1451,26 +1804,83 @@ class CounselorViewModel(
                                     excludedHistoryReasons = admittedStressContext.excludedHistoryReasons,
                                     llmModelVersion = runtimeStatus.runtimeVersion
                                 )
-                                val finalContent = withDisclaimer(guarded.text)
-                                val finalCitations = guarded.citations
+                                val mergedBody = if (continuationPrefix.isNotBlank()) {
+                                    GenerationTextAssembler.mergeContinuation(continuationPrefix, guarded.text)
+                                } else {
+                                    guarded.text
+                                }
+                                val incomplete = answer.incomplete
+                                val planStatus = if (activeMode == CounselingInteractionMode.COUNSELOR_PLANNING) {
+                                    existingTarget?.planReviewStatus ?: PlanReviewStatus.PENDING
+                                } else {
+                                    existingTarget?.planReviewStatus
+                                }
+                                val finalContent = withDisclaimer(
+                                    content = mergedBody,
+                                    assessmentDiscussion = assessmentDiscussion,
+                                    interactionMode = activeMode,
+                                    excludeMessageId = counselorMessageId
+                                )
+                                val resolvedRoute = routingDecision?.route
+                                    ?: existingTarget?.adaptiveRoute
+                                    ?: AdaptiveCounselingRoute.DAILY_WELLBEING
+                                val resolvedType = routingDecision?.messageType
+                                    ?: existingTarget?.messageType
+                                    ?: CounselorMessageType.TEXT
+                                val resolvedJournal = routingDecision?.journalPrompt ?: existingTarget?.journalPrompt
+                                val resolvedGoal = routingDecision?.goalSuggestion ?: existingTarget?.goalSuggestion
+                                val resolvedRecBubble = routingDecision?.assessmentRecommendation ?: existingTarget?.assessmentBubble
+                                val bubbleEnvelope = if (resolvedJournal != null || resolvedGoal != null || resolvedRecBubble != null) {
+                                    StructuredBubbleEnvelope(
+                                        messageType = resolvedType,
+                                        adaptiveRoute = resolvedRoute,
+                                        journalPrompt = resolvedJournal,
+                                        goalSuggestion = resolvedGoal,
+                                        assessmentBubble = resolvedRecBubble
+                                    )
+                                } else {
+                                    null
+                                }
+                                val finalCitations = (existingTarget?.citations.orEmpty() + guarded.citations)
+                                    .distinctBy(KnowledgeCitation::citationId)
                                 val persistedMessage = UiChatMessage(
                                     id = counselorMessageId,
                                     sender = "counselor",
                                     content = finalContent,
                                     timestampMs = System.currentTimeMillis(),
                                     citations = finalCitations,
-                                    retrievalMode = retrievalDecision.mode
+                                    retrievalMode = retrievalDecision.mode,
+                                    interactionMode = activeMode,
+                                    responseProfile = activeProfile,
+                                    isTruncated = incomplete,
+                                    completionReason = answer.reason,
+                                    planReviewStatus = planStatus,
+                                    planReviewNote = existingTarget?.planReviewNote,
+                                    messageType = resolvedType,
+                                    adaptiveRoute = resolvedRoute,
+                                    journalPrompt = resolvedJournal,
+                                    goalSuggestion = resolvedGoal,
+                                    assessmentBubble = resolvedRecBubble
                                 )
                                 chatDao.persistAssistantTurn(
                                     persistedMessage.toEntity(
                                         sessionId = sessionId,
-                                        stressContext = admittedStressContext.persistedJson(contextReceipt),
+                                        stressContext = admittedStressContext.persistedJson(
+                                            receipt = contextReceipt,
+                                            interactionMode = activeMode,
+                                            responseProfile = activeProfile,
+                                            isTruncated = incomplete,
+                                            completionReason = answer.reason,
+                                            planReviewStatus = planStatus,
+                                            planReviewNote = existingTarget?.planReviewNote
+                                        ),
                                         promptVersion = if (finalPrepared.personaIncluded) {
                                             "${promptAsset.version}+persona-${persona.version}-${persona.profileHash.take(12)}"
                                         } else {
                                             promptAsset.version
                                         },
-                                        retrievalMode = retrievalDecision.mode
+                                        retrievalMode = retrievalDecision.mode,
+                                        structuredPayload = bubbleEnvelope?.let(gson::toJson)
                                     )
                                 ) {
                                     requireCurrentTurn(epoch, sessionId)
@@ -1483,13 +1893,34 @@ class CounselorViewModel(
                                     }
                                     requireCurrentTurn(epoch, sessionId)
                                 }
+                                clinicalContext.primaryAssessmentResult?.takeIf { it.isAiContextEligible() }?.let { eligible ->
+                                    runCatching {
+                                        journalAndGoalRepository?.recordAiInterpretation(
+                                            assessmentResultId = eligible.resultId,
+                                            instrumentId = eligible.instrumentId,
+                                            chatMessageId = counselorMessageId,
+                                            modelVersion = runtimeStatus.runtimeVersion ?: "gemma-local",
+                                            kbVersion = "bundled-counseling-v2",
+                                            summaryText = finalContent.take(300)
+                                        )
+                                    }.onFailure { if (it is CancellationException) throw it }
+                                }
                                 requireCurrentTurn(epoch, sessionId)
-                                renderFinalAssistant(finalContent, finalCitations, retrievalDecision.mode)
+                                _uiState.update { state ->
+                                    state.copy(
+                                        messages = ChatMessageListReducer.replace(state.messages, persistedMessage)
+                                    )
+                                }
                                 speakIfEnabled(finalContent, inputMode, counselorMessageId)
+                                val status = if (incomplete) {
+                                    "Sebagian jawaban tersimpan. Ketuk Lanjutkan jawaban untuk meneruskan."
+                                } else {
+                                    retrievalDecision.statusMessage
+                                }
                                 _uiState.update {
                                     it.copy(
                                         phase = CounselorPhase.SUCCESS,
-                                        statusMessage = retrievalDecision.statusMessage,
+                                        statusMessage = status,
                                         lastFailedUserMessage = null
                                     )
                                 }
@@ -1763,13 +2194,70 @@ class CounselorViewModel(
 
     fun runtimeTechnicalDetails(): String? = _uiState.value.runtimeTechnicalMessage
 
-    private fun withDisclaimer(content: String): String = if (
-        content.contains("bukan diagnosis", ignoreCase = true) ||
-        content.contains("not a diagnosis", ignoreCase = true)
-    ) {
-        content
-    } else {
-        "$content\n\nDukungan umum, bukan diagnosis medis."
+    private fun withDisclaimer(
+        content: String,
+        assessmentDiscussion: Boolean,
+        interactionMode: CounselingInteractionMode = CounselingInteractionMode.GENERAL_COUNSELING,
+        excludeMessageId: String? = null
+    ): String {
+        if (content.contains("bukan diagnosis", ignoreCase = true) ||
+            content.contains("not a diagnosis", ignoreCase = true)
+        ) {
+            return content
+        }
+        val hasPriorDisclaimer = _uiState.value.messages
+            .filter { it.id != excludeMessageId && it.sender == "counselor" && it.content.isNotBlank() }
+            .any {
+                it.content.contains("bukan diagnosis", ignoreCase = true) ||
+                    it.content.contains("purwarupa", ignoreCase = true)
+            }
+        if (hasPriorDisclaimer && interactionMode != CounselingInteractionMode.COUNSELOR_PLANNING) {
+            return content
+        }
+        val note = if (assessmentDiscussion || interactionMode == CounselingInteractionMode.COUNSELOR_PLANNING) {
+            "Bahan tinjauan konselor (purwarupa). Bukan diagnosis."
+        } else {
+            "Dukungan umum, bukan diagnosis medis."
+        }
+        return "$content\n\n$note"
+    }
+
+    private fun stripDisclaimerFooter(content: String): String = content
+        .replace(Regex("\n*Bahan tinjauan konselor.*?\\.?$"), "")
+        .replace(Regex("\n*Dukungan umum, bukan diagnosis medis\\.?$"), "")
+        .trimEnd()
+
+    private fun updatePersistedPlanReview(
+        existingJson: String?,
+        status: PlanReviewStatus?,
+        note: String?,
+        interactionMode: CounselingInteractionMode,
+        responseProfile: ResponseProfile,
+        isTruncated: Boolean,
+        completionReason: CompletionReason?
+    ): String {
+        val current = existingJson?.let { runCatching { gson.fromJson(it, PersistedCounselorContext::class.java) }.getOrNull() }
+        val updated = if (current != null) {
+            current.copy(
+                interactionMode = interactionMode.name,
+                responseProfile = responseProfile.name,
+                isTruncated = isTruncated,
+                completionReason = completionReason?.name,
+                planReviewStatus = status?.name,
+                planReviewNote = note
+            )
+        } else {
+            PersistedStressContextMetadata(
+                version = "counselor-context-envelope-v1",
+                interactionMode = interactionMode.name,
+                responseProfile = responseProfile.name,
+                isTruncated = isTruncated,
+                completionReason = completionReason?.name,
+                planReviewStatus = status?.name,
+                planReviewNote = note
+            )
+        }
+        return gson.toJson(updated)
     }
 
     /** One real regeneration; no marker insertion, URL invention, or guard bypass. */
@@ -1809,11 +2297,12 @@ class CounselorViewModel(
             }
         }
         requireCurrentTurn(epoch, sessionId)
-        val output = if (failed || assembler.currentText().isBlank()) {
+        val answer = assembler.finish()
+        val output = if (failed || answer.incomplete || answer.text.isBlank()) {
             rejected
         } else {
             outputGuard.validate(
-                assembler.currentText(),
+                answer.text,
                 admittedRequest.ragMode,
                 admittedRequest.retrievedCitations,
                 prompt.citationRegistry
@@ -1851,7 +2340,8 @@ class CounselorViewModel(
         sessionId: String,
         stressContext: String? = null,
         promptVersion: String? = null,
-        retrievalMode: RagMode? = null
+        retrievalMode: RagMode? = null,
+        structuredPayload: String? = null
     ) = ChatMessageEntity(
         messageId = id,
         chatSessionId = sessionId,
@@ -1862,7 +2352,9 @@ class CounselorViewModel(
         stressContextJson = stressContext,
         promptVersion = promptVersion,
         retrievalMode = retrievalMode?.name,
-        inputMode = inputMode
+        inputMode = inputMode,
+        messageType = messageType.name,
+        structuredPayloadJson = structuredPayload
     )
 
     private fun recentHistory(text: String, currentUserMessageId: String?): List<ConversationTurn> {
@@ -1902,6 +2394,12 @@ class CounselorViewModel(
         val retrievalMode = entity.retrievalMode?.let { value ->
             runCatching { RagMode.valueOf(value) }.getOrNull()
         }
+        val envelope = entity.structuredPayloadJson?.let { raw ->
+            runCatching { gson.fromJson(raw, StructuredBubbleEnvelope::class.java) }.getOrNull()
+        }
+        val msgType = entity.messageType?.let { raw ->
+            runCatching { CounselorMessageType.valueOf(raw) }.getOrNull()
+        } ?: envelope?.messageType ?: CounselorMessageType.TEXT
         return UiChatMessage(
             id = entity.messageId,
             sender = entity.sender,
@@ -1922,7 +2420,25 @@ class CounselorViewModel(
                 contextMetadata?.assessmentRecommendations.orEmpty()
             } else {
                 emptyList()
-            }
+            },
+            interactionMode = contextMetadata?.interactionMode
+                ?.let { runCatching { CounselingInteractionMode.valueOf(it) }.getOrNull() }
+                ?: CounselingInteractionMode.GENERAL_COUNSELING,
+            responseProfile = contextMetadata?.responseProfile
+                ?.let { runCatching { ResponseProfile.valueOf(it) }.getOrNull() }
+                ?: ResponseProfile.STANDARD,
+            isTruncated = contextMetadata?.isTruncated == true,
+            completionReason = contextMetadata?.completionReason
+                ?.let { runCatching { CompletionReason.valueOf(it) }.getOrNull() },
+            planReviewStatus = contextMetadata?.planReviewStatus
+                ?.let { runCatching { PlanReviewStatus.valueOf(it) }.getOrNull() },
+            planReviewNote = contextMetadata?.planReviewNote,
+            messageType = msgType,
+            adaptiveRoute = envelope?.adaptiveRoute,
+            journalPrompt = envelope?.journalPrompt,
+            goalSuggestion = envelope?.goalSuggestion,
+            assessmentBubble = envelope?.assessmentBubble,
+            assessmentResultSummary = envelope?.assessmentResultSummary
         )
     }
 
@@ -1996,19 +2512,8 @@ class CounselorViewModel(
                 )
             }
             val contextSnapshot = stressHistoryContextProvider.snapshot()
-            val assessmentSummary = try {
-                assessmentRepository?.getRecentAssessmentSummary().orEmpty()
-            } catch (_: Exception) {
-                ""
-            }
-            val baseStress = contextSnapshot.toPromptContext()
-            val combined = if (assessmentSummary.isNotBlank()) {
-                "$baseStress\nAsesmen Psikometri: $assessmentSummary"
-            } else {
-                baseStress
-            }
             StressContextPayload(
-                promptText = combined,
+                promptText = contextSnapshot.toPromptContext(),
                 snapshotJson = gson.toJson(contextSnapshot),
                 sourceSessionIds = contextSnapshot.sourceSessionIds,
                 excludedHistoryReasons = contextSnapshot.entries
@@ -2049,13 +2554,27 @@ class CounselorViewModel(
             )
         }
 
-        fun persistedJson(receipt: CounselorContextReceipt): String = Gson().toJson(
+        fun persistedJson(
+            receipt: CounselorContextReceipt,
+            interactionMode: CounselingInteractionMode = CounselingInteractionMode.GENERAL_COUNSELING,
+            responseProfile: ResponseProfile = ResponseProfile.STANDARD,
+            isTruncated: Boolean = false,
+            completionReason: CompletionReason? = null,
+            planReviewStatus: PlanReviewStatus? = null,
+            planReviewNote: String? = null
+        ): String = Gson().toJson(
             PersistedCounselorContext(
                 version = "counselor-context-envelope-v1",
                 sourceSessionIds = sourceSessionIds.distinct().sorted(),
                 excludedHistoryReasons = excludedHistoryReasons.distinct().sorted(),
                 stressHistorySnapshotJson = snapshotJson,
-                receipt = receipt
+                receipt = receipt,
+                interactionMode = interactionMode.name,
+                responseProfile = responseProfile.name,
+                isTruncated = isTruncated,
+                completionReason = completionReason?.name,
+                planReviewStatus = planReviewStatus?.name,
+                planReviewNote = planReviewNote
             )
         )
     }
@@ -2065,13 +2584,25 @@ class CounselorViewModel(
         val sourceSessionIds: List<String>,
         val excludedHistoryReasons: List<String>,
         val stressHistorySnapshotJson: String,
-        val receipt: CounselorContextReceipt
+        val receipt: CounselorContextReceipt,
+        val interactionMode: String? = null,
+        val responseProfile: String? = null,
+        val isTruncated: Boolean = false,
+        val completionReason: String? = null,
+        val planReviewStatus: String? = null,
+        val planReviewNote: String? = null
     )
 
     private data class PersistedStressContextMetadata(
         val version: String? = null,
         val sourceSessionIds: List<String> = emptyList(),
-        val assessmentRecommendations: List<AssessmentRecommendation>? = null
+        val assessmentRecommendations: List<AssessmentRecommendation>? = null,
+        val interactionMode: String? = null,
+        val responseProfile: String? = null,
+        val isTruncated: Boolean = false,
+        val completionReason: String? = null,
+        val planReviewStatus: String? = null,
+        val planReviewNote: String? = null
     )
 
     private data class RetrievalDecision(
@@ -2086,9 +2617,10 @@ class CounselorViewModel(
         rawUserText: String,
         retrieval: RagRetrievalResult,
         webGroundingOverride: WebGroundingResult?,
-        webStatusMessage: String? = null
+        webStatusMessage: String? = null,
+        interactionMode: CounselingInteractionMode = CounselingInteractionMode.GENERAL_COUNSELING
     ): RetrievalDecision? {
-        val localDecision = retrieval.toDecision(rawUserText)
+        val localDecision = retrieval.toDecision(rawUserText, interactionMode)
         val grounding = webGroundingOverride ?: return if (webStatusMessage == null) {
             localDecision
         } else {
@@ -2120,7 +2652,10 @@ class CounselorViewModel(
         )
     }
 
-    private fun RagRetrievalResult.toDecision(userText: String): RetrievalDecision {
+    private fun RagRetrievalResult.toDecision(
+        userText: String,
+        interactionMode: CounselingInteractionMode = CounselingInteractionMode.GENERAL_COUNSELING
+    ): RetrievalDecision {
         if (this is RagRetrievalResult.Retrieved && citations.isNotEmpty()) {
             val tier = sourceTier.takeUnless { it == EvidenceSourceTier.NONE }
                 ?: citations.firstOrNull()?.sourceTier
@@ -2128,7 +2663,12 @@ class CounselorViewModel(
             return groundedDecision(tier, citations)
         }
 
-        val requiresEvidence = DocumentGroundingIntentDetector.requiresLocalEvidence(userText)
+        val explicitDoc = DocumentGroundingIntentDetector.isExplicitDocumentRequest(userText)
+        val requiresEvidence = if (interactionMode != CounselingInteractionMode.GENERAL_COUNSELING && !explicitDoc) {
+            false
+        } else {
+            DocumentGroundingIntentDetector.requiresLocalEvidence(userText)
+        }
         return unsupportedEvidenceDecision(requiresEvidence)
     }
 
@@ -2187,7 +2727,10 @@ class CounselorViewModel(
                 },
                 webConsentStore = AppLocator.webConsentStore(context),
                 sessionSelectionStore = SharedPreferencesCounselorSessionSelectionStore(context),
-                assessmentRepository = AppLocator.assessmentRepository(context)
+                assessmentRepository = AppLocator.assessmentRepository(context),
+                verbatimSessionRepository = AppLocator.unifiedSessionRepository(context),
+                preferencesStore = AppLocator.counselorPreferencesStore(context),
+                journalAndGoalRepository = AppLocator.journalAndGoalRepository(context)
             ) as T
         }
     }
@@ -2215,6 +2758,13 @@ class CounselorViewModel(
         )
     }
 }
+
+private val assessmentFollowUpTerms = Regex("(?i)\\b(?:tindak lanjut|rekomendasi|sarankan|usul(?:kan|an)?|terapi|intervensi)\\b")
+private val COUNSELING_TECHNIQUE_QUERY = Regex(
+    "(?i)\\b(?:terapi|rebt|cbt|behavioral|client[-\\s]centered|konseling|intervensi|latihan mandiri)\\b"
+)
+
+private fun WebSearchMode.allowsFallback(assessmentDiscussion: Boolean): Boolean = this != WebSearchMode.Disabled && !assessmentDiscussion
 
 private data class PendingWebRequest(
     val rawText: String,

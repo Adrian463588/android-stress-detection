@@ -1,3 +1,5 @@
+@file:Suppress("LargeClass", "CyclomaticComplexMethod")
+
 package com.stressdetector.mobile.signal
 
 import android.content.Context
@@ -14,6 +16,7 @@ import com.stressdetector.mobile.domain.engine.LiveMonitorStartResultProvider
 import com.stressdetector.mobile.domain.engine.LiveMonitorState
 import com.stressdetector.mobile.domain.engine.LiveMonitorStopSummary
 import com.stressdetector.mobile.domain.engine.PhysiologicalMarkerType
+import com.stressdetector.mobile.domain.engine.PrvMetrics
 import com.stressdetector.mobile.domain.engine.RealtimeInferenceEngine
 import com.stressdetector.mobile.ml.StressInferenceRuntime
 import com.stressdetector.shared.CanonicalPredictionConfidenceCalculator
@@ -59,6 +62,8 @@ class RealtimeInferenceEngineImpl(
     private val bpmPreprocessorsByChannel = mutableMapOf<PpgType, WearablePpgWindowPreprocessor>()
     private val bpmMarkerDetectorsByChannel = mutableMapOf<PpgType, BpmPhysiologicalMarkerDetector>()
     private val bpmSummaryAccumulatorsByChannel = mutableMapOf<PpgType, BpmSummaryAccumulator>()
+    private val latestPrvByChannel = mutableMapOf<PpgType, PrvMetrics>()
+    private val prvExtractor = PrvFeatureExtractor()
     private var bpmEstimator = PpgBpmEstimator(windowSeconds = 30)
     private var divergenceEpisodeTracker = DivergenceEpisodeTracker(10_000L)
 
@@ -114,6 +119,7 @@ class RealtimeInferenceEngineImpl(
         bpmPreprocessorsByChannel.clear()
         bpmMarkerDetectorsByChannel.clear()
         bpmSummaryAccumulatorsByChannel.clear()
+        latestPrvByChannel.clear()
         bpmEstimator = PpgBpmEstimator(contract.config.bpmWindowSeconds)
         lastProcessedWindowTimestampMillis.clear()
         lastProcessedWindowEndElapsedMillis.clear()
@@ -171,6 +177,7 @@ class RealtimeInferenceEngineImpl(
         var latestQuality = mutableState.value.currentQualityScore
         val latestBpmByChannel = mutableState.value.latestBpmByChannel.toMutableMap()
         val bpmSummaryByChannel = mutableState.value.bpmSummaryByChannel.toMutableMap()
+        val bpmQualityByChannel = mutableMapOf<PpgType, Float>()
         var lastAvailability: PredictionAvailability = mutableState.value.predictionAvailability
         var lastRejection: String? = null
         val acceptedPredictions = mutableMapOf<PpgType, AcceptedLivePrediction>()
@@ -183,29 +190,40 @@ class RealtimeInferenceEngineImpl(
         }
 
         contract.requiredChannels.sortedBy { it.ordinal }.forEach { channel ->
-            val bpmResult = processBpmObservation(
-                sessionId = sessionId,
-                channel = channel,
-                snapshot = windows[channel],
-                contract = contract
-            )
-            bpmResult?.let { result ->
-                latestBpmByChannel[channel] = result.estimate.bpm
-                val accumulator = bpmSummaryAccumulatorsByChannel.getOrPut(channel) {
-                    BpmSummaryAccumulator()
+            when (val bpmOutcome = processBpmObservationOutcome(sessionId, channel, windows[channel], contract)) {
+                is BpmObservationOutcome.Available -> {
+                    latestBpmByChannel[channel] = bpmOutcome.result.estimate.bpm
+                    bpmQualityByChannel[channel] = bpmOutcome.qualityScore
+                    latestPrvByChannel[channel] = bpmOutcome.prv
+                    val accumulator = bpmSummaryAccumulatorsByChannel.getOrPut(channel) {
+                        BpmSummaryAccumulator()
+                    }
+                    accumulator.add(bpmOutcome.result.estimate)
+                    accumulator.summary()?.let { summary -> bpmSummaryByChannel[channel] = summary }
+                    bpmOutcome.result.markers.forEach(::appendMarker)
+                    latestQuality = maxOf(latestQuality, bpmOutcome.qualityScore)
                 }
-                accumulator.add(result.estimate)
-                accumulator.summary()?.let { summary -> bpmSummaryByChannel[channel] = summary }
+                is BpmObservationOutcome.Unavailable -> {
+                    latestBpmByChannel.remove(channel)
+                    bpmQualityByChannel[channel] = bpmOutcome.qualityScore
+                    latestPrvByChannel[channel] = PrvMetrics(
+                        channel = channel,
+                        isQualityPassed = false,
+                        insufficiencyReason = bpmOutcome.reason
+                    )
+                }
+                is BpmObservationOutcome.Unchanged -> {
+                    bpmOutcome.qualityScore?.let { q -> bpmQualityByChannel[channel] = q }
+                }
             }
-            bpmResult?.markers.orEmpty().forEach { event ->
-                appendMarker(event)
-            }
+            val earlyQualityScore = bpmQualityByChannel[channel] ?: 0f
 
             if (inferenceRuntime == null || channel !in contract.modelReadyChannels) {
                 val reason = "model_not_ready_android"
                 channelStates[channel] = LiveChannelState(
                     channel = channel,
                     availability = PredictionAvailability.Unavailable(reason),
+                    qualityScore = earlyQualityScore,
                     rejectionReason = reason
                 )
                 lastRejection = reason
@@ -225,7 +243,12 @@ class RealtimeInferenceEngineImpl(
                         requiredSamples = it.requiredSamples
                     )
                 } ?: PredictionAvailability.Rejected(reason, windows[channel]?.size ?: 0)
-                channelStates[channel] = LiveChannelState(channel, availability, rejectionReason = reason)
+                channelStates[channel] = LiveChannelState(
+                    channel = channel,
+                    availability = availability,
+                    qualityScore = earlyQualityScore,
+                    rejectionReason = reason
+                )
                 lastRejection = reason
                 lastAvailability = availability
                 return@forEach
@@ -413,7 +436,8 @@ class RealtimeInferenceEngineImpl(
                 rejectionReason = if (isAnyValid) null else lastRejection,
                 latestWindowTimestampMs = latestTimestamp,
                 predictionAvailability = lastAvailability,
-                channelStates = channelStates
+                channelStates = channelStates,
+                latestPrvByChannel = latestPrvByChannel.toMap()
             )
         }
     }
@@ -544,23 +568,23 @@ class RealtimeInferenceEngineImpl(
      * applies the same SQA gate before producing a marker.
      */
     @Suppress("LongMethod", "ReturnCount")
-    private fun processBpmObservation(
+    private fun processBpmObservationOutcome(
         sessionId: String,
         channel: PpgType,
         snapshot: WindowSnapshot?,
         contract: LiveMonitorRuntimeContract
-    ): BpmProcessingResult? {
+    ): BpmObservationOutcome {
         val detector = bpmMarkerDetectorsByChannel.getOrPut(channel) {
             BpmPhysiologicalMarkerDetector(contract.config)
         }
-        fun unavailable(): BpmProcessingResult? {
+        fun unavailable(reason: String, qualityScore: Float = 0f): BpmObservationOutcome {
             // A missing/invalid observation is a transport or SQA boundary;
             // never carry a rise episode across that boundary.
             detector.reset()
-            return null
+            return BpmObservationOutcome.Unavailable(reason, qualityScore)
         }
 
-        val raw = snapshot ?: return unavailable()
+        val raw = snapshot ?: return unavailable("missing_snapshot")
         val preprocessor = bpmPreprocessorsByChannel.getOrPut(channel) {
             WearablePpgWindowPreprocessor(
                 contract = PpgPreprocessingContract(
@@ -571,22 +595,45 @@ class RealtimeInferenceEngineImpl(
                 )
             )
         }
-        val prepared = (preprocessor.prepare(raw) as? PpgPreprocessResult.Ready)?.window ?: return unavailable()
+        val prepared = (preprocessor.prepare(raw) as? PpgPreprocessResult.Ready)?.window
+            ?: return unavailable("warming_or_rejected")
         val quality = SignalQualityGate(contract.config).evaluate(prepared)
-        if (!quality.isUsable || quality.qualityScore < contract.config.minimumQualityScore) return unavailable()
+        if (!quality.isUsable || quality.qualityScore < contract.config.minimumQualityScore) {
+            return unavailable(quality.reason, quality.qualityScore)
+        }
 
-        val timestamp = prepared.timestampsMillis.lastOrNull() ?: return unavailable()
-        if (timestamp <= (lastProcessedBpmTimestampMillis[channel] ?: Long.MIN_VALUE)) return null
+        val timestamp = prepared.timestampsMillis.lastOrNull() ?: return unavailable("empty_timestamps")
+        if (timestamp <= (lastProcessedBpmTimestampMillis[channel] ?: Long.MIN_VALUE)) {
+            return BpmObservationOutcome.Unchanged(quality.qualityScore)
+        }
         val previousTimestamp = lastProcessedBpmTimestampMillis[channel]
         if (previousTimestamp != null &&
             timestamp - previousTimestamp >
             contract.config.inferenceStepSeconds * 1_000L + contract.config.maxTimestampGapDeltaMs.toLong()
         ) {
             lastProcessedBpmTimestampMillis[channel] = timestamp
-            return unavailable()
+            return unavailable("timestamp_gap_exceeded", quality.qualityScore)
         }
         lastProcessedBpmTimestampMillis[channel] = timestamp
-        val estimate = bpmEstimator.estimate(prepared) ?: return unavailable()
+        val peaks = bpmEstimator.extractPeaks(prepared)
+        val estimate = bpmEstimator.estimate(prepared)
+            ?: return unavailable("insufficient_valid_peaks", quality.qualityScore)
+        val prv = peaks?.let {
+            prvExtractor.extract(
+                channel = channel,
+                values = it.values,
+                peaks = it.peaks,
+                samplingRateHz = channel.sourceRateHz.toDouble(),
+                windowSeconds = contract.config.bpmWindowSeconds,
+                isSqaValid = true
+            )
+        }
+            ?: PrvMetrics(
+                channel = channel,
+                windowSeconds = contract.config.bpmWindowSeconds,
+                isQualityPassed = false,
+                insufficiencyReason = "no_peaks"
+            )
         val probability = latestProbabilitiesByChannel[channel]
         val baselineProbability = latestBaselinesByChannel[channel]
         val markers = detector.observe(estimate).map { marker ->
@@ -616,7 +663,18 @@ class RealtimeInferenceEngineImpl(
                 isElevatedArousal = false
             )
         }
-        return BpmProcessingResult(estimate = estimate, markers = markers)
+        return BpmObservationOutcome.Available(
+            result = BpmProcessingResult(estimate = estimate, markers = markers),
+            qualityScore = quality.qualityScore,
+            prv = prv
+        )
+    }
+
+    private sealed interface BpmObservationOutcome {
+        data class Available(val result: BpmProcessingResult, val qualityScore: Float, val prv: PrvMetrics) : BpmObservationOutcome
+
+        data class Unchanged(val qualityScore: Float?) : BpmObservationOutcome
+        data class Unavailable(val reason: String, val qualityScore: Float = 0f) : BpmObservationOutcome
     }
 
     private data class BpmProcessingResult(val estimate: BpmEstimate, val markers: List<DivergenceEvent>)

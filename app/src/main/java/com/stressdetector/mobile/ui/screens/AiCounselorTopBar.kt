@@ -113,6 +113,13 @@ private fun CounselorTopBarActions(model: CounselorScreenModel, dialogs: Counsel
                         navigation.onOpenAssessments()
                     }
                 )
+                DropdownMenuItem(
+                    text = { Text("Pengaturan AI+ & Pengingat") },
+                    onClick = {
+                        dialogs.onHeaderMenuChanged(false)
+                        navigation.onNavigateToProfile()
+                    }
+                )
             }
         }
     } else {
@@ -178,6 +185,6 @@ private fun runtimeSubtitle(state: CounselorUiState): String = when {
     state.retrievalMode == RagMode.WEB_GROUNDED -> "Berbasis sumber web"
     state.retrievalMode == RagMode.BUNDLED_GROUNDED -> "Berbasis dataset bawaan"
     state.retrievalMode == RagMode.GROUNDED -> "Berbasis dokumen"
-    state.runtimeReadiness is LlmRuntimeReadiness.Ready -> "Gemma 4 siap offline · mode umum"
-    else -> "Mode umum"
+    state.runtimeReadiness is LlmRuntimeReadiness.Ready -> "Gemma 4 siap offline"
+    else -> "Siap offline"
 }

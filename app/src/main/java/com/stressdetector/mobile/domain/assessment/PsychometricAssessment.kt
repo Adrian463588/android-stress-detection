@@ -79,27 +79,70 @@ data class AssessmentResult(
     val itemCount: Int,
     val scores: List<AssessmentScore>,
     val interpretation: String,
-    val fromMarkedSheet: Boolean = false
-)
+    val fromMarkedSheet: Boolean = false,
+    val participantId: String = "local-device-profile",
+    val schemaVersion: String? = null,
+    val administrationMode: String = "DIGITAL",
+    val scoringStatus: InstrumentImplementationStatus? = null,
+    val validityStatus: AssessmentValidityStatus? = null,
+    val validityWarnings: List<String> = emptyList(),
+    val reviewStatus: ExaminerReviewStatus? = null,
+    val reviewerId: String? = null,
+    val reviewNotes: String? = null,
+    val reviewedAtMillis: Long? = null,
+    val aiContextAllowed: Boolean = true,
+    val researchExportAllowed: Boolean = false,
+    val scorerVersion: String? = null,
+    val normReference: String? = null,
+    val visualizationType: AssessmentVisualizationType? = null,
+    val observations: List<AssessmentObservation> = emptyList(),
+    val examinerCodes: Map<String, String> = emptyMap(),
+    val warteggDrafts: List<WarteggBoxDraft> = emptyList(),
+    val rorschachResponses: List<RorschachResponseDraft> = emptyList(),
+    val projectivePanels: List<ProjectivePanelDraft> = emptyList(),
+    val multimodalSummary: String? = null
+) {
+    fun isLegacyUnverified(): Boolean = schemaVersion.isNullOrBlank()
 
-fun AssessmentResult.toCounselorDiscussionPrompt(): String {
-    val scoresList = scores.joinToString("\n") { score ->
-        "- ${score.label}: ${score.displayValue()} (${score.displayRange()})"
+    fun resolvedScoringStatus(): InstrumentImplementationStatus =
+        scoringStatus ?: PsychometricInstrumentRegistry.specFor(instrumentId).implementationStatus
+
+    fun resolvedValidityStatus(): AssessmentValidityStatus = validityStatus ?: AssessmentValidityStatus.VALID
+
+    fun resolvedReviewStatus(): ExaminerReviewStatus = reviewStatus ?: if (
+        resolvedScoringStatus() == InstrumentImplementationStatus.EXAMINER_REVIEW_REQUIRED
+    ) {
+        ExaminerReviewStatus.PENDING
+    } else {
+        ExaminerReviewStatus.NOT_REQUIRED
     }
-    return buildString {
-        appendLine("Halo AI Counselor, saya baru saja menyelesaikan asesmen $title.")
-        if (scoresList.isNotBlank()) {
-            appendLine("Rincian Skor & Subskala:")
-            appendLine(scoresList)
-        }
-        if (interpretation.isNotBlank()) {
-            appendLine("Interpretasi Klinis:")
-            appendLine("\"$interpretation\"")
-        }
-        appendLine()
-        append("Berdasarkan hasil asesmen ini dan materi konseling yang relevan, bagaimana evaluasi kondisi saya serta rekomendasi langkah refleksi atau tindak lanjut konseling yang sesuai?")
-    }.trim()
+
+    fun resolvedVisualizationType(): AssessmentVisualizationType =
+        visualizationType ?: PsychometricInstrumentRegistry.specFor(instrumentId).visualizationType
+
+    fun lifecycleState(): AssessmentLifecycleState = when {
+        isLegacyUnverified() -> AssessmentLifecycleState.COMPLETED
+        isAiContextEligible() -> AssessmentLifecycleState.AI_CONTEXT_ELIGIBLE
+        resolvedReviewStatus() == ExaminerReviewStatus.APPROVED -> AssessmentLifecycleState.REVIEWED
+        resolvedValidityStatus() == AssessmentValidityStatus.VALID -> AssessmentLifecycleState.VALIDATED
+        scores.isNotEmpty() -> AssessmentLifecycleState.SCORED
+        answered > 0 -> AssessmentLifecycleState.COMPLETED
+        else -> AssessmentLifecycleState.DRAFT
+    }
+
+    fun aiIneligibilityReason(): String? = when {
+        isLegacyUnverified() ->
+            "Hasil asesmen lama sebelum validasi versi; tidak digunakan sebagai konteks interpretasi AI."
+        !aiContextAllowed ->
+            "Penggunaan hasil asesmen ini untuk konteks AI dinonaktifkan oleh pengguna."
+        else -> null
+    }
+
+    fun isAiContextEligible(): Boolean = aiIneligibilityReason() == null
 }
+
+fun AssessmentResult.toCounselorDiscussionPrompt(): String =
+    "Bahas hasil asesmen $title yang tersimpan dan sarankan tindak lanjut berdasarkan materi konseling yang relevan."
 
 fun AssessmentInstrument.toGuideDiscussionPrompt(): String {
     val prot = protocol ?: return "Halo AI Counselor, tolong jelaskan instrumen $title."
@@ -199,6 +242,15 @@ internal object AssessmentScoring {
 
 internal class AssessmentCatalog(val instruments: List<AssessmentInstrument>) {
     fun find(id: String): AssessmentInstrument? = instruments.firstOrNull { it.id == id }
+
+    fun findNamedInstrument(query: String): AssessmentInstrument? {
+        val normalized = normalize(query)
+        return instruments.filter { instrument ->
+            (instrument.aliases + instrument.title + listOfNotNull(instrument.form?.title)).any { name ->
+                name.isNotBlank() && normalized.contains(normalize(name))
+            }
+        }.singleOrNull()
+    }
 
     fun recommend(query: String): List<AssessmentInstrument> {
         val normalized = normalize(query)

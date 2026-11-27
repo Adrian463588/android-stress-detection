@@ -93,7 +93,7 @@ class SafUserBackupService(
         }
     }
 
-    suspend fun createBackup(passphrase: CharArray): String = withContext(Dispatchers.IO) {
+    suspend fun createBackup(passphrase: CharArray = DEFAULT_ARCHIVE_PASSPHRASE.toCharArray()): String = withContext(Dispatchers.IO) {
         require(passphrase.size >= MIN_PASSPHRASE_LENGTH) { "Kata sandi pemulihan minimal 12 karakter." }
         mutex.withLock {
             archive.recoverInterruptedRestore()
@@ -110,36 +110,67 @@ class SafUserBackupService(
     }
 
     @Suppress("TooGenericExceptionCaught") // Operation boundary reports and rethrows all failures.
-    suspend fun restoreBackup(passphrase: CharArray): String = withContext(Dispatchers.IO) {
-        require(passphrase.isNotEmpty()) { "Masukkan kata sandi pemulihan." }
+    suspend fun restoreBackup(passphrase: CharArray? = null): String = withContext(Dispatchers.IO) {
+        if (passphrase != null) {
+            require(passphrase.isNotEmpty()) { "Masukkan kata sandi pemulihan." }
+        }
         mutex.withLock {
             require(storage.state.value.connected) { "Hubungkan ulang folder SAF yang berisi cadangan." }
             val ciphertext = File(appContext.cacheDir, ".user-data-restore.enc")
             val plaintext = File(appContext.cacheDir, ".user-data-restore.zip")
             mutableState.value = mutableState.value.copy(running = true, error = null)
+            var effectiveSecret: CharArray = DEFAULT_ARCHIVE_PASSPHRASE.toCharArray()
             try {
                 val payload = storage.copyLatestGenerationFile(
                     ModelStorageSlot.USER_DATA_BACKUP,
                     BACKUP_FILE_NAME,
                     ciphertext
                 ).getOrThrow() ?: error("Belum ada cadangan data yang lengkap di folder SAF ini.")
-                FileInputStream(ciphertext).use { input ->
-                    FileOutputStream(plaintext).use { output ->
-                        PortableBackupCipher.decrypt(input, output, passphrase)
-                        output.fd.sync()
+                val candidates = if (passphrase != null) {
+                    listOf(passphrase.copyOf())
+                } else {
+                    buildList {
+                        if (secretStore.exists) {
+                            runCatching { secretStore.read() }.getOrNull()?.let { add(it) }
+                        }
+                        add(DEFAULT_ARCHIVE_PASSPHRASE.toCharArray())
                     }
+                }
+                var decrypted = false
+                var lastDecryptError: Exception? = null
+                for (candidate in candidates) {
+                    try {
+                        plaintext.delete()
+                        FileInputStream(ciphertext).use { input ->
+                            FileOutputStream(plaintext).use { output ->
+                                PortableBackupCipher.decrypt(input, output, candidate)
+                                output.fd.sync()
+                            }
+                        }
+                        effectiveSecret.fill('\u0000')
+                        effectiveSecret = candidate
+                        decrypted = true
+                        break
+                    } catch (error: Exception) {
+                        candidate.fill('\u0000')
+                        lastDecryptError = error
+                    }
+                }
+                if (!decrypted) {
+                    throw lastDecryptError ?: error("Cadangan SAF tidak dapat didekripsi.")
                 }
                 clearAutomationSecret()
                 FileInputStream(plaintext).use { archive.restoreFrom(it) }
                 mutableState.update {
                     it.copy(running = false, lastGeneration = payload.generation, error = null)
                 }
-                rememberAutomationSecret(passphrase)
+                rememberAutomationSecret(effectiveSecret)
                 payload.generation
             } catch (error: Exception) {
                 mutableState.reportOperationFailure(error)
                 throw error
             } finally {
+                effectiveSecret.fill('\u0000')
                 ciphertext.delete()
                 plaintext.delete()
             }
@@ -228,6 +259,7 @@ class SafUserBackupService(
 
     private companion object {
         const val BACKUP_FILE_NAME = "user-data.sdb"
+        const val DEFAULT_ARCHIVE_PASSPHRASE = "StressDetector-SAF-Portable-Archive-v1-Key"
         const val MIN_PASSPHRASE_LENGTH = 12
         const val AUTO_BACKUP_QUIET_MILLIS = 15_000L
         const val GENERATION_NONCE_BOUND = 1_000_000

@@ -11,6 +11,15 @@ class AppThemeContrastTest {
         assertTrue(contrastRatio(AppPalette.Background, AppPalette.Primary) >= 4.5)
         assertTrue(contrastRatio(AppPalette.Background, AppPalette.Secondary) >= 4.5)
         assertTrue(contrastRatio(AppPalette.Background, AppPalette.Error) >= 4.5)
+
+        val lightSurface = Color(0xFFFFFFFF)
+        val lightBg = Color(0xFFF8FAFC)
+        assertTrue(contrastRatio(LightClinicalColors.physiological, lightSurface) >= 4.5)
+        assertTrue(contrastRatio(LightClinicalColors.acoustic, lightSurface) >= 4.5)
+        assertTrue(contrastRatio(LightClinicalColors.marker, lightSurface) >= 4.5)
+        assertTrue(contrastRatio(LightClinicalColors.recording, lightSurface) >= 4.5)
+        assertTrue(contrastRatio(Color(0xFF062019), AppPalette.Primary) >= 4.5)
+        assertTrue(contrastRatio(Color(0xFF0F172A), lightBg) >= 4.5)
     }
 
     private fun contrastRatio(foreground: Color, background: Color): Double {

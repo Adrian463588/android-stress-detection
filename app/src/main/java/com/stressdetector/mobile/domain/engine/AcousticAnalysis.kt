@@ -58,7 +58,8 @@ data class AcousticAnalysisSnapshot(
     val evidenceConfidence: Float,
     /** Bounded absolute PCM envelope for the live waveform; derived from this frame only. */
     val waveform: List<Float> = emptyList(),
-    val analysisVersion: String = "acoustic-baseline-v2"
+    val isSilence: Boolean = false,
+    val analysisVersion: String = "acoustic-baseline-v3"
 )
 
 data class AcousticAnalysisConfig(
@@ -70,7 +71,8 @@ data class AcousticAnalysisConfig(
     val minimumFiniteSampleRatio: Float = 0.98f,
     val markerEnterPersistenceMillis: Long = 500L,
     val markerExitPersistenceMillis: Long = 1_000L,
-    val markerCooldownMillis: Long = 5_000L
+    val markerCooldownMillis: Long = 5_000L,
+    val emitGlobalRmsDivergence: Boolean = false
 )
 
 /** Pure, bounded frame analysis for real microphone PCM. */
@@ -153,14 +155,20 @@ class AcousticFrameAnalyzer(private val config: AcousticAnalysisConfig = Acousti
         } else {
             zeroCrossings.toFloat() / (finiteCount - 1)
         }
-        val qualityScore = qualityScore(finiteRatio, rmsDb, clippingRatio)
+        val silence = samples.isNotEmpty() &&
+            finiteRatio >= config.minimumFiniteSampleRatio &&
+            clippingRatio <= config.maxClippingRatio &&
+            rmsDb < config.lowEnergyDb
+        val lowAudioQuality = isLowAudioQuality(samples, finiteRatio, clippingRatio)
+        val qualityScore = qualityScore(finiteRatio, clippingRatio)
         val baselineReady = baselineSize >= config.baselineWarmupFrames
         val baseline = if (baselineReady) (baselineSum / baselineSize).toFloat() else null
         val deviation = baseline?.let { rmsDb - it }
-        val lowAudioQuality = isLowAudioQuality(samples, finiteRatio, clippingRatio, rmsDb)
         val rawMarker = when {
             lowAudioQuality -> SessionMarkerType.LOW_AUDIO_QUALITY
-            baseline != null &&
+            config.emitGlobalRmsDivergence &&
+                !silence &&
+                baseline != null &&
                 qualityScore >= MIN_MARKER_QUALITY &&
                 abs(deviation ?: 0f) >= config.divergenceDb ->
                 SessionMarkerType.ACOUSTIC_DIVERGENCE
@@ -168,7 +176,7 @@ class AcousticFrameAnalyzer(private val config: AcousticAnalysisConfig = Acousti
         }
         val markerDecision = advanceMarker(rawMarker, frame)
 
-        if (isBaselineFrame(lowAudioQuality, rawMarker)) {
+        if (isBaselineFrame(lowAudioQuality, silence, rawMarker)) {
             if (baselineSize == config.baselineWindowFrames) {
                 baselineSum -= baselineRmsDb[baselineWriteIndex]
             } else {
@@ -195,20 +203,20 @@ class AcousticFrameAnalyzer(private val config: AcousticAnalysisConfig = Acousti
             markerEpisodeId = markerDecision.episodeId,
             markerEpisodeStartOffsetMs = markerDecision.episodeStartOffsetMs,
             evidenceConfidence = qualityScore,
-            waveform = pcmPeakEnvelope(samples)
+            waveform = pcmPeakEnvelope(samples),
+            isSilence = silence
         )
     }
 
     private fun crossesZero(previous: Float, current: Float): Boolean = (previous < 0f && current >= 0f) ||
         (previous >= 0f && current < 0f)
 
-    private fun isLowAudioQuality(samples: FloatArray, finiteRatio: Float, clippingRatio: Float, rmsDb: Float): Boolean =
-        samples.isEmpty() ||
-            finiteRatio < config.minimumFiniteSampleRatio ||
-            clippingRatio > config.maxClippingRatio ||
-            rmsDb < config.lowEnergyDb
+    private fun isLowAudioQuality(samples: FloatArray, finiteRatio: Float, clippingRatio: Float): Boolean = samples.isEmpty() ||
+        finiteRatio < config.minimumFiniteSampleRatio ||
+        clippingRatio > config.maxClippingRatio
 
-    private fun isBaselineFrame(lowAudioQuality: Boolean, rawMarker: SessionMarkerType?) = !lowAudioQuality && rawMarker == null
+    private fun isBaselineFrame(lowAudioQuality: Boolean, silence: Boolean, rawMarker: SessionMarkerType?) =
+        !lowAudioQuality && !silence && rawMarker == null
 
     /**
      * Applies entry persistence, exit hysteresis, cooldown, and deterministic
@@ -261,8 +269,8 @@ class AcousticFrameAnalyzer(private val config: AcousticAnalysisConfig = Acousti
         return MarkerDecision(rawMarker, rawMarker, episodeId, candidateStart)
     }
 
-    private fun qualityScore(finiteRatio: Float, rmsDb: Float, clippingRatio: Float): Float {
-        if (finiteRatio <= 0f || rmsDb < config.lowEnergyDb) return 0f
+    private fun qualityScore(finiteRatio: Float, clippingRatio: Float): Float {
+        if (finiteRatio <= 0f) return 0f
         val clippingPenalty = (1f - clippingRatio / config.maxClippingRatio).coerceIn(0f, 1f)
         return (finiteRatio * clippingPenalty).coerceIn(0f, 1f)
     }

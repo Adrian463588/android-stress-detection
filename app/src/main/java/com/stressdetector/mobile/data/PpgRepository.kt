@@ -16,15 +16,20 @@ import com.stressdetector.shared.SessionConfig
 import com.stressdetector.shared.SessionIdentity
 import com.stressdetector.shared.SessionProtocolRejection
 import com.stressdetector.shared.SessionReadyAck
+import com.stressdetector.shared.WearHeartRateBatch
 import com.stressdetector.shared.WearSessionMode
+import com.stressdetector.shared.WearTemperatureBatch
 import java.util.TreeMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -81,7 +86,13 @@ data class PpgStreamState(
     val missingRedSequenceCount: Long = 0L,
     val highestGreenSequence: Long = 0L,
     val highestIrSequence: Long = 0L,
-    val highestRedSequence: Long = 0L
+    val highestRedSequence: Long = 0L,
+    /** Watch elapsed millis + phone monotonic receipt time of first accepted PPG batch (clock fallback). */
+    val firstBatchElapsedMillis: Long = 0L,
+    val firstBatchReceivedAtMonotonicMillis: Long = 0L,
+    val lastGreenBatchMonotonicMillis: Long = 0L,
+    val lastIrBatchMonotonicMillis: Long = 0L,
+    val lastRedBatchMonotonicMillis: Long = 0L
 )
 
 /** Immutable, lease-scoped copy of actual PPG evidence. */
@@ -108,6 +119,11 @@ class PpgRepositoryImpl(private val monotonicNowMillis: () -> Long = SystemClock
     private val motionSamples = TreeMap<Long, AccelerometerSample>()
     private val mutableState = MutableStateFlow(PpgStreamState())
     private val mutableChartFrames = MutableStateFlow(PpgChartFrame())
+    private val mutableWatchHeartRate = MutableStateFlow<WearHeartRateBatch?>(null)
+    private var latestWatchHeartRateMonotonicMillis: Long = 0L
+    private val mutableSkinTemperatureBatches =
+        MutableSharedFlow<Pair<WearTemperatureBatch, Long>>(extraBufferCapacity = 64)
+    private val seenTemperatureSequences = HashSet<Long>()
     private val chartScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val stateLock = Any()
     private var chartProjectionJob: Job? = null
@@ -261,7 +277,8 @@ class PpgRepositoryImpl(private val monotonicNowMillis: () -> Long = SystemClock
             val acceptedByType = appliedBatches
                 .groupBy(PpgBatch::type)
                 .mapValues { (_, batches) -> batches.sumOf(::appendToBuffers) }
-            if (mutableState.value.sessionMode == WearSessionMode.HOME_STRESS) {
+            val sessionMode = mutableState.value.sessionMode
+            if (sessionMode == WearSessionMode.HOME_STRESS || sessionMode == WearSessionMode.VERBATIM_AROUSAL) {
                 appliedBatches.flatMap(PpgBatch::accelerometerSamples).forEach { sample ->
                     motionSamples.putIfAbsent(sample.sensorTimestampNanos, sample)
                 }
@@ -273,7 +290,13 @@ class PpgRepositoryImpl(private val monotonicNowMillis: () -> Long = SystemClock
                 appliedBatches.maxOfOrNull { it.elapsedEndMillis } ?: 0L
             )
             val elapsed = maxOf(mutableState.value.elapsedMillis, observedElapsed)
+            val receiptMonotonic = monotonicNowMillis()
+            val earliestAppliedBatchEnd = appliedBatches.minOfOrNull { it.elapsedEndMillis } ?: 0L
+            val hasGreenApplied = (acceptedByType[PpgType.GREEN] ?: 0) > 0
+            val hasIrApplied = (acceptedByType[PpgType.IR] ?: 0) > 0
+            val hasRedApplied = (acceptedByType[PpgType.RED] ?: 0) > 0
             mutableState.update {
+                val bindFirstBatch = it.firstBatchReceivedAtMonotonicMillis == 0L && accepted > 0
                 it.copy(
                     greenSamples = greenBuffer.size,
                     irSamples = irBuffer.size,
@@ -282,6 +305,11 @@ class PpgRepositoryImpl(private val monotonicNowMillis: () -> Long = SystemClock
                     totalIrSamples = it.totalIrSamples + (acceptedByType[PpgType.IR] ?: 0),
                     totalRedSamples = it.totalRedSamples + (acceptedByType[PpgType.RED] ?: 0),
                     lastBatchMillis = if (accepted > 0) System.currentTimeMillis() else it.lastBatchMillis,
+                    firstBatchElapsedMillis = if (bindFirstBatch) earliestAppliedBatchEnd else it.firstBatchElapsedMillis,
+                    firstBatchReceivedAtMonotonicMillis = if (bindFirstBatch) receiptMonotonic else it.firstBatchReceivedAtMonotonicMillis,
+                    lastGreenBatchMonotonicMillis = if (hasGreenApplied) receiptMonotonic else it.lastGreenBatchMonotonicMillis,
+                    lastIrBatchMonotonicMillis = if (hasIrApplied) receiptMonotonic else it.lastIrBatchMonotonicMillis,
+                    lastRedBatchMonotonicMillis = if (hasRedApplied) receiptMonotonic else it.lastRedBatchMonotonicMillis,
                     lastError = null,
                     sessionId = sessionId,
                     elapsedMillis = elapsed,
@@ -375,6 +403,7 @@ class PpgRepositoryImpl(private val monotonicNowMillis: () -> Long = SystemClock
         irFullSessionBuffer.clear()
         redFullSessionBuffer.clear()
         motionSamples.clear()
+        seenTemperatureSequences.clear()
         pendingTerminalReceipt = null
         sequenceAudit.resetSession(current.sessionId.orEmpty())
 
@@ -590,9 +619,18 @@ class PpgRepositoryImpl(private val monotonicNowMillis: () -> Long = SystemClock
         }
     }
 
-    override fun greenWindow(): WindowSnapshot = withTransportDiagnostics(greenBuffer.snapshot(), PpgType.GREEN)
-    override fun irWindow(): WindowSnapshot = withTransportDiagnostics(irBuffer.snapshot(), PpgType.IR)
-    override fun redWindow(): WindowSnapshot = withTransportDiagnostics(redBuffer.snapshot(), PpgType.RED)
+    override fun greenWindow(): WindowSnapshot = synchronized(stateLock) {
+        withTransportDiagnostics(greenBuffer.snapshot(), PpgType.GREEN)
+            .copy(accelerometerSamples = motionSamples.values.toList())
+    }
+    override fun irWindow(): WindowSnapshot = synchronized(stateLock) {
+        withTransportDiagnostics(irBuffer.snapshot(), PpgType.IR)
+            .copy(accelerometerSamples = motionSamples.values.toList())
+    }
+    override fun redWindow(): WindowSnapshot = synchronized(stateLock) {
+        withTransportDiagnostics(redBuffer.snapshot(), PpgType.RED)
+            .copy(accelerometerSamples = motionSamples.values.toList())
+    }
     override fun fullGreenWindow(): WindowSnapshot = synchronized(stateLock) {
         withTransportDiagnostics(greenFullSessionBuffer.snapshot(), PpgType.GREEN)
             .copy(accelerometerSamples = motionSamples.values.toList())
@@ -604,6 +642,42 @@ class PpgRepositoryImpl(private val monotonicNowMillis: () -> Long = SystemClock
     override fun fullRedWindow(): WindowSnapshot = synchronized(stateLock) {
         withTransportDiagnostics(redFullSessionBuffer.snapshot(), PpgType.RED)
             .copy(accelerometerSamples = motionSamples.values.toList())
+    }
+
+    override fun onHeartRateBatchReceived(batch: WearHeartRateBatch, sourceNodeId: String?): Boolean = synchronized(stateLock) {
+        val current = mutableState.value
+        val valid = current.sessionId == batch.sessionId &&
+            (current.sessionNonce.isBlank() || current.sessionNonce == batch.sessionNonce) &&
+            (current.sourceNodeId == null || current.sourceNodeId == sourceNodeId) &&
+            !current.protocolRejected &&
+            batch.bpm > 0
+        if (!valid) return@synchronized false
+        mutableWatchHeartRate.value = batch
+        latestWatchHeartRateMonotonicMillis = monotonicNowMillis()
+        true
+    }
+
+    override fun currentWatchHeartRate(): WearHeartRateBatch? = mutableWatchHeartRate.value
+
+    override fun currentWatchHeartRateReceivedAtMonotonicMillis(): Long = synchronized(stateLock) {
+        latestWatchHeartRateMonotonicMillis
+    }
+
+    override val skinTemperatureBatches: SharedFlow<Pair<WearTemperatureBatch, Long>> =
+        mutableSkinTemperatureBatches.asSharedFlow()
+
+    override fun onSkinTemperatureBatchReceived(batch: WearTemperatureBatch, sourceNodeId: String?): Boolean {
+        val receiptMonotonic = synchronized(stateLock) {
+            val current = mutableState.value
+            val valid = current.sessionId == batch.sessionId &&
+                (current.sessionNonce.isBlank() || current.sessionNonce == batch.sessionNonce) &&
+                (current.sourceNodeId == null || current.sourceNodeId == sourceNodeId) &&
+                !current.protocolRejected &&
+                seenTemperatureSequences.add(batch.sequenceNumber)
+            if (valid) monotonicNowMillis() else null
+        } ?: return false
+        mutableSkinTemperatureBatches.tryEmit(batch to receiptMonotonic)
+        return true
     }
 
     /** Legacy live-monitor projection. Home renders [PpgChartFrame] snapshots through its projector. */
@@ -627,6 +701,10 @@ class PpgRepositoryImpl(private val monotonicNowMillis: () -> Long = SystemClock
         greenFullSessionBuffer.clear()
         irFullSessionBuffer.clear()
         redFullSessionBuffer.clear()
+        motionSamples.clear()
+        mutableWatchHeartRate.value = null
+        latestWatchHeartRateMonotonicMillis = 0L
+        seenTemperatureSequences.clear()
         sequenceAudit.resetSession(lease.identity.sessionId)
         pendingTerminalReceipt = null
         mutableState.value = PpgStreamState(

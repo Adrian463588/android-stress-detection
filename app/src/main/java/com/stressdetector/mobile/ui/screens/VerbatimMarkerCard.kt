@@ -26,7 +26,12 @@ import java.util.Locale
 private const val PERCENT_SCALE = 100
 
 @Composable
-internal fun VerbatimMarkerCard(event: DivergenceEventEntity, playbackOffset: Long?, onSeekAudio: (Long) -> Unit) {
+internal fun VerbatimMarkerCard(
+    event: DivergenceEventEntity,
+    playbackOffset: Long?,
+    onSeekAudio: (Long) -> Unit,
+    onOpenDetail: (() -> Unit)? = null
+) {
     var details by rememberSaveable(event.sessionId, event.eventId) { mutableStateOf(false) }
     val family = VerbatimMarkerFilter.family(event.markerType)
     Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface) {
@@ -47,7 +52,7 @@ internal fun VerbatimMarkerCard(event: DivergenceEventEntity, playbackOffset: Lo
                 style = MaterialTheme.typography.bodyMedium
             )
             if (event.markerType == "LOW_AUDIO_QUALITY") {
-                Text("Kualitas audio, bukan marker stres.", style = MaterialTheme.typography.bodySmall)
+                Text("Kualitas audio rendah pada segmen ini.", style = MaterialTheme.typography.bodySmall)
             }
             TextButton(
                 onClick = { playbackOffset?.let(onSeekAudio) },
@@ -55,6 +60,14 @@ internal fun VerbatimMarkerCard(event: DivergenceEventEntity, playbackOffset: Lo
                 modifier = Modifier.heightIn(min = 48.dp)
             ) {
                 Text(if (playbackOffset != null) "Dengarkan ujaran terkait" else "Ujaran terkait belum siap diputar")
+            }
+            if (onOpenDetail != null) {
+                TextButton(
+                    onClick = onOpenDetail,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text("Buka detail marker")
+                }
             }
             VerbatimDisclosure("Detail bukti", details, { details = it }) { MarkerEvidence(event, family) }
         }
@@ -90,7 +103,7 @@ private fun MarkerEvidence(event: DivergenceEventEntity, family: VerbatimMarkerF
                     "puncak ${event.peakBpm.evidenceValue()}",
                 style = MaterialTheme.typography.bodySmall
             )
-            Text("Kanal independen; tidak ada fusi atau kepastian diagnosis.", style = MaterialTheme.typography.bodySmall)
+            Text("Kanal PPG Green dan IR dievaluasi terpisah.", style = MaterialTheme.typography.bodySmall)
         }
         else -> Unit
     }

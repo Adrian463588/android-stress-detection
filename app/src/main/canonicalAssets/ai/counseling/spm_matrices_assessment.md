@@ -39,12 +39,7 @@ SPM terdiri atas **60 butir soal** yang dikelompokkan ke dalam **5 set bertingka
 ### Skoring Jawaban
 - Setiap jawaban benar dinilai **1 poin**, salah atau kosong dinilai **0 poin**.
 - **Skor Mentah Total (`Raw Score`)**: $\sum \text{Set A..E} \in [0, 60]$.
-- Kunci Jawaban Resmi:
-  - **Set A**: `4, 5, 1, 2, 6, 3, 6, 2, 1, 3, 4, 5` (6 pilihan)
-  - **Set B**: `2, 6, 1, 2, 1, 3, 5, 6, 4, 3, 4, 5` (6 pilihan)
-  - **Set C**: `8, 2, 3, 8, 7, 4, 5, 1, 7, 6, 1, 2` (8 pilihan)
-  - **Set D**: `3, 4, 3, 7, 8, 6, 5, 4, 1, 2, 5, 6` (8 pilihan)
-  - **Set E**: `7, 6, 8, 2, 1, 5, 1, 6, 3, 2, 4, 5` (8 pilihan)
+- Kunci jawaban resmi tidak ditampilkan pada ringkasan percakapan atau referensi konseling umum untuk menjaga integritas dan validitas instrumen.
 
 ### Pemeriksaan Konsistensi Skor (*Discrepancy Check*)
 Dalam manual Raven, profil skor normal menunjukkan penurunan bertahap dari Set A ke Set E seiring kenaikan tingkat kesulitan ($\text{Set A} \ge \text{Set B} \ge \text{Set C} \ge \text{Set D} \ge \text{Set E}$).
@@ -53,22 +48,9 @@ Dalam manual Raven, profil skor normal menunjukkan penurunan bertahap dari Set A
   2. Kecerobohan/kurang konsentrasi pada soal-soal awal yang dianggap terlalu sederhana.
   3. Gaya kognitif non-linier atau *insight-oriented*.
 
-### Klasifikasi Grade I – V Raven Resmi
-1. **Grade I (Intelektual Superior / $\ge$ Persentil 95)**:
-   - Skor Mentah: **55 – 60**
-   - Kapasitas penalaran induktif-abstrak sangat istimewa; sangat unggul dalam mengenali pola rumit, merumuskan hipotesis logis, dan memecahkan teka-teki konseptual multidimensi.
-2. **Grade II (Di Atas Rata-Rata / Persentil 75 – 94)**:
-   - Skor Mentah: **48 – 54**
-   - Kemampuan eduktif kuat dan andal. Sangat adaptif dalam mempelajari sistem logika baru, diagram alir, dan penalaran teknis kompleks.
-3. **Grade III (Rata-Rata Intelektual / Persentil 25 – 74)**:
-   - Skor Mentah: **35 – 47**
-   - Penalaran logis memadai untuk tuntutan akademis umum, operasional profesional standar, dan pemecahan masalah sehari-hari.
-4. **Grade IV (Di Bawah Rata-Rata / Persentil 5 – 24)**:
-   - Skor Mentah: **20 – 34**
-   - Menghadapi tantangan saat dihadapkan pada materi abstrak yang tidak memiliki rujukan konkret; memerlukan metode pembelajaran bertahap dengan analogi visual nyata.
-5. **Grade V (Hambatan Intelektual / $<$ Persentil 5)**:
-   - Skor Mentah: **0 – 19**
-   - Mengalami kesulitan signifikan dalam penalaran abstrak non-verbal. Memerlukan asesmen multidimensional lanjutan untuk memahami fungsi adaptif dan potensi belajar konkret.
+### Acuan Norma & Persentil
+1. Penetapan persentil dan Grade I–V Raven wajib merujuk tabel norma usia serta populasi yang sah pada manual SPM resmi.
+2. Skor mentah per set (A–E) digunakan secara deskriptif sebagai bahan diskusi konseling dan evaluasi konsistensi internal sebelum merumuskan rekomendasi edukasi atau karier.
 
 ---
 

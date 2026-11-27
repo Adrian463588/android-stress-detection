@@ -6,17 +6,8 @@ import android.net.Uri
 import com.stressdetector.mobile.data.search.SecureWebUrlPolicy
 import com.stressdetector.mobile.domain.engine.CrisisSupportAction
 import com.stressdetector.mobile.domain.voice.VoiceOutputState
-import com.stressdetector.mobile.ui.viewmodels.AiReminderUiState
 import com.stressdetector.mobile.ui.viewmodels.CounselorUiState
 import com.stressdetector.mobile.ui.viewmodels.UiChatMessage
-
-internal fun retryReminder(model: CounselorScreenModel, state: AiReminderUiState) {
-    if (state.status is com.stressdetector.mobile.domain.reminder.AiReminderStatus.NeedsConsent) {
-        model.navigation.onNavigateToProfile()
-    } else {
-        model.runtime.aiReminderViewModel?.retry()
-    }
-}
 
 internal fun isSpeaking(state: CounselorUiState, message: UiChatMessage): Boolean = state.voicePlayback.activeMessageId == message.id &&
     (

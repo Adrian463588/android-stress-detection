@@ -5,20 +5,16 @@ package com.stressdetector.mobile.ui.screens
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.material3.InputChip
-import androidx.compose.material3.InputChipDefaults
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.draw.clip
@@ -130,17 +126,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stressdetector.mobile.domain.assessment.AssessmentDiscussionRequest
 import com.stressdetector.mobile.domain.assessment.AssessmentForm
 import com.stressdetector.mobile.domain.assessment.AssessmentInstrument
 import com.stressdetector.mobile.domain.assessment.AssessmentProtocol
 import com.stressdetector.mobile.domain.assessment.AssessmentResult
 import com.stressdetector.mobile.domain.assessment.AssessmentScoreEntry
 import com.stressdetector.mobile.domain.assessment.CounselingKnowledgeModule
+import com.stressdetector.mobile.domain.assessment.InstrumentImplementationStatus
+import com.stressdetector.mobile.domain.assessment.PsychometricInstrumentRegistry
 import com.stressdetector.mobile.domain.assessment.ScoreOperation
 import com.stressdetector.mobile.domain.assessment.toCounselorDiscussionPrompt
 import com.stressdetector.mobile.domain.assessment.toGuideDiscussionPrompt
 import com.stressdetector.mobile.ui.AppPalette
 import com.stressdetector.mobile.ui.AppSpacing
+import com.stressdetector.mobile.ui.components.CatalogSearchSection
 import com.stressdetector.mobile.ui.viewmodels.AssessmentUiState
 import com.stressdetector.mobile.ui.viewmodels.AssessmentViewModel
 
@@ -160,10 +160,18 @@ internal fun AssessmentScreen(
     isCatalog: Boolean,
     viewModel: AssessmentViewModel,
     onOpenInstrument: (String) -> Unit,
+    onOpenResult: (String, String) -> Unit = { _, _ -> },
     onDiscussWithAi: (String) -> Unit = {},
+    onDiscussResult: (AssessmentDiscussionRequest) -> Unit = { req -> onDiscussWithAi(req.prompt) },
     onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(state.pendingResultNavigation) {
+        val navTarget = state.pendingResultNavigation ?: return@LaunchedEffect
+        viewModel.consumeResultNavigation()
+        onOpenResult(navTarget.first, navTarget.second)
+    }
 
     Scaffold(
         topBar = {
@@ -232,24 +240,25 @@ internal fun AssessmentScreen(
             if (state.loading) return@LazyColumn
 
             if (isCatalog) {
-                catalogContent(state, viewModel, onOpenInstrument)
+                catalogContent(state, viewModel, onOpenInstrument, onOpenResult)
             } else if (state.instrument == null) {
                 if (state.error == null) {
                     item { Text("Instrumen tidak ditemukan di katalog.") }
                 }
             } else {
-                assessmentDetailItems(state, viewModel, onDiscussWithAi)
+                assessmentDetailItems(state, viewModel, onDiscussWithAi, onDiscussResult)
             }
         }
     }
 
     state.selectedModule?.let { module ->
-        CounselingModuleReaderSheet(
+        StructuredCounselingModuleReaderSheet(
             module = module,
             content = state.selectedModuleContent.orEmpty(),
             explanation = state.moduleExplanation,
             busy = state.busy,
             onExplain = { viewModel.explainModule(module) },
+            onDiscussWithAi = onDiscussWithAi,
             onDismiss = { viewModel.openModule(null) }
         )
     }
@@ -257,7 +266,12 @@ internal fun AssessmentScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("LongMethod")
-private fun LazyListScope.catalogContent(state: AssessmentUiState, viewModel: AssessmentViewModel, onOpenInstrument: (String) -> Unit) {
+private fun LazyListScope.catalogContent(
+    state: AssessmentUiState,
+    viewModel: AssessmentViewModel,
+    onOpenInstrument: (String) -> Unit,
+    onOpenResult: (String, String) -> Unit
+) {
     item {
         TabRow(
             selectedTabIndex = state.selectedTab,
@@ -293,73 +307,77 @@ private fun LazyListScope.catalogContent(state: AssessmentUiState, viewModel: As
                         selected = state.selectedCategory == category,
                         onClick = { viewModel.selectCategory(category) },
                         label = { Text(category) },
-                        modifier = Modifier.heightIn(min = 40.dp)
+                        modifier = Modifier.heightIn(min = 48.dp)
                     )
                 }
             }
         }
 
         item {
-            AssessmentSearchBar(
-                searchQuery = state.searchQuery,
-                onQueryChange = { viewModel.updateSearchQuery(it) },
-                onSearch = { viewModel.commitSearch(state.searchQuery) },
-                onClear = { viewModel.clearSearchQuery() },
-                recentSearches = state.recentSearches,
-                pinnedSuggestions = state.pinnedSuggestions,
-                onSelectChip = { viewModel.selectRecentSearch(it) },
-                onRemoveChip = { viewModel.removeRecentSearch(it) },
-                onClearAll = { viewModel.clearRecentSearches() }
+            CatalogSearchBarHost(
+                state = state,
+                viewModel = viewModel,
+                placeholder = "Cari psikotes (contoh: Wartegg, MMPI, TIU 6)...",
+                categoryDisplayName = "Bank Psikotes"
             )
         }
 
-        val categoryFiltered = when (state.selectedCategory) {
-            "Semua" -> state.instruments
-            "Kognitif & IQ" -> state.instruments.filter { it.category in setOf("Kognitif", "Kompetensi") }
-            "Kepribadian" -> state.instruments.filter {
-                it.category in setOf("Kepribadian", "Kepribadian kerja", "Sikap kerja")
-            }
-            "Minat Karier" -> state.instruments.filter { it.category == "Minat" }
-            "Skrining & Klinis" -> state.instruments.filter {
-                it.category in setOf("Skrining", "Klinis", "Kelelahan")
-            }
-            "Refleksi" -> state.instruments.filter { it.category in setOf("Refleksi", "Proyektif") }
-            else -> state.instruments.filter { it.category.contains(state.selectedCategory, ignoreCase = true) }
-        }
+        val filtered = state.filteredInstruments
 
-        val filtered = if (state.searchQuery.isBlank()) {
-            categoryFiltered
-        } else {
-            val q = state.searchQuery.trim().lowercase(java.util.Locale.ROOT)
-            val inCat = categoryFiltered.filter { matchesInstrumentQuery(it, q) }
-            if (inCat.isNotEmpty() || state.selectedCategory == "Semua") {
-                inCat
-            } else {
-                state.instruments.filter { matchesInstrumentQuery(it, q) }
+        if (state.savedResults.isNotEmpty() && state.searchQuery.isBlank() && state.selectedCategory == "Semua") {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Micro)) {
+                    Text(
+                        text = "Riwayat Hasil Tersimpan (${state.savedResults.size})",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(AppSpacing.Small)
+                    ) {
+                        state.savedResults.take(10).forEach { saved ->
+                            OutlinedCard(
+                                onClick = { onOpenResult(saved.instrumentId, saved.resultId) },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.width(210.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(AppSpacing.Small),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = saved.title,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${saved.resolvedValidityStatus().displayLabel} · ${saved.resolvedReviewStatus().displayLabel}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = AppPalette.Primary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
         if (state.searchQuery.isNotBlank()) {
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = AppSpacing.Small, vertical = AppSpacing.Micro),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Ditemukan ${filtered.size} dari ${state.instruments.size} psikotes",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    TextButton(
-                        onClick = { viewModel.clearSearchQuery() },
-                        contentPadding = PaddingValues(horizontal = AppSpacing.Small, vertical = 0.dp)
-                    ) {
-                        Text("Reset", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
+                SearchResultCountRow(
+                    foundCount = filtered.size,
+                    totalCount = state.instruments.size,
+                    itemLabel = "psikotes",
+                    onReset = viewModel::onClearSearchQuery
+                )
             }
         }
 
@@ -400,7 +418,7 @@ private fun LazyListScope.catalogContent(state: AssessmentUiState, viewModel: As
                         if (state.searchQuery.isNotBlank() || state.selectedCategory != "Semua") {
                             OutlinedButton(
                                 onClick = {
-                                    viewModel.clearSearchQuery()
+                                    viewModel.onClearSearchQuery()
                                     viewModel.selectCategory("Semua")
                                 },
                                 modifier = Modifier.padding(top = AppSpacing.Small)
@@ -415,214 +433,159 @@ private fun LazyListScope.catalogContent(state: AssessmentUiState, viewModel: As
             items(filtered, key = { it.id }) { instrument ->
                 InstrumentCatalogCard(
                     instrument = instrument,
-                    onClick = { onOpenInstrument(instrument.id) }
+                    onClick = {
+                        viewModel.recordItemOpened(instrument.id, instrument.title)
+                        onOpenInstrument(instrument.id)
+                    }
                 )
             }
         }
     } else {
         item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(AppSpacing.Medium)) {
-                    Text(
-                        text = "Bank Pengetahuan & Kurikulum Konseling",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(Modifier.height(AppSpacing.Micro))
-                    Text(
-                        text = "6 pilar intervensi psikologis standar Bimbingan & Konseling " +
-                            "(CBT, REBT, Rogers, Gross, Mindfulness, Psikoedukasi). " +
-                            "Tersedia untuk studi kasus klinis dan konsultasi AI lokal offline.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            CatalogSearchBarHost(
+                state = state,
+                viewModel = viewModel,
+                placeholder = "Cari materi konseling (contoh: CBT, etika, mikro)...",
+                categoryDisplayName = "Materi Konseling"
+            )
+        }
+
+        item {
+            CounselingPillarFilterRow(
+                selectedCategory = state.selectedCounselingCategory,
+                onSelectCategory = viewModel::selectCounselingCategory
+            )
+        }
+
+        val filteredModules = state.filteredCounselingModules
+
+        if (state.searchQuery.isNotBlank() || state.selectedCounselingCategory != "Semua") {
+            item {
+                SearchResultCountRow(
+                    foundCount = filteredModules.size,
+                    totalCount = state.counselingModules.size,
+                    itemLabel = "materi",
+                    onReset = {
+                        viewModel.onClearSearchQuery()
+                        viewModel.selectCounselingCategory("Semua")
+                    }
+                )
             }
         }
 
-        items(state.counselingModules, key = { it.id }) { module ->
-            CounselingModuleCard(
-                module = module,
-                onClick = { viewModel.openModule(module) }
-            )
+        if (filteredModules.isEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = AppSpacing.Medium),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(AppSpacing.Large),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SearchOff,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Text(
+                            text = if (state.searchQuery.isNotBlank()) {
+                                "Tidak ditemukan materi konseling dengan kata kunci \"${state.searchQuery}\""
+                            } else {
+                                "Belum ada materi konseling yang tersedia."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        if (state.searchQuery.isNotBlank()) {
+                            OutlinedButton(
+                                onClick = viewModel::onClearSearchQuery,
+                                modifier = Modifier.padding(top = AppSpacing.Small)
+                            ) {
+                                Text("Tampilkan Semua Materi")
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            items(filteredModules, key = { it.id }) { module ->
+                CounselingModuleCard(
+                    module = module,
+                    onClick = {
+                        viewModel.recordItemOpened(module.id, module.title)
+                        viewModel.openModule(module)
+                    }
+                )
+            }
         }
     }
 }
 
-private fun matchesInstrumentQuery(instrument: AssessmentInstrument, query: String): Boolean {
-    val q = query.trim().lowercase(java.util.Locale.ROOT)
-    if (q.isBlank()) return true
-    return instrument.title.lowercase(java.util.Locale.ROOT).contains(q) ||
-        instrument.id.lowercase(java.util.Locale.ROOT).contains(q) ||
-        instrument.aliases.any { it.lowercase(java.util.Locale.ROOT).contains(q) } ||
-        instrument.category.lowercase(java.util.Locale.ROOT).contains(q) ||
-        instrument.description.lowercase(java.util.Locale.ROOT).contains(q)
+@Composable
+private fun CatalogSearchBarHost(
+    state: AssessmentUiState,
+    viewModel: AssessmentViewModel,
+    placeholder: String,
+    categoryDisplayName: String
+) {
+    CatalogSearchSection(
+        query = state.searchQuery,
+        placeholder = placeholder,
+        categoryDisplayName = categoryDisplayName,
+        isFocused = state.isSearchFocused,
+        recentSearches = state.recentSearches,
+        suggestions = state.suggestions,
+        showSuggestions = state.showSuggestions,
+        showClearHistoryConfirmation = state.showClearHistoryConfirmation,
+        onQueryChange = viewModel::onSearchQueryChange,
+        onFocusChange = viewModel::onSearchFocusChange,
+        onCommitSearch = { viewModel.onCommitSearch() },
+        onClearQuery = viewModel::onClearSearchQuery,
+        onSelectSuggestion = viewModel::onSelectSuggestion,
+        onSelectHistoryChip = viewModel::onSelectHistoryChip,
+        onRemoveHistoryChip = viewModel::onRemoveHistoryChip,
+        onRequestClearHistory = viewModel::onRequestClearHistory,
+        onDismissClearHistory = viewModel::onDismissClearHistory,
+        onConfirmClearHistory = viewModel::onConfirmClearHistory
+    )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AssessmentSearchBar(
-    searchQuery: String,
-    onQueryChange: (String) -> Unit,
-    onSearch: () -> Unit,
-    onClear: () -> Unit,
-    recentSearches: List<String>,
-    pinnedSuggestions: List<String>,
-    onSelectChip: (String) -> Unit,
-    onRemoveChip: (String) -> Unit,
-    onClearAll: () -> Unit,
-    modifier: Modifier = Modifier
+private fun SearchResultCountRow(
+    foundCount: Int,
+    totalCount: Int,
+    itemLabel: String,
+    onReset: () -> Unit
 ) {
-    Column(
-        modifier = modifier
+    Row(
+        modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = AppSpacing.Micro),
-        verticalArrangement = Arrangement.spacedBy(AppSpacing.Micro)
+            .padding(horizontal = AppSpacing.Small, vertical = AppSpacing.Micro),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = onQueryChange,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 52.dp),
-            placeholder = {
-                Text(
-                    text = "Cari psikotes (contoh: TIU 6, MMPI, CFIT)...",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Ikon Cari",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(
-                        onClick = onClear,
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Hapus pencarian",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            },
-            shape = RoundedCornerShape(14.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
-            ),
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(
-                imeAction = ImeAction.Search,
-                keyboardType = KeyboardType.Text
-            ),
-            keyboardActions = KeyboardActions(
-                onSearch = { onSearch() }
-            ),
-            textStyle = MaterialTheme.typography.bodyMedium
+        Text(
+            text = "Ditemukan $foundCount dari $totalCount $itemLabel",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary
         )
-
-        val isHistory = recentSearches.isNotEmpty()
-        val displayChips = if (isHistory) recentSearches else pinnedSuggestions
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(AppSpacing.Micro),
-            verticalAlignment = Alignment.CenterVertically
+        TextButton(
+            onClick = onReset,
+            contentPadding = PaddingValues(horizontal = AppSpacing.Small, vertical = 0.dp),
+            modifier = Modifier.heightIn(min = 48.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.padding(end = 4.dp)
-            ) {
-                Icon(
-                    imageVector = if (isHistory) Icons.Default.History else Icons.Default.PushPin,
-                    contentDescription = null,
-                    tint = if (isHistory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(14.dp)
-                )
-                Text(
-                    text = if (isHistory) "Riwayat:" else "Rekomendasi:",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            displayChips.forEach { chipQuery ->
-                val isSelected = searchQuery.equals(chipQuery, ignoreCase = true)
-                InputChip(
-                    selected = isSelected,
-                    onClick = { onSelectChip(chipQuery) },
-                    label = {
-                        Text(
-                            text = chipQuery,
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.PushPin,
-                            contentDescription = null,
-                            modifier = Modifier.size(12.dp),
-                            tint = if (isSelected) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
-                    },
-                    trailingIcon = if (isHistory) {
-                        {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Hapus pin riwayat $chipQuery",
-                                modifier = Modifier
-                                    .size(14.dp)
-                                    .clickable { onRemoveChip(chipQuery) },
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else null,
-                    shape = RoundedCornerShape(8.dp),
-                    colors = InputChipDefaults.inputChipColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                        labelColor = MaterialTheme.colorScheme.onSurface,
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    ),
-                    modifier = Modifier.heightIn(min = 32.dp)
-                )
-            }
-
-            if (isHistory) {
-                TextButton(
-                    onClick = onClearAll,
-                    contentPadding = PaddingValues(horizontal = AppSpacing.Micro, vertical = 0.dp),
-                    modifier = Modifier.heightIn(min = 32.dp)
-                ) {
-                    Text(
-                        text = "Hapus",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
-            }
+            Text("Reset", style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -933,13 +896,14 @@ private fun CounselingModuleReaderSheet(
 private fun LazyListScope.assessmentDetailItems(
     state: AssessmentUiState,
     viewModel: AssessmentViewModel,
-    onDiscussWithAi: (String) -> Unit
+    onDiscussWithAi: (String) -> Unit,
+    onDiscussResult: (AssessmentDiscussionRequest) -> Unit
 ) {
     val entry = state.instrument?.protocol?.entry
     if (state.answering && state.isMarkedSheetEntry && entry != null) {
         markedScoreForm(entry, state, viewModel)
     } else {
-        item { AssessmentDetail(state, viewModel, onDiscussWithAi) }
+        item { AssessmentDetail(state, viewModel, onDiscussWithAi, onDiscussResult) }
     }
 }
 
@@ -947,7 +911,8 @@ private fun LazyListScope.assessmentDetailItems(
 private fun AssessmentDetail(
     state: AssessmentUiState,
     viewModel: AssessmentViewModel,
-    onDiscussWithAi: (String) -> Unit
+    onDiscussWithAi: (String) -> Unit,
+    onDiscussResult: (AssessmentDiscussionRequest) -> Unit
 ) {
     val instrument = state.instrument ?: return
     val form = instrument.form
@@ -963,13 +928,27 @@ private fun AssessmentDetail(
                 "kuder" -> KuderTriadQuestion(state, form, viewModel)
                 "kraepelin" -> KraepelinTestScreen(state, form, viewModel)
                 "pauli" -> PauliTestScreen(state, form, viewModel)
-                "wartegg" -> WarteggDrawingScreen(state, form, viewModel)
+                "wartegg" -> WarteggAssessmentScreen(
+                    form = form,
+                    busy = state.busy,
+                    onSaveDrafts = viewModel::submitWarteggDrafts
+                )
                 "rmib" -> RmibRankingScreen(state, form, viewModel)
-                "rorschach" -> RorschachTestScreen(state, form, viewModel)
+                "rorschach" -> RorschachAssessmentScreen(
+                    form = form,
+                    busy = state.busy,
+                    onSaveResponses = viewModel::submitRorschachResponses
+                )
+                "htp", "dap", "baum" -> ProjectiveDrawingScreen(
+                    instrument = instrument,
+                    busy = state.busy,
+                    onSavePanels = viewModel::submitProjectivePanels
+                )
+                "army_alpha" -> ArmyAlphaDrawingScreen(state, form, viewModel)
                 else -> AssessmentQuestion(state, form, viewModel)
             }
         } else {
-            AssessmentOverview(state, viewModel, onDiscussWithAi)
+            AssessmentOverview(state, viewModel, onDiscussWithAi, onDiscussResult)
         }
     }
 }
@@ -979,7 +958,8 @@ private fun AssessmentDetail(
 private fun AssessmentOverview(
     state: AssessmentUiState,
     viewModel: AssessmentViewModel,
-    onDiscussWithAi: (String) -> Unit
+    onDiscussWithAi: (String) -> Unit,
+    onDiscussResult: (AssessmentDiscussionRequest) -> Unit
 ) {
     val instrument = requireNotNull(state.instrument)
     val form = instrument.form
@@ -1030,20 +1010,42 @@ private fun AssessmentOverview(
         }
     }
 
+    val instrumentSpec = PsychometricInstrumentRegistry.specFor(instrument.id)
     if (form != null || entry != null) {
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(Modifier.padding(AppSpacing.Medium)) {
-                Text(
-                    text = "Pelaksanaan Asesmen",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(Modifier.height(AppSpacing.Micro))
+            Column(Modifier.padding(AppSpacing.Medium), verticalArrangement = Arrangement.spacedBy(AppSpacing.Compact)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Pelaksanaan Asesmen",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = AppPalette.Primary.copy(alpha = 0.16f)
+                    ) {
+                        Text(
+                            text = instrumentSpec.implementationStatus.displayLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = AppPalette.Primary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
                 val description = when {
+                    instrumentSpec.implementationStatus == InstrumentImplementationStatus.EXPLORATORY ||
+                        instrumentSpec.implementationStatus == InstrumentImplementationStatus.SOURCE_INCOMPLETE ||
+                        instrumentSpec.implementationStatus == InstrumentImplementationStatus.UNRESOLVED_IDENTITY ->
+                        "Mode eksploratif purwarupa penelitian. Hasil dihitung deterministik untuk demonstrasi dan diskusi AI+ (bukan skor klinis resmi)."
                     form != null && entry != null ->
                         "Instrumen ini dapat dikerjakan secara langsung di aplikasi butir per butir, " +
                             "atau dihitung melalui kalkulator rekap lembar jawaban fisik."
@@ -1057,7 +1059,6 @@ private fun AssessmentOverview(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.height(AppSpacing.Medium))
 
                 if (form != null) {
                     val formLabel = if (state.result != null) "Kerjakan Ulang Soal di Aplikasi" else "Mulai Kerjakan Soal di Aplikasi"
@@ -1075,7 +1076,6 @@ private fun AssessmentOverview(
                 }
 
                 if (entry != null) {
-                    if (form != null) Spacer(Modifier.height(AppSpacing.Small))
                     if (form != null) {
                         OutlinedButton(
                             onClick = viewModel::startMarkedSheetEntry,
@@ -1102,11 +1102,32 @@ private fun AssessmentOverview(
                         }
                     }
                 }
+
+                OutlinedButton(
+                    onClick = viewModel::runPrototypeDemo,
+                    enabled = !state.busy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                ) {
+                    Text("Simulasi Demo Purwarupa (Data Sintetis)")
+                }
             }
         }
     }
 
-    state.result?.let { AssessmentResultContent(it, state, viewModel, onDiscussWithAi) }
+    state.result?.let { result ->
+        AssessmentResultPanel(
+            result = result,
+            state = state,
+            onExplain = viewModel::explain,
+            onDelete = viewModel::delete,
+            onSubmitExaminerReview = viewModel::submitExaminerReview,
+            onUpdateConsentFlags = viewModel::updateConsentFlags,
+            onDiscussWithAi = onDiscussWithAi,
+            onDiscussResult = onDiscussResult
+        )
+    }
 
     instrument.protocol?.let { protocol ->
         ScoringGuideCard(protocol, instrument, state, viewModel, onDiscussWithAi)
@@ -3310,26 +3331,31 @@ private fun WarteggDrawingScreen(
                         RoundedCornerShape(12.dp)
                     )
                     .pointerInput(selectedBox) {
-                        detectDragGestures(
-                            onDragStart = { offset ->
-                                if (!drawOrder.containsKey(selectedBox)) {
-                                    drawOrder[selectedBox] = nextOrder++
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            down.consume()
+                            if (!drawOrder.containsKey(selectedBox)) {
+                                drawOrder[selectedBox] = nextOrder++
+                            }
+                            currentStroke.clear()
+                            currentStroke.add(down.position)
+
+                            val pointerId = down.id
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                                if (!change.pressed) {
+                                    if (currentStroke.isNotEmpty()) {
+                                        val boxList = allStrokes.getOrPut(selectedBox) { mutableListOf() }
+                                        boxList.add(currentStroke.toList())
+                                        currentStroke.clear()
+                                    }
+                                    break
                                 }
-                                currentStroke.clear()
-                                currentStroke.add(offset)
-                            },
-                            onDrag = { change, _ ->
                                 change.consume()
                                 currentStroke.add(change.position)
-                            },
-                            onDragEnd = {
-                                if (currentStroke.isNotEmpty()) {
-                                    val boxList = allStrokes.getOrPut(selectedBox) { mutableListOf() }
-                                    boxList.add(currentStroke.toList())
-                                    currentStroke.clear()
-                                }
                             }
-                        )
+                        }
                     }
             ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
@@ -3731,19 +3757,16 @@ private fun RmibRankingScreen(
             }
 
             // Submit Button
+            if (completedGroups < 9) {
+                Text(
+                    text = "Lengkapi ke-9 kelompok peringkat unik 1–12 sebelum menyimpan ($completedGroups/9 selesai).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Button(
-                onClick = {
-                    for (g in 0 until 9) {
-                        val ranks = (0 until 12).mapNotNull { p -> rankings[g * 12 + p] }
-                        if (ranks.toSet().size < 12) {
-                            for (p in 0 until 12) {
-                                rankings[g * 12 + p] = p + 1
-                            }
-                        }
-                    }
-                    viewModel.submitRmibAll(rankings)
-                },
-                enabled = (completedGroups >= 1),
+                onClick = { viewModel.submitRmibAll(rankings) },
+                enabled = completedGroups == 9 && !state.busy,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
@@ -4453,260 +4476,97 @@ private fun QuestionJumpDialog(total: Int, current: Int, isAnswered: (Int) -> Bo
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@Suppress("LongMethod")
-private fun AssessmentResultContent(
-    result: AssessmentResult,
-    state: AssessmentUiState,
+internal fun AssessmentResultRouteScreen(
     viewModel: AssessmentViewModel,
-    onDiscussWithAi: (String) -> Unit
+    onDiscussResult: (AssessmentDiscussionRequest) -> Unit,
+    onBack: () -> Unit
 ) {
-    var confirmDelete by remember(result.resultId) { mutableStateOf(false) }
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    OutlinedCard(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(Modifier.padding(AppSpacing.Medium)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        tint = AppPalette.Primary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(Modifier.width(AppSpacing.Compact))
-                    Text(
-                        "Hasil Asesmen Tersimpan",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-            val input = if (result.fromMarkedSheet) "Rekap Lembar Jawaban" else "${result.answered}/${result.itemCount} butir dijawab"
-            Text(
-                text = "${result.version} · $input",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
-            )
-
-            Spacer(Modifier.height(AppSpacing.Medium))
-            Divider()
-            Spacer(Modifier.height(AppSpacing.Medium))
-
-            Text("Rincian Skor & Skala", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(AppSpacing.Compact))
-            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Compact)) {
-                result.scores.forEach { score ->
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.padding(horizontal = AppSpacing.Medium, vertical = AppSpacing.Compact)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    score.label,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                                ) {
-                                    Text(
-                                        "${score.displayValue()} (${score.displayRange()})",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                            if (score.meaning.isNotBlank()) {
-                                Spacer(Modifier.height(AppSpacing.Micro))
-                                Text(
-                                    score.meaning,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(
+                            text = state.result?.title ?: state.instrument?.title ?: "Hasil Asesmen",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        state.result?.let { res ->
+                            Text(
+                                text = "Hasil Psikometri · ${res.version}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali")
+                    }
                 }
-            }
-
-            Spacer(Modifier.height(AppSpacing.Large))
-            Text("Interpretasi Klinis Baku", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(AppSpacing.Micro))
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = result.interpretation,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(AppSpacing.Medium)
-                )
-            }
-
-            if (result.version != state.instrument?.form?.version && result.sourceUrl.isNotBlank()) {
-                Spacer(Modifier.height(AppSpacing.Compact))
-                AssessmentSource(result.sourceTitle, result.sourceUrl)
-            }
-
-            Spacer(Modifier.height(AppSpacing.Large))
-            Text(
-                "Konsultasi & Ulasan AI",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
             )
-            Spacer(Modifier.height(AppSpacing.Micro))
-            Text(
-                "Diskusikan hasil asesmen ini secara interaktif dengan konselor AI atau lihat ulasan kilat.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(Modifier.height(AppSpacing.Medium))
-            Button(
-                onClick = { onDiscussWithAi(result.toCounselorDiscussionPrompt()) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 52.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                )
-            ) {
-                Icon(Icons.AutoMirrored.Outlined.Chat, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(AppSpacing.Compact))
-                Text(
-                    "Bahas Hasil di AI Counselor (AI+)",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Spacer(Modifier.height(AppSpacing.Small))
-            OutlinedButton(
-                onClick = viewModel::explain,
-                enabled = !state.busy,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                if (state.busy) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = AppSpacing.Screen, vertical = AppSpacing.Small),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.Medium)
+        ) {
+            when {
+                state.loading -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                state.result != null -> {
+                    val result = requireNotNull(state.result)
+                    AssessmentResultPanel(
+                        result = result,
+                        state = state,
+                        onExplain = viewModel::explain,
+                        onDelete = {
+                            viewModel.delete()
+                            onBack()
+                        },
+                        onSubmitExaminerReview = viewModel::submitExaminerReview,
+                        onUpdateConsentFlags = viewModel::updateConsentFlags,
+                        onDiscussResult = onDiscussResult
                     )
-                    Spacer(Modifier.width(AppSpacing.Compact))
-                    Text("Menganalisis hasil...")
-                } else {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(AppSpacing.Compact))
-                    Text(if (state.resultExplanation == null) "Dapatkan Ringkasan Kilat AI" else "Perbarui Ringkasan Kilat AI")
-                }
-            }
-
-            state.error?.let { err ->
-                Spacer(Modifier.height(AppSpacing.Small))
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(Modifier.padding(AppSpacing.Medium)) {
-                        Text(
-                            text = err,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodySmall
+                    state.instrument?.protocol?.let { protocol ->
+                        ScoringGuideCard(
+                            protocol = protocol,
+                            instrument = requireNotNull(state.instrument),
+                            state = state,
+                            viewModel = viewModel,
+                            onDiscussWithAi = { prompt ->
+                                onDiscussResult(
+                                    AssessmentDiscussionRequest(
+                                        resultId = result.resultId,
+                                        instrumentId = result.instrumentId,
+                                        participantId = result.participantId,
+                                        prompt = prompt
+                                    )
+                                )
+                            }
                         )
                     }
                 }
-            }
-
-            state.resultExplanation?.let { explanation ->
-                Spacer(Modifier.height(AppSpacing.Small))
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(Modifier.padding(AppSpacing.Medium)) {
-                        Text(
-                            text = "Ulasan Klinis AI Lokal",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.height(AppSpacing.Micro))
-                        Text(
-                            text = explanation,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
-                        )
-                    }
+                else -> {
+                    Text(
+                        text = state.error ?: "Hasil asesmen belum tersedia.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            }
-
-            Spacer(Modifier.height(AppSpacing.Medium))
-            TextButton(
-                onClick = { confirmDelete = true },
-                enabled = !state.busy,
-                modifier = Modifier.align(Alignment.End)
-            ) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(Modifier.width(AppSpacing.Micro))
-                Text("Hapus Hasil Tersimpan", color = MaterialTheme.colorScheme.error)
             }
         }
-    }
-
-    if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("Hapus hasil asesmen?") },
-            text = { Text("Skor dan interpretasi ini akan dihapus secara permanen dari perangkat.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmDelete = false
-                        viewModel.delete()
-                    }
-                ) {
-                    Text("Hapus hasil", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) {
-                    Text("Batal")
-                }
-            }
-        )
     }
 }
 

@@ -27,9 +27,18 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DocumentChunkEntity::class,
         CounselorPersonaEntity::class,
         StressSessionReportEntity::class,
-        StressWindowEvaluationEntity::class
+        StressWindowEvaluationEntity::class,
+        SearchHistoryEntity::class,
+        ParticipantProfileEntity::class,
+        AssessmentSessionRecordEntity::class,
+        JournalEntryEntity::class,
+        WellbeingGoalEntity::class,
+        AssessmentRecommendationEntity::class,
+        AiInterpretationEntity::class,
+        ResearchExportManifestEntity::class,
+        SkinTemperatureSampleEntity::class
     ],
-    version = 21,
+    version = 25,
     exportSchema = false
 )
 abstract class StressDatabase : RoomDatabase() {
@@ -43,6 +52,9 @@ abstract class StressDatabase : RoomDatabase() {
     abstract fun aiReminderDao(): AiReminderDao
     abstract fun documentDao(): DocumentDao
     abstract fun counselorPersonaDao(): CounselorPersonaDao
+    abstract fun searchHistoryDao(): SearchHistoryDao
+    abstract fun longitudinalDao(): LongitudinalDao
+    abstract fun skinTemperatureDao(): SkinTemperatureDao
 
     companion object {
         @Volatile private var instance: StressDatabase? = null
@@ -76,7 +88,11 @@ abstract class StressDatabase : RoomDatabase() {
                 MIGRATION_17_18,
                 MIGRATION_18_19,
                 MIGRATION_19_20,
-                MIGRATION_20_21
+                MIGRATION_20_21,
+                MIGRATION_21_22,
+                MIGRATION_22_23,
+                MIGRATION_23_24,
+                MIGRATION_24_25
             )
             .build()
 
@@ -451,9 +467,199 @@ abstract class StressDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                createSearchHistoryTable(database)
+            }
+        }
+
+        /** Adds clinical attribution, duration parity, and structured multimodal evidence columns. */
+        internal val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                addColumnIfMissing(database, "verbatim_sessions", "watchWearerRole", "TEXT NOT NULL DEFAULT 'CLIENT'")
+                addColumnIfMissing(database, "verbatim_sessions", "audioDurationMs", "INTEGER NOT NULL DEFAULT 0")
+                addColumnIfMissing(database, "verbatim_sessions", "languageCode", "TEXT NOT NULL DEFAULT 'id'")
+                addColumnIfMissing(database, "divergence_events", "speakerId", "TEXT")
+                addColumnIfMissing(database, "divergence_events", "baselineValue", "REAL")
+                addColumnIfMissing(database, "divergence_events", "observedValue", "REAL")
+                addColumnIfMissing(database, "divergence_events", "deltaValue", "REAL")
+                addColumnIfMissing(database, "divergence_events", "unit", "TEXT")
+                addColumnIfMissing(database, "divergence_events", "evidenceIdsJson", "TEXT NOT NULL DEFAULT '[]'")
+                addColumnIfMissing(database, "divergence_events", "detectedAtElapsedMillis", "INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        internal val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                createLongitudinalTables(database)
+                addColumnIfMissing(database, "chat_messages", "messageType", "TEXT")
+                addColumnIfMissing(database, "chat_messages", "structuredPayloadJson", "TEXT")
+            }
+        }
+
+        internal val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                createSkinTemperatureTable(database)
+                addColumnIfMissing(database, "divergence_events", "thermalDirection", "TEXT")
+                addColumnIfMissing(database, "divergence_events", "ambientTemperatureC", "REAL")
+                addColumnIfMissing(database, "divergence_events", "ambientDeltaC", "REAL")
+                addColumnIfMissing(database, "divergence_events", "slopeCelsiusPerMin", "REAL")
+            }
+        }
+
+        private fun createSkinTemperatureTable(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS `skin_temperature_samples` (" +
+                    "`sampleId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, " +
+                    "`generation` INTEGER NOT NULL, `sequenceNumber` INTEGER NOT NULL, " +
+                    "`sensorTimestampMs` INTEGER NOT NULL, `receivedTimestampMs` INTEGER NOT NULL, " +
+                    "`elapsedMillis` INTEGER NOT NULL, `clockUncertaintyMs` INTEGER, " +
+                    "`skinTemperatureC` REAL, `ambientTemperatureC` REAL, " +
+                    "`measurementStatus` INTEGER NOT NULL, `isValid` INTEGER NOT NULL, " +
+                    "`wearerRole` TEXT NOT NULL, `source` TEXT NOT NULL, " +
+                    "`isPaused` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`sampleId`))"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_skin_temperature_samples_sessionId` " +
+                    "ON `skin_temperature_samples` (`sessionId`)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_skin_temperature_samples_sessionId_elapsedMillis` " +
+                    "ON `skin_temperature_samples` (`sessionId`, `elapsedMillis`)"
+            )
+        }
+
+        private fun createLongitudinalTables(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS `participant_profiles` (" +
+                    "`participantId` TEXT NOT NULL, `pseudonymCode` TEXT NOT NULL, " +
+                    "`createdAtMillis` INTEGER NOT NULL, `notes` TEXT, " +
+                    "PRIMARY KEY(`participantId`))"
+            )
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS `assessment_sessions` (" +
+                    "`sessionUuid` TEXT NOT NULL, `participantId` TEXT NOT NULL, " +
+                    "`instrumentId` TEXT NOT NULL, `instrumentVersion` TEXT NOT NULL, " +
+                    "`formId` TEXT, `scoringSystemId` TEXT, `administrationMode` TEXT NOT NULL, " +
+                    "`answeredCount` INTEGER NOT NULL, `totalCount` INTEGER NOT NULL, " +
+                    "`lifecycleState` TEXT NOT NULL, `scoringStatus` TEXT NOT NULL, " +
+                    "`validityStatus` TEXT NOT NULL, `reviewStatus` TEXT NOT NULL, " +
+                    "`reviewerId` TEXT, `aiContextAllowed` INTEGER NOT NULL, " +
+                    "`researchExportAllowed` INTEGER NOT NULL, `resultId` TEXT, " +
+                    "`ppgSessionId` TEXT, `createdAtMillis` INTEGER NOT NULL, " +
+                    "`updatedAtMillis` INTEGER NOT NULL, PRIMARY KEY(`sessionUuid`))"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_assessment_sessions_participantId` " +
+                    "ON `assessment_sessions` (`participantId`)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_assessment_sessions_instrumentId` " +
+                    "ON `assessment_sessions` (`instrumentId`)"
+            )
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS `journal_entries` (" +
+                    "`entryId` TEXT NOT NULL, `participantId` TEXT NOT NULL, " +
+                    "`moodScore` INTEGER NOT NULL, `moodLabel` TEXT NOT NULL, " +
+                    "`sleepQuality` INTEGER, `stressLevelSelfReport` INTEGER, " +
+                    "`tagsJson` TEXT NOT NULL, `reflectionText` TEXT NOT NULL, " +
+                    "`createdAtMillis` INTEGER NOT NULL, `aiContextAllowed` INTEGER NOT NULL, " +
+                    "`researchExportAllowed` INTEGER NOT NULL, PRIMARY KEY(`entryId`))"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_journal_entries_participantId` " +
+                    "ON `journal_entries` (`participantId`)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_journal_entries_createdAtMillis` " +
+                    "ON `journal_entries` (`createdAtMillis`)"
+            )
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS `wellbeing_goals` (" +
+                    "`goalId` TEXT NOT NULL, `participantId` TEXT NOT NULL, " +
+                    "`title` TEXT NOT NULL, `category` TEXT NOT NULL, `cadence` TEXT NOT NULL, " +
+                    "`targetCount` INTEGER NOT NULL, `completedCount` INTEGER NOT NULL, " +
+                    "`status` TEXT NOT NULL, `createdAtMillis` INTEGER NOT NULL, " +
+                    "`updatedAtMillis` INTEGER NOT NULL, PRIMARY KEY(`goalId`))"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_wellbeing_goals_participantId` " +
+                    "ON `wellbeing_goals` (`participantId`)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_wellbeing_goals_status` " +
+                    "ON `wellbeing_goals` (`status`)"
+            )
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS `assessment_recommendations` (" +
+                    "`recommendationId` TEXT NOT NULL, `participantId` TEXT NOT NULL, " +
+                    "`chatSessionId` TEXT, `instrumentId` TEXT NOT NULL, " +
+                    "`reason` TEXT NOT NULL, `route` TEXT NOT NULL, `priority` INTEGER NOT NULL, " +
+                    "`status` TEXT NOT NULL, `createdAtMillis` INTEGER NOT NULL, " +
+                    "`updatedAtMillis` INTEGER NOT NULL, PRIMARY KEY(`recommendationId`))"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_assessment_recommendations_participantId` " +
+                    "ON `assessment_recommendations` (`participantId`)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_assessment_recommendations_chatSessionId` " +
+                    "ON `assessment_recommendations` (`chatSessionId`)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_assessment_recommendations_instrumentId` " +
+                    "ON `assessment_recommendations` (`instrumentId`)"
+            )
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS `ai_interpretations` (" +
+                    "`interpretationId` TEXT NOT NULL, `participantId` TEXT NOT NULL, " +
+                    "`assessmentResultId` TEXT NOT NULL, `instrumentId` TEXT NOT NULL, " +
+                    "`chatMessageId` TEXT, `modelVersion` TEXT NOT NULL, " +
+                    "`kbVersion` TEXT NOT NULL, `summaryText` TEXT NOT NULL, " +
+                    "`createdAtMillis` INTEGER NOT NULL, PRIMARY KEY(`interpretationId`))"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_ai_interpretations_participantId` " +
+                    "ON `ai_interpretations` (`participantId`)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_ai_interpretations_assessmentResultId` " +
+                    "ON `ai_interpretations` (`assessmentResultId`)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_ai_interpretations_instrumentId` " +
+                    "ON `ai_interpretations` (`instrumentId`)"
+            )
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS `research_export_manifests` (" +
+                    "`exportId` TEXT NOT NULL, `participantId` TEXT NOT NULL, " +
+                    "`exportedAtMillis` INTEGER NOT NULL, `schemaVersion` TEXT NOT NULL, " +
+                    "`artifactSha256` TEXT NOT NULL, `includedModulesJson` TEXT NOT NULL, " +
+                    "`consentSnapshotJson` TEXT NOT NULL, `ethicsApprovalRef` TEXT, " +
+                    "PRIMARY KEY(`exportId`))"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_research_export_manifests_participantId` " +
+                    "ON `research_export_manifests` (`participantId`)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_research_export_manifests_exportedAtMillis` " +
+                    "ON `research_export_manifests` (`exportedAtMillis`)"
+            )
+        }
+
+        private fun createSearchHistoryTable(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS `search_history` (" +
+                    "`canonicalItemId` TEXT NOT NULL, `canonicalTitle` TEXT NOT NULL, " +
+                    "`category` TEXT NOT NULL, `lastSearchedAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`canonicalItemId`, `category`))"
+            )
+        }
+
         private fun createMissingTables(database: SupportSQLiteDatabase) {
             database.execSQL(
-                "CREATE TABLE IF NOT EXISTS `verbatim_sessions` (`sessionId` TEXT NOT NULL, `startedAtMillis` INTEGER NOT NULL, `endedAtMillis` INTEGER NOT NULL, `audioFilePath` TEXT NOT NULL, `consentGranted` INTEGER NOT NULL, `durationSeconds` INTEGER NOT NULL, `status` TEXT NOT NULL, `sessionName` TEXT NOT NULL DEFAULT 'Sesi Verbatim', `artifactFolderPath` TEXT NOT NULL DEFAULT '', `finalizationStatus` TEXT NOT NULL DEFAULT 'PENDING', `summaryStatus` TEXT NOT NULL DEFAULT 'NOT_REQUESTED', `audioGapsJson` TEXT NOT NULL DEFAULT '[]', PRIMARY KEY(`sessionId`))"
+                "CREATE TABLE IF NOT EXISTS `verbatim_sessions` (`sessionId` TEXT NOT NULL, `startedAtMillis` INTEGER NOT NULL, `endedAtMillis` INTEGER NOT NULL, `audioFilePath` TEXT NOT NULL, `consentGranted` INTEGER NOT NULL, `durationSeconds` INTEGER NOT NULL, `status` TEXT NOT NULL, `sessionName` TEXT NOT NULL DEFAULT 'Sesi Verbatim', `artifactFolderPath` TEXT NOT NULL DEFAULT '', `finalizationStatus` TEXT NOT NULL DEFAULT 'PENDING', `summaryStatus` TEXT NOT NULL DEFAULT 'NOT_REQUESTED', `audioGapsJson` TEXT NOT NULL DEFAULT '[]', `watchWearerRole` TEXT NOT NULL DEFAULT 'CLIENT', `audioDurationMs` INTEGER NOT NULL DEFAULT 0, `languageCode` TEXT NOT NULL DEFAULT 'id', PRIMARY KEY(`sessionId`))"
             )
             database.execSQL(
                 "CREATE TABLE IF NOT EXISTS `transcript_segments` (`segmentId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `speakerId` TEXT NOT NULL, `startOffsetMs` INTEGER NOT NULL, `endOffsetMs` INTEGER NOT NULL, `rawText` TEXT NOT NULL, `cleanedText` TEXT, `confidence` REAL NOT NULL, `language` TEXT NOT NULL, PRIMARY KEY(`segmentId`))"
@@ -471,8 +677,9 @@ abstract class StressDatabase : RoomDatabase() {
                 "CREATE TABLE IF NOT EXISTS `realtime_inference_records` (`recordId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `timestampMs` INTEGER NOT NULL, `stressProbability` REAL, `label` TEXT NOT NULL, `qualityScore` REAL NOT NULL, `isValidWindow` INTEGER NOT NULL, `channel` TEXT NOT NULL DEFAULT 'GREEN', PRIMARY KEY(`recordId`))"
             )
             database.execSQL(
-                "CREATE TABLE IF NOT EXISTS `divergence_events` (`eventId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `timestampMs` INTEGER NOT NULL, `delta` REAL, `currentProbability` REAL, `baselineProbability` REAL, `copyText` TEXT NOT NULL, `channel` TEXT NOT NULL DEFAULT 'GREEN', `markerElapsedMillis` INTEGER NOT NULL DEFAULT 0, `episodeStartElapsedMillis` INTEGER NOT NULL DEFAULT 0, `episodeEndElapsedMillis` INTEGER NOT NULL DEFAULT 0, `contextWindowStartElapsedMillis` INTEGER NOT NULL DEFAULT 0, `contextWindowEndElapsedMillis` INTEGER NOT NULL DEFAULT 0, `confidence` REAL NOT NULL DEFAULT 0, `signalQuality` REAL NOT NULL DEFAULT 0, `sourceWindowId` TEXT, `transcriptSegmentId` TEXT, `markerType` TEXT NOT NULL DEFAULT 'MODEL_AROUSAL', `bpm` REAL, `baselineBpm` REAL, `peakBpm` REAL, `bpmDelta` REAL, `bpmTrend` TEXT, `sourceChannels` TEXT NOT NULL DEFAULT '', `markerConfigVersion` TEXT NOT NULL DEFAULT 'physiological-markers-v1', `audioRmsDb` REAL, `audioBaselineRmsDb` REAL, `audioBaselineDeviationDb` REAL, `audioZeroCrossingRate` REAL, `audioClippingRatio` REAL, `audioFiniteSampleRatio` REAL, `audioAnalysisVersion` TEXT, PRIMARY KEY(`eventId`))"
+                "CREATE TABLE IF NOT EXISTS `divergence_events` (`eventId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `timestampMs` INTEGER NOT NULL, `delta` REAL, `currentProbability` REAL, `baselineProbability` REAL, `copyText` TEXT NOT NULL, `channel` TEXT NOT NULL DEFAULT 'GREEN', `markerElapsedMillis` INTEGER NOT NULL DEFAULT 0, `episodeStartElapsedMillis` INTEGER NOT NULL DEFAULT 0, `episodeEndElapsedMillis` INTEGER NOT NULL DEFAULT 0, `contextWindowStartElapsedMillis` INTEGER NOT NULL DEFAULT 0, `contextWindowEndElapsedMillis` INTEGER NOT NULL DEFAULT 0, `confidence` REAL NOT NULL DEFAULT 0, `signalQuality` REAL NOT NULL DEFAULT 0, `sourceWindowId` TEXT, `transcriptSegmentId` TEXT, `markerType` TEXT NOT NULL DEFAULT 'MODEL_AROUSAL', `bpm` REAL, `baselineBpm` REAL, `peakBpm` REAL, `bpmDelta` REAL, `bpmTrend` TEXT, `sourceChannels` TEXT NOT NULL DEFAULT '', `markerConfigVersion` TEXT NOT NULL DEFAULT 'physiological-markers-v1', `audioRmsDb` REAL, `audioBaselineRmsDb` REAL, `audioBaselineDeviationDb` REAL, `audioZeroCrossingRate` REAL, `audioClippingRatio` REAL, `audioFiniteSampleRatio` REAL, `audioAnalysisVersion` TEXT, `speakerId` TEXT, `baselineValue` REAL, `observedValue` REAL, `deltaValue` REAL, `unit` TEXT, `evidenceIdsJson` TEXT NOT NULL DEFAULT '[]', `detectedAtElapsedMillis` INTEGER NOT NULL DEFAULT 0, `thermalDirection` TEXT, `ambientTemperatureC` REAL, `ambientDeltaC` REAL, `slopeCelsiusPerMin` REAL, PRIMARY KEY(`eventId`))"
             )
+            createSkinTemperatureTable(database)
             database.execSQL(
                 "CREATE TABLE IF NOT EXISTS `annotations` (`annotationId` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `timestampMs` INTEGER NOT NULL, `text` TEXT NOT NULL, `author` TEXT NOT NULL, `citationId` TEXT, PRIMARY KEY(`annotationId`))"
             )
@@ -495,6 +702,7 @@ abstract class StressDatabase : RoomDatabase() {
             database.execSQL(
                 "CREATE TABLE IF NOT EXISTS `counselor_persona` (`profileId` TEXT NOT NULL, `markdown` TEXT NOT NULL, `version` INTEGER NOT NULL, `updatedAtMillis` INTEGER NOT NULL, PRIMARY KEY(`profileId`))"
             )
+            createSearchHistoryTable(database)
         }
 
         private fun addAiPlusColumns(database: SupportSQLiteDatabase) {

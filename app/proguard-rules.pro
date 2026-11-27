@@ -134,8 +134,9 @@
 -dontwarn org.brotli.dec.**
 
 # LiteRT-LM & ML Kit JNI Bindings
--keep class com.google.ai.edge.litertlm.** { *; }
--keepclassmembers class com.google.ai.edge.litertlm.** { *; }
+-keep,includedescriptorclasses class com.google.ai.edge.litertlm.** { *; }
+-keepclassmembers,includedescriptorclasses class com.google.ai.edge.litertlm.** { *; }
+-keepnames class com.google.ai.edge.litertlm.** { *; }
 -dontwarn com.google.ai.edge.litertlm.**
 
 -keep class com.google.mlkit.** { *; }

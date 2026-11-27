@@ -1,6 +1,6 @@
 {
   "schema_version": "bundled_knowledge_manifest_v1",
-  "corpus_version": "counseling_kb_v1",
+  "corpus_version": "counseling_kb_v2",
   "corpus_status": "READY",
   "documents": [
     {
@@ -11,7 +11,16 @@
       "source_sha256": "fe5e50aa144d5348d2787012be90f079327d730b9df78c0327efdf8189c23985",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Kemendikbud & Buku Ajar BK Terverifikasi",
-      "source_locator": "ai/counseling/bk_01_dasar_dan_etika.md"
+      "source_locator": "ai/counseling/bk_01_dasar_dan_etika.md",
+      "collection": "counseling_theory",
+      "category": "Etika dan Landasan Konseling",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     },
     {
       "document_id": "bk_02_bidang_layanan",
@@ -21,7 +30,16 @@
       "source_sha256": "aab074ecff7bfd98dbd0fbf13b85892f5a7e4483499dccec37c70c9a8aa2eb62",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Kemendikbud & Buku Ajar BK Terverifikasi",
-      "source_locator": "ai/counseling/bk_02_bidang_layanan.md"
+      "source_locator": "ai/counseling/bk_02_bidang_layanan.md",
+      "collection": "counseling_theory",
+      "category": "Bidang Layanan Konseling",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     },
     {
       "document_id": "bk_03_teori_dan_intervensi",
@@ -31,7 +49,16 @@
       "source_sha256": "e7795bee6c9f844eb155ff67d1993e977d1f08d67b46760bf821c27cba43c317",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Kemendikbud & Buku Ajar BK Terverifikasi",
-      "source_locator": "ai/counseling/bk_03_teori_dan_intervensi.md"
+      "source_locator": "ai/counseling/bk_03_teori_dan_intervensi.md",
+      "collection": "counseling_theory",
+      "category": "Teori dan Teknik Konseling",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     },
     {
       "document_id": "bk_04_kelompok_dan_klasikal",
@@ -41,7 +68,16 @@
       "source_sha256": "003a367b744bdb5adfd43bc7997febedcb3e26626a46ffac02b525068a0a2fa8",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Kemendikbud & Buku Ajar BK Terverifikasi",
-      "source_locator": "ai/counseling/bk_04_kelompok_dan_klasikal.md"
+      "source_locator": "ai/counseling/bk_04_kelompok_dan_klasikal.md",
+      "collection": "counseling_theory",
+      "category": "Konseling Kelompok dan Klasikal",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     },
     {
       "document_id": "bk_05_keterampilan_mikro",
@@ -51,7 +87,16 @@
       "source_sha256": "e52bbf56d918afa021c73762942406c8dc68a55d463d20c7eee78c3039442779",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Kemendikbud & Buku Ajar BK Terverifikasi",
-      "source_locator": "ai/counseling/bk_05_keterampilan_mikro.md"
+      "source_locator": "ai/counseling/bk_05_keterampilan_mikro.md",
+      "collection": "counseling_theory",
+      "category": "Keterampilan Mikro Konseling",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     },
     {
       "document_id": "bk_06_asesmen_dan_tindak_lanjut",
@@ -61,7 +106,16 @@
       "source_sha256": "6ce2cd90cf506619c9aab4209d1ab6e47290e5cc68be63f87bf854622656f512",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Kemendikbud & Buku Ajar BK Terverifikasi",
-      "source_locator": "ai/counseling/bk_06_asesmen_dan_tindak_lanjut.md"
+      "source_locator": "ai/counseling/bk_06_asesmen_dan_tindak_lanjut.md",
+      "collection": "clinical_guidance",
+      "category": "Asesmen dan Tindak Lanjut",
+      "intended_audience": "counselor_psychologist",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     },
     {
       "document_id": "rorschach_projective_assessment",
@@ -71,84 +125,538 @@
       "source_sha256": "c6a8acb7dc8264152ff24155b1e63417de49d2747ebfa22052e334ea7c1350d5",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Sistem Komprehensif Exner Terverifikasi",
-      "source_locator": "ai/counseling/rorschach_projective_assessment.md"
+      "source_locator": "ai/counseling/rorschach_projective_assessment.md",
+      "collection": "psychometric_interpretation_guide",
+      "category": "Panduan Interpretasi Psikotes",
+      "intended_audience": "counselor_psychologist",
+      "evidence_level": "manual_grounded_reference",
+      "usage_restrictions": [
+        "interpretation_guidance_only",
+        "no_answer_keys"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     },
     {
       "document_id": "wpt_cognitive_assessment",
       "title": "Modul Konseling Klinis & Karir: Wonderlic Personnel Test (WPT)",
       "asset_path": "ai/counseling/wpt_cognitive_assessment.md",
       "format": "markdown",
-      "source_sha256": "1b164092008cbb5c6d09d0b1c4d183389eeb06e0e326127cb7fb97ceb56b21d3",
+      "source_sha256": "1a7152139eaebe9f27d4fb6f43bfa72223284e578975b1ef53b5bd0577b7e4a2",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Manual Wonderlic Terverifikasi",
-      "source_locator": "ai/counseling/wpt_cognitive_assessment.md"
+      "source_locator": "ai/counseling/wpt_cognitive_assessment.md",
+      "collection": "psychometric_interpretation_guide",
+      "category": "Panduan Interpretasi Psikotes",
+      "intended_audience": "counselor_psychologist",
+      "evidence_level": "manual_grounded_reference",
+      "usage_restrictions": [
+        "interpretation_guidance_only",
+        "no_answer_keys"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     },
     {
       "document_id": "tiu5_cognitive_assessment",
       "asset_path": "ai/counseling/tiu5_cognitive_assessment.md",
       "title": "Modul Konseling Klinis & Karir: Tes Inteligensi Umum 5 (TIU 5 Figural)",
-      "category": "psychometrics_cognitive",
+      "category": "Panduan Interpretasi Psikotes",
       "source_sha256": "b1600998e1e366aa38009835920bf2497f837398628eddc53fa59b193f0d6ce5",
       "format": "markdown",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Acuan Skoring TIU 5 Terverifikasi",
-      "source_locator": "ai/counseling/tiu5_cognitive_assessment.md"
+      "source_locator": "ai/counseling/tiu5_cognitive_assessment.md",
+      "collection": "psychometric_interpretation_guide",
+      "intended_audience": "counselor_psychologist",
+      "evidence_level": "manual_grounded_reference",
+      "usage_restrictions": [
+        "interpretation_guidance_only",
+        "no_answer_keys"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     },
     {
       "document_id": "tiu6_spatial_assessment",
       "asset_path": "ai/counseling/tiu6_spatial_assessment.md",
       "title": "Modul Konseling Klinis & Karir: Tes Inteligensi Umum 6 (TIU 6 Penalaran Spasial)",
-      "category": "psychometrics_cognitive",
-      "source_sha256": "943b682c20931d592bbd7f330b32fd7065bd7110e07d319913f7c368635ce455",
+      "category": "Panduan Interpretasi Psikotes",
+      "source_sha256": "b99ac9b04457ab8a5be184112252a57b02d5d9cd6f2cdd98beb876421c2c8faf",
       "format": "markdown",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Acuan Skoring TIU 6 Terverifikasi",
-      "source_locator": "ai/counseling/tiu6_spatial_assessment.md"
+      "source_locator": "ai/counseling/tiu6_spatial_assessment.md",
+      "collection": "psychometric_interpretation_guide",
+      "intended_audience": "counselor_psychologist",
+      "evidence_level": "manual_grounded_reference",
+      "usage_restrictions": [
+        "interpretation_guidance_only",
+        "no_answer_keys"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     },
     {
       "document_id": "spm_matrices_assessment",
       "asset_path": "ai/counseling/spm_matrices_assessment.md",
       "title": "Modul Konseling Klinis dan Karir: Raven Standard Progressive Matrices (SPM)",
-      "category": "psychometrics_cognitive",
-      "source_sha256": "6c503a19271577f3ef339a9dd14eb976735e1a7e13543fbc80654f4e8e47891d",
+      "category": "Panduan Interpretasi Psikotes",
+      "source_sha256": "3543e7f926f0a68874399854e172199bc1fb2f7cac22cd1a38b031fb31bbd70e",
       "format": "markdown",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis dan Acuan Skoring SPM Terverifikasi",
-      "source_locator": "ai/counseling/spm_matrices_assessment.md"
+      "source_locator": "ai/counseling/spm_matrices_assessment.md",
+      "collection": "psychometric_interpretation_guide",
+      "intended_audience": "counselor_psychologist",
+      "evidence_level": "manual_grounded_reference",
+      "usage_restrictions": [
+        "interpretation_guidance_only",
+        "no_answer_keys"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     },
     {
       "document_id": "cfit_scale3_assessment",
       "asset_path": "ai/counseling/cfit_scale3_assessment.md",
       "title": "Modul Konseling Klinis & Karir: Culture Fair Intelligence Test (CFIT Skala 3 Bentuk A)",
-      "category": "psychometrics_cognitive",
-      "source_sha256": "3c77afd98295a1fa43f4b5d6db853e45d40c0166834e8f26140cf30b3c79bfe0",
+      "category": "Panduan Interpretasi Psikotes",
+      "source_sha256": "54d9b7d6d503cefa512fad8ed7b5f1738c180fd64fed8f54fa92f6dba6197822",
       "format": "markdown",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Acuan Skoring CFIT 3A Terverifikasi",
-      "source_locator": "ai/counseling/cfit_scale3_assessment.md"
+      "source_locator": "ai/counseling/cfit_scale3_assessment.md",
+      "collection": "psychometric_interpretation_guide",
+      "intended_audience": "counselor_psychologist",
+      "evidence_level": "manual_grounded_reference",
+      "usage_restrictions": [
+        "interpretation_guidance_only",
+        "no_answer_keys"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     },
     {
       "document_id": "cfit_scale2_assessment",
       "asset_path": "ai/counseling/cfit_scale2_assessment.md",
       "title": "Modul Konseling Klinis & Edukasi: Culture Fair Intelligence Test (CFIT Skala 2 Bentuk A)",
-      "category": "psychometrics_cognitive",
+      "category": "Panduan Interpretasi Psikotes",
       "source_sha256": "c64251191fbf8b9d5f92d74240efc763fd7e3b0e166d784b9ede9f8d0c89c301",
       "format": "markdown",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Acuan Skoring CFIT 2A Terverifikasi",
-      "source_locator": "ai/counseling/cfit_scale2_assessment.md"
+      "source_locator": "ai/counseling/cfit_scale2_assessment.md",
+      "collection": "psychometric_interpretation_guide",
+      "intended_audience": "counselor_psychologist",
+      "evidence_level": "manual_grounded_reference",
+      "usage_restrictions": [
+        "interpretation_guidance_only",
+        "no_answer_keys"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     },
     {
       "document_id": "army_alpha_cognitive_assessment",
       "asset_path": "ai/counseling/army_alpha_cognitive_assessment.md",
       "title": "Modul Konseling Klinis & Karir: Army Alpha Intelligence Test (UI-10013-96)",
-      "category": "psychometrics_cognitive",
+      "category": "Panduan Interpretasi Psikotes",
       "source_sha256": "6ecec7537399a0530ee61aa97c3c17d59e66794711b41610fa0c155316ecff50",
       "format": "markdown",
       "license": "CC-BY-SA-4.0",
       "provenance": "Bank Materi Konseling - Repositori Psikodiagnostika Klinis & Acuan Skoring Army Alpha Terverifikasi",
-      "source_locator": "ai/counseling/army_alpha_cognitive_assessment.md"
+      "source_locator": "ai/counseling/army_alpha_cognitive_assessment.md",
+      "collection": "psychometric_interpretation_guide",
+      "intended_audience": "counselor_psychologist",
+      "evidence_level": "manual_grounded_reference",
+      "usage_restrictions": [
+        "interpretation_guidance_only",
+        "no_answer_keys"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_01_dasar_001",
+      "title": "Buku Ajar Dasar-Dasar Bimbingan dan Konseling (Dr. Randi Saputra, M.Pd., Kons., Katharina E.P Korohama, M.Pd., dkk., 2024)",
+      "asset_path": "ai/counseling/books/bk_bk_01_dasar_001.json",
+      "category": "Etika dan Landasan Konseling",
+      "format": "json",
+      "source_sha256": "24eea65193fd052ffabc97a222f8eec21ee88ea9fca61e845f0a04d75d6b784c",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Buku_Ajar_Dasar_Dasar_Bimbingan_dan_Konseling_Sonpedia_2024.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_01_dasar_001.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_01_dasar_002",
+      "title": "Permendikbud RI No. 111 Tahun 2014 tentang Bimbingan dan Konseling pada Pendidikan Dasar dan Pendidikan Menengah (Kementerian Pendidikan dan Kebudayaan Republik Indonesia, 2014)",
+      "asset_path": "ai/counseling/books/bk_bk_01_dasar_002.json",
+      "category": "Etika dan Landasan Konseling",
+      "format": "json",
+      "source_sha256": "1d62b474c9ac68b2840a891a098fe65a9286a3e34fe0be0cf8666fd1de08e67c",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Permendikbud_No_111_Tahun_2014_BK_Dikdasmen.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_01_dasar_002.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_01_dasar_003",
+      "title": "Kode Etik Bimbingan dan Konseling Indonesia (Pengurus Besar Asosiasi Bimbingan dan Konseling Indonesia (PB ABKIN), 2018)",
+      "asset_path": "ai/counseling/books/bk_bk_01_dasar_003.json",
+      "category": "Etika dan Landasan Konseling",
+      "format": "json",
+      "source_sha256": "adaee9440d5ff89e8e439fe5ae4f46f99ba16715aa2b7a3b5b74ab69017d436d",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Kode_Etik_Bimbingan_dan_Konseling_Indonesia_ABKIN.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_01_dasar_003.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_01_dasar_004",
+      "title": "Buku Ajar Bimbingan dan Konseling Islam (Amien Wahyudi, M.Pd., 2018)",
+      "asset_path": "ai/counseling/books/bk_bk_01_dasar_004.json",
+      "category": "Etika dan Landasan Konseling",
+      "format": "json",
+      "source_sha256": "f5aa2aa7a9aed0f861daec07c7cec37af6913dab9a1a7a2948d394ec0a766158",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Buku_Ajar_Bimbingan_dan_Konseling_Islam_Amien_Wahyudi.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_01_dasar_004.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_01_dasar_005",
+      "title": "Buku Ajar Bimbingan Konseling (Dr. Sri Haryanto, M.Pd., 2024)",
+      "asset_path": "ai/counseling/books/bk_bk_01_dasar_005.json",
+      "category": "Etika dan Landasan Konseling",
+      "format": "json",
+      "source_sha256": "647755e73fb0e2c8139eda44cb5d44503332dc49aa821a75dc58e3dc71924a61",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Buku_Ajar_Bimbingan_Konseling_Sri_Haryanto_2024.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_01_dasar_005.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_02_layanan_001",
+      "title": "Bidang dan Jenis Pelayanan Bimbingan dan Konseling di Sekolah (Dr. Mahmud, M.Pd., 2022)",
+      "asset_path": "ai/counseling/books/bk_bk_02_layanan_001.json",
+      "category": "Bidang Layanan Konseling",
+      "format": "json",
+      "source_sha256": "50feb82aff99be5ce11de8a3ba652f98563fcd88abee83faab40344377f2b4fa",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Bidang_dan_Jenis_Pelayanan_BK_di_Sekolah_Mahmud_2022.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_02_layanan_001.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_02_layanan_002",
+      "title": "Kajian Bimbingan dan Konseling Karier (Silvia Yula Wardani, M.Pd., Rischa Pramudia Trisnani, M.Pd., 2020)",
+      "asset_path": "ai/counseling/books/bk_bk_02_layanan_002.json",
+      "category": "Bidang Layanan Konseling",
+      "format": "json",
+      "source_sha256": "3fdfe78b0833ec9ac51a8620e3a414cb8cd7f0879c9c368fa0198e6c0b0b21ec",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Kajian_Bimbingan_dan_Konseling_Karier_Silvia_Wardani.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_02_layanan_002.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_02_layanan_003",
+      "title": "Perkembangan Peserta Didik dan Pembelajarannya (Dr. Dahlia Novarianing Asri, M.Si., Dian Ratnaningtyas, dkk., 2018)",
+      "asset_path": "ai/counseling/books/bk_bk_02_layanan_003.json",
+      "category": "Bidang Layanan Konseling",
+      "format": "json",
+      "source_sha256": "3d2fe0078c6b1962ea6c7a767c6e0527554a80d4e1fff2d8495b520d3ae3e220",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Perkembangan_Peserta_Didik_dan_Pemahaman_Individu_Dahlia.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_02_layanan_003.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_02_layanan_004",
+      "title": "Buku Ajar Bimbingan Konseling Sosial (Dra. Faizah Noer Laela, M.Si., 2017)",
+      "asset_path": "ai/counseling/books/bk_bk_02_layanan_004.json",
+      "category": "Bidang Layanan Konseling",
+      "format": "json",
+      "source_sha256": "42ac72919e51d7e88e4d36fe8565dc3391d9875d454446e5fdc2c84908934fa3",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Buku_Ajar_Bimbingan_Konseling_Sosial_Faizah_2017.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_02_layanan_004.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_02_layanan_005",
+      "title": "Bimbingan Konseling Keluarga dan Remaja (Dra. Faizah Noer Laela, M.Si., 2017)",
+      "asset_path": "ai/counseling/books/bk_bk_02_layanan_005.json",
+      "category": "Bidang Layanan Konseling",
+      "format": "json",
+      "source_sha256": "6d27d56537ea63a0d156038cb4ce187346c4011218e01f75d1a9079cfcfccf2f",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Bimbingan_Konseling_Keluarga_dan_Remaja_Faizah_2017.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_02_layanan_005.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_03_teori_001",
+      "title": "Teori dan Teknik Bimbingan Konseling (Drs. Latinulu, M.Pd., 2020)",
+      "asset_path": "ai/counseling/books/bk_bk_03_teori_001.json",
+      "category": "Teori dan Teknik Konseling",
+      "format": "json",
+      "source_sha256": "56a169a3b2584c2049e8ac20666fd5901d1fd11df94903b73d7474ae2417cd90",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Teori_dan_Teknik_Bimbingan_Konseling_Latinulu_2020.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_03_teori_001.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_03_teori_002",
+      "title": "Bimbingan dan Konseling: Konsep, Teori dan Aplikasinya (Drs. Masdudi, M.Pd., 2015)",
+      "asset_path": "ai/counseling/books/bk_bk_03_teori_002.json",
+      "category": "Teori dan Teknik Konseling",
+      "format": "json",
+      "source_sha256": "c4d4e634d1c07ade824e9af5902b8391f361bb0db29efb77322e415e888989b6",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Buku_Ajar_Konsep_Teori_dan_Aplikasi_BK_Masdudi_2015.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_03_teori_002.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_04_kelompok_001",
+      "title": "Buku Ajar Konseling Kelompok (Dr. Muya Barida, M.Pd., Dian Ari Widyastuti, M.Pd., Yuanita Dwi Krisphianti, M.Pd., 2023)",
+      "asset_path": "ai/counseling/books/bk_bk_04_kelompok_001.json",
+      "category": "Konseling Kelompok dan Klasikal",
+      "format": "json",
+      "source_sha256": "d428d79f7d0e5d4d652ff17869de726af311ac704ea0328517ad6c70aab3b658",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Buku_Ajar_Konseling_Kelompok_Muya_Barida.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_04_kelompok_001.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_04_kelompok_002",
+      "title": "Panduan Operasional Penyelenggaraan Bimbingan dan Konseling (POP BK) (Dr. Muh Farozin, M.Pd., Dr. Suwarjo, M.Si., Prof. Sunaryo Kartadinata, Prof. Syamsu Yusuf, dkk., 2016)",
+      "asset_path": "ai/counseling/books/bk_bk_04_kelompok_002.json",
+      "category": "Konseling Kelompok dan Klasikal",
+      "format": "json",
+      "source_sha256": "3bc380da16a80bbd8de61b8a428aa7d22ba97d3824f1dbffb61b5d54e275c792",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Panduan_Operasional_BK_POP_BK_SD_Kemendikbud_GTK.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_04_kelompok_002.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_05_mikro_001",
+      "title": "Modul Praktikum Keterampilan Konseling (Agung Budi Prabowo, M.Pd., 2021)",
+      "asset_path": "ai/counseling/books/bk_bk_05_mikro_001.json",
+      "category": "Keterampilan Mikro Konseling",
+      "format": "json",
+      "source_sha256": "3e696a3decebe1fb4b633fef00be92084277c6339a56dfdc62e5973acbd74194",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Modul_Praktikum_Keterampilan_Konseling_UAD.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_05_mikro_001.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_05_mikro_002",
+      "title": "Panduan Praktis Konseling Online Bagi Konselor (Prof. Dr. Nurussakinah Daulay, M.Psi., Psikolog & Ade Chita Putri Harahap, M.Pd., Kons., 2021)",
+      "asset_path": "ai/counseling/books/bk_bk_05_mikro_002.json",
+      "category": "Keterampilan Mikro Konseling",
+      "format": "json",
+      "source_sha256": "1f7a154df37e144cd133db5c409be47ea1cc22b8299c00b2031e228d60224109",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Panduan_Praktis_Konseling_Online_Bagi_Konselor_Daulay_Harahap.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_05_mikro_002.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_05_mikro_003",
+      "title": "Buku Ajar Cyber Counseling (Ade Chita Putri Harahap, M.Pd., Kons. & Sari Wardani Simarmata, M.Pd., 2023)",
+      "asset_path": "ai/counseling/books/bk_bk_05_mikro_003.json",
+      "category": "Keterampilan Mikro Konseling",
+      "format": "json",
+      "source_sha256": "df8a2ee94324cf3c3bb4fbdba3faf2394b560b446f2d80238e5ab569db70aad5",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Buku_Ajar_Cyber_Counseling_Harahap_Simarmata_2023.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_05_mikro_003.json",
+      "collection": "counseling_theory",
+      "intended_audience": "counselor",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_06_asesmen_001",
+      "title": "Modul Pelatihan Guru BK: Asesmen dalam Bimbingan dan Konseling (Direktorat Jenderal Guru dan Tenaga Kependidikan, 2013)",
+      "asset_path": "ai/counseling/books/bk_bk_06_asesmen_001.json",
+      "category": "Asesmen dan Tindak Lanjut",
+      "format": "json",
+      "source_sha256": "a1962c9550a7ff90e82d45e06460530535f849720b5e937c87c4d62085605074",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Modul_Asesmen_BK_dan_Peminatan_Kemdikbud.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_06_asesmen_001.json",
+      "collection": "clinical_guidance",
+      "intended_audience": "counselor_psychologist",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_06_asesmen_002",
+      "title": "Monograf Individualized Education Program (IEP) Bagi Siswa Berkebutuhan Khusus (Dr. Dahlia Novarianing Asri, M.Si., 2020)",
+      "asset_path": "ai/counseling/books/bk_bk_06_asesmen_002.json",
+      "category": "Asesmen dan Tindak Lanjut",
+      "format": "json",
+      "source_sha256": "1602aa47e4e06aeb1b912f7e74b285fbf7676cb3b2d8a8b40a0e09b42ca3e4d3",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Monograf_IEP_dan_Intervensi_Individual_BK_Dahlia.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_06_asesmen_002.json",
+      "collection": "clinical_guidance",
+      "intended_audience": "counselor_psychologist",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
+    },
+    {
+      "document_id": "bk_06_asesmen_003",
+      "title": "Manajemen Bimbingan dan Konseling (Dr. Masbur, S.Ag., M.Ag. & Nuzliah, S.Ag., M.Pd., 2017)",
+      "asset_path": "ai/counseling/books/bk_bk_06_asesmen_003.json",
+      "category": "Asesmen dan Tindak Lanjut",
+      "format": "json",
+      "source_sha256": "4fe324e065d5d69d191b50c60babd872b02d3fda9ee7402891290d60d8da23c4",
+      "license": "CC-BY-SA-4.0",
+      "provenance": "BankMateriKonseling/Manajemen_Bimbingan_dan_Konseling_Masbur_2017.pdf",
+      "source_locator": "BankMateriKonseling/json_rag/bk_bk_06_asesmen_003.json",
+      "collection": "clinical_guidance",
+      "intended_audience": "counselor_psychologist",
+      "evidence_level": "academic_textbook_reference",
+      "usage_restrictions": [
+        "non_diagnostic_support"
+      ],
+      "review_status": "reviewed",
+      "document_version": "1.0"
     }
   ],
-  "manifest_sha256": "d81b1dc975f03119900d0b8464a6ea8b6cc96bdbd3d8ccf8f10c2596d9f9d445"
+  "manifest_sha256": "1e939ea9384c890cfd1f2afd332dc201917e77da0ec10c8a18f4941bacef94de"
 }

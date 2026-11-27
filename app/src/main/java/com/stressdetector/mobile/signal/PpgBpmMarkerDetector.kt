@@ -43,26 +43,18 @@ class BpmSummaryAccumulator {
  * resamples the waveform again. Callers must run SQA before requesting an
  * estimate, so invalid data produces no physiological marker.
  */
+internal data class PpgPeakExtraction(
+    val values: DoubleArray,
+    val peaks: IntArray,
+    val intervalsMillis: List<Double>,
+    val windowStartElapsedMillis: Long,
+    val windowEndElapsedMillis: Long
+)
+
 class PpgBpmEstimator(private val windowSeconds: Int) {
     fun estimate(window: PreparedPpgWindow): BpmEstimate? {
-        val sampleCount = window.type.samplingRateHz * windowSeconds
-        if (window.size < sampleCount || window.elapsedTimestampsMillis.size != window.size) return null
-
-        val first = window.size - sampleCount
-        val values = window.filteredValues.copyOfRange(first, window.size)
-        if (values.any { !it.isFinite() }) return null
-        val range = (values.maxOrNull() ?: 0.0) - (values.minOrNull() ?: 0.0)
-        if (range <= MIN_AMPLITUDE_RANGE) return null
-
-        val minimumDistance = (window.type.samplingRateHz * MIN_BEAT_SECONDS).toInt().coerceAtLeast(1)
-        val prominence = maxOf(MIN_PROMINENCE, range * PROMINENCE_RATIO)
-        val peaks = findPeaks(values, minimumDistance, prominence)
-        val intervalsMillis = buildList<Double> {
-            for (index in 0 until peaks.lastIndex) {
-                val interval = (peaks[index + 1] - peaks[index]) * 1_000.0 / window.type.samplingRateHz
-                if (interval in MIN_IBI_MILLIS..MAX_IBI_MILLIS) add(interval)
-            }
-        }
+        val extraction = extractPeaks(window) ?: return null
+        val intervalsMillis = extraction.intervalsMillis
         if (intervalsMillis.size < MIN_INTERVAL_COUNT) return null
 
         val medianIbi = intervalsMillis.sorted().let { sorted ->
@@ -70,14 +62,45 @@ class PpgBpmEstimator(private val windowSeconds: Int) {
             if (sorted.size % 2 == 0) (sorted[middle - 1] + sorted[middle]) / 2.0 else sorted[middle]
         }
         val bpm = (60_000.0 / medianIbi).toFloat()
-        if (!bpm.isFinite() || bpm !in MIN_BPM..MAX_BPM) return null
+        return if (bpm.isFinite() && bpm in MIN_BPM..MAX_BPM) {
+            BpmEstimate(
+                bpm = bpm,
+                peakCount = intervalsMillis.size + 1,
+                windowStartElapsedMillis = extraction.windowStartElapsedMillis,
+                windowEndElapsedMillis = extraction.windowEndElapsedMillis
+            )
+        } else {
+            null
+        }
+    }
 
-        return BpmEstimate(
-            bpm = bpm,
-            peakCount = intervalsMillis.size + 1,
-            windowStartElapsedMillis = window.elapsedTimestampsMillis[first],
-            windowEndElapsedMillis = window.elapsedTimestampsMillis.last()
-        )
+    internal fun extractPeaks(window: PreparedPpgWindow): PpgPeakExtraction? {
+        val sampleCount = window.type.samplingRateHz * windowSeconds
+        var result: PpgPeakExtraction? = null
+        if (window.size >= sampleCount && window.elapsedTimestampsMillis.size == window.size) {
+            val first = window.size - sampleCount
+            val values = window.filteredValues.copyOfRange(first, window.size)
+            val range = (values.maxOrNull() ?: 0.0) - (values.minOrNull() ?: 0.0)
+            if (values.all { it.isFinite() } && range > MIN_AMPLITUDE_RANGE) {
+                val minimumDistance = (window.type.samplingRateHz * MIN_BEAT_SECONDS).toInt().coerceAtLeast(1)
+                val prominence = maxOf(MIN_PROMINENCE, range * PROMINENCE_RATIO)
+                val peaks = findPeaks(values, minimumDistance, prominence)
+                val intervalsMillis = buildList<Double> {
+                    for (index in 0 until peaks.lastIndex) {
+                        val interval = (peaks[index + 1] - peaks[index]) * 1_000.0 / window.type.samplingRateHz
+                        if (interval in MIN_IBI_MILLIS..MAX_IBI_MILLIS) add(interval)
+                    }
+                }
+                result = PpgPeakExtraction(
+                    values = values,
+                    peaks = peaks,
+                    intervalsMillis = intervalsMillis,
+                    windowStartElapsedMillis = window.elapsedTimestampsMillis[first],
+                    windowEndElapsedMillis = window.elapsedTimestampsMillis.last()
+                )
+            }
+        }
+        return result
     }
 
     private fun findPeaks(values: DoubleArray, minimumDistance: Int, minimumProminence: Double): IntArray {

@@ -1,14 +1,17 @@
 package com.stressdetector.mobile.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.stressdetector.mobile.MainActivity
@@ -110,7 +113,8 @@ class UnifiedSessionService : LifecycleService() {
                     ?.takeIf(String::isNotBlank)
                     ?.let(AudioInputSource::Imported)
                     ?: AudioInputSource.Microphone,
-                monitoringEnabled = monitoringEnabled
+                monitoringEnabled = monitoringEnabled,
+                watchWearerRole = intent.getStringExtra(EXTRA_WATCH_WEARER_ROLE).orEmpty().ifBlank { "CLIENT" }
             )
             isServiceStarted = true
         } catch (e: Exception) {
@@ -121,12 +125,19 @@ class UnifiedSessionService : LifecycleService() {
         }
     }
 
-    private fun foregroundServiceType(intent: Intent, monitoringEnabled: Boolean): Int = when {
-        !intent.getStringExtra(EXTRA_AUDIO_URI).isNullOrBlank() -> ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        monitoringEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-        else -> 0
+    private fun foregroundServiceType(intent: Intent, monitoringEnabled: Boolean): Int {
+        val hasBluetoothPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) ==
+            PackageManager.PERMISSION_GRANTED
+        return when {
+            !intent.getStringExtra(EXTRA_AUDIO_URI).isNullOrBlank() -> ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            monitoringEnabled &&
+                hasBluetoothPermission &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            else -> 0
+        }
     }
 
     private suspend fun stopSessionService() {
@@ -215,6 +226,7 @@ class UnifiedSessionService : LifecycleService() {
         const val EXTRA_SESSION_LANGUAGE = "EXTRA_SESSION_LANGUAGE"
         const val EXTRA_AUDIO_URI = "EXTRA_AUDIO_URI"
         const val EXTRA_MONITORING_ENABLED = "EXTRA_MONITORING_ENABLED"
+        const val EXTRA_WATCH_WEARER_ROLE = "EXTRA_WATCH_WEARER_ROLE"
         private const val MAX_PROCESSED_COMMANDS = 64
 
         fun putConsentToken(intent: Intent, prefix: String, token: ConsentToken) {

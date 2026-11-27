@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.res.AssetManager
 import java.io.ByteArrayInputStream
+import java.io.File
+import java.security.MessageDigest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -118,5 +120,52 @@ class AppHardeningTest {
             "Should not flag package tampering",
             report.detectedAnomalies.any { it.contains("PACKAGE_TAMPERED") }
         )
+    }
+
+    @Test
+    fun testCheckAssetIntegrityAcceptsBothLfAndCrlfLineEndings() {
+        val assetPaths = listOf(
+            "ai/psychometrics/catalog.json",
+            "ai/psychometrics/protocols.json",
+            "ai/bundled_knowledge_manifest.json"
+        )
+        listOf(false, true).forEach { useCrlf ->
+            val context = mock(Context::class.java)
+            val assets = mock(AssetManager::class.java)
+            `when`(context.assets).thenReturn(assets)
+            assetPaths.forEach { rel ->
+                val rawText = resolveCanonicalAsset(rel).readText(Charsets.UTF_8)
+                val lfText = rawText.replace("\r\n", "\n")
+                val variantBytes = (if (useCrlf) lfText.replace("\n", "\r\n") else lfText).toByteArray(Charsets.UTF_8)
+                `when`(assets.open(rel)).thenAnswer { ByteArrayInputStream(variantBytes) }
+            }
+            val failed = AppHardeningManager.checkAssetIntegrity(context)
+            assertTrue(
+                "Expected all canonical assets to pass integrity check (crlf=$useCrlf), failed=$failed",
+                failed.isEmpty()
+            )
+        }
+    }
+
+    @Test
+    fun testCanonicalAssetChecksumsMatchOnDiskLfHashes() {
+        AppHardeningManager.CRITICAL_ASSET_CHECKSUMS.forEach { (rel, expectedHash) ->
+            val lfBytes = resolveCanonicalAsset(rel)
+                .readText(Charsets.UTF_8)
+                .replace("\r\n", "\n")
+                .toByteArray(Charsets.UTF_8)
+            val actualLfHash = MessageDigest.getInstance("SHA-256")
+                .digest(lfBytes)
+                .joinToString("") { "%02X".format(it) }
+            assertEquals("Canonical LF SHA-256 mismatch for $rel", expectedHash, actualLfHash)
+        }
+    }
+
+    private fun resolveCanonicalAsset(relativePath: String): File {
+        val direct = File("src/main/canonicalAssets/$relativePath")
+        if (direct.isFile) return direct
+        val nested = File("app/src/main/canonicalAssets/$relativePath")
+        if (nested.isFile) return nested
+        throw IllegalStateException("Canonical asset not found: $relativePath (cwd=${File(".").absolutePath})")
     }
 }

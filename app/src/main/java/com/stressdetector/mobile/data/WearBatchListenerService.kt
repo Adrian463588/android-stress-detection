@@ -14,6 +14,8 @@ import com.stressdetector.shared.PpgTerminalAck
 import com.stressdetector.shared.PpgType
 import com.stressdetector.shared.SessionCommandCodec
 import com.stressdetector.shared.SessionProtocolCodec
+import com.stressdetector.shared.WearHeartRateCodec
+import com.stressdetector.shared.WearTemperatureCodec
 
 class WearBatchListenerService : WearableListenerService() {
     override fun onMessageReceived(messageEvent: MessageEvent) {
@@ -87,6 +89,38 @@ class WearBatchListenerService : WearableListenerService() {
                 AppLocator.ppgRepository.recordTransportIncomplete(
                     "Phone PPG ingestion queue full; terminal receipt retained on Watch for retry"
                 )
+            }
+            return
+        }
+
+        if (messageEvent.path == MessagePath.HEART_RATE_LIVE) {
+            if (!batchIngress.submit {
+                    val hrBatch = runCatching { WearHeartRateCodec.decode(messageEvent.data) }.getOrNull()
+                    if (hrBatch != null) {
+                        AppLocator.ppgRepository.onHeartRateBatchReceived(hrBatch, messageEvent.sourceNodeId)
+                    }
+                }
+            ) {
+                AppLocator.ppgRepository.recordError("Phone PPG ingestion queue full; HR packet ignored")
+            }
+            return
+        }
+
+        if (messageEvent.path == MessagePath.SKIN_TEMPERATURE_LIVE) {
+            if (!batchIngress.submit {
+                    val tempBatch = runCatching { WearTemperatureCodec.decode(messageEvent.data) }.getOrNull()
+                    if (tempBatch != null) {
+                        val accepted = AppLocator.ppgRepository.onSkinTemperatureBatchReceived(
+                            tempBatch,
+                            messageEvent.sourceNodeId
+                        )
+                        if (accepted) {
+                            AppLocator.wearConnectionRepository.markStreamingEvidence(messageEvent.sourceNodeId)
+                        }
+                    }
+                }
+            ) {
+                AppLocator.ppgRepository.recordError("Phone ingestion queue full; skin temperature packet ignored")
             }
             return
         }

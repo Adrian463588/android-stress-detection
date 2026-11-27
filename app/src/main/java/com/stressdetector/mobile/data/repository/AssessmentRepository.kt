@@ -4,25 +4,39 @@ import android.content.Context
 import com.google.gson.Gson
 import com.stressdetector.mobile.data.db.AssessmentResultDao
 import com.stressdetector.mobile.data.db.AssessmentResultEntity
+import com.stressdetector.mobile.data.db.AssessmentResultSnapshotEntity
 import com.stressdetector.mobile.domain.assessment.AssessmentCatalog
 import com.stressdetector.mobile.domain.assessment.AssessmentEnrichers
 import com.stressdetector.mobile.domain.assessment.AssessmentInstrument
+import com.stressdetector.mobile.domain.assessment.AssessmentObservation
 import com.stressdetector.mobile.domain.assessment.AssessmentProtocol
 import com.stressdetector.mobile.domain.assessment.AssessmentResult
 import com.stressdetector.mobile.domain.assessment.AssessmentScore
 import com.stressdetector.mobile.domain.assessment.AssessmentScoring
+import com.stressdetector.mobile.domain.assessment.AssessmentValidityStatus
+import com.stressdetector.mobile.domain.assessment.AssessmentVisualizationType
 import com.stressdetector.mobile.domain.assessment.CounselingKnowledgeModule
+import com.stressdetector.mobile.domain.assessment.ExaminerReviewStatus
+import com.stressdetector.mobile.domain.assessment.InstrumentImplementationStatus
+import com.stressdetector.mobile.domain.assessment.ProjectivePanelDraft
+import com.stressdetector.mobile.domain.assessment.PsychometricInstrumentRegistry
+import com.stressdetector.mobile.domain.assessment.RorschachResponseDraft
+import com.stressdetector.mobile.domain.assessment.WarteggBoxDraft
+import com.stressdetector.mobile.ml.rag.AssetBundledLocalCorpus
+import com.stressdetector.mobile.ml.rag.assessmentFollowUpReference
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class AssessmentRepository(context: Context, private val resultDao: () -> AssessmentResultDao) {
+class AssessmentRepository(
+    context: Context,
+    private val onResultPersisted: (suspend (AssessmentResult) -> Unit)? = null,
+    private val resultDao: () -> AssessmentResultDao
+) {
     private val appContext = context.applicationContext
     private val assets = appContext.assets
     private val gson = Gson()
-    private val searchPrefs by lazy {
-        appContext.getSharedPreferences("assessment_search_prefs", Context.MODE_PRIVATE)
-    }
     private val catalog by lazy {
         val instruments = assets.open("ai/psychometrics/catalog.json").bufferedReader().use {
             gson.fromJson(it, Array<AssessmentInstrument>::class.java).toList()
@@ -122,34 +136,44 @@ class AssessmentRepository(context: Context, private val resultDao: () -> Assess
     suspend fun recommend(query: String): List<AssessmentInstrument> = withContext(Dispatchers.IO) { catalog.recommend(query) }
 
     suspend fun getResult(id: String): AssessmentResult? = withContext(Dispatchers.IO) {
-        resultDao().get(id)?.decode()
+        resultDao().snapshotsForInstrument(id).firstOrNull()?.decode()
+            ?: resultDao().get(id)?.decode()
+    }
+
+    suspend fun getResultById(resultId: String): AssessmentResult? = withContext(Dispatchers.IO) {
+        resultDao().getSnapshot(resultId)?.decode()
+            ?: resultDao().all().map { it.decode() }.firstOrNull { it.resultId == resultId }
+    }
+
+    suspend fun getResultsForInstrument(instrumentId: String): List<AssessmentResult> = withContext(Dispatchers.IO) {
+        val snapshots = resultDao().snapshotsForInstrument(instrumentId).map { it.decode() }
+        if (snapshots.isNotEmpty()) return@withContext snapshots
+        listOfNotNull(resultDao().get(instrumentId)?.decode())
     }
 
     suspend fun getAllResults(): List<AssessmentResult> = withContext(Dispatchers.IO) {
-        resultDao().all().map { it.decode() }
+        val snapshots = resultDao().allSnapshots().map { it.decode() }
+        val knownIds = snapshots.mapTo(HashSet()) { it.resultId }
+        val legacyOnly = resultDao().all().map { it.decode() }.filter { it.resultId !in knownIds }
+        (snapshots + legacyOnly).sortedByDescending { it.createdAtMillis }
     }
 
-    suspend fun getRecentAssessmentSummary(): String = withContext(Dispatchers.IO) {
-        val results = resultDao().all().map { it.decode() }
-        if (results.isEmpty()) return@withContext ""
-        results.take(3).joinToString("; ") { result ->
-            val scoresSummary = if (result.scores.isNotEmpty()) {
-                result.scores.joinToString(", ") { "${it.label}: ${it.displayValue()}" }
-            } else {
-                "${result.answered} dijawab"
-            }
-            "${result.title} (Skor: $scoresSummary | Interpretasi: ${result.interpretation})"
-        }
+    suspend fun resultForDiscussion(query: String): AssessmentResult? = withContext(Dispatchers.IO) {
+        val instrument = catalog.findNamedInstrument(query) ?: return@withContext null
+        resultDao().get(instrument.id)?.decode()
     }
+
+    suspend fun followUpReference() = assessmentFollowUpReference(AssetBundledLocalCorpus(appContext))
 
     suspend fun save(id: String, answers: Map<Int, Int>): AssessmentResult = withContext(Dispatchers.IO) {
         val form = requireNotNull(catalog.find(id)?.form)
         val rawScores = AssessmentScoring.score(form, answers)
-        val (finalScores, dynamicInterpretation) = AssessmentEnrichers.enrich(id, form, answers, rawScores)
+        val outcome = AssessmentEnrichers.enrichDetailed(id, form, answers, rawScores)
+        val spec = PsychometricInstrumentRegistry.specFor(id)
         val answeredCount = when (id) {
             "disc" -> (0 until 24).count { answers.containsKey(it * 2) && answers.containsKey(it * 2 + 1) }
             "kuder" -> (0 until 168).count { answers.containsKey(it * 2) && answers.containsKey(it * 2 + 1) }
-            "kraepelin" -> (0 until form.items.size).count { answers.containsKey(it) }
+            "kraepelin", "pauli" -> (0 until form.items.size).count { answers.containsKey(it) }
             else -> answers.size
         }
         val result = AssessmentResult(
@@ -163,8 +187,178 @@ class AssessmentRepository(context: Context, private val resultDao: () -> Assess
             createdAtMillis = System.currentTimeMillis(),
             answered = answeredCount,
             itemCount = form.items.size,
-            scores = finalScores,
-            interpretation = dynamicInterpretation
+            scores = outcome.scores,
+            interpretation = outcome.interpretation,
+            schemaVersion = PsychometricInstrumentRegistry.RESULT_SCHEMA_VERSION,
+            administrationMode = "interactive_form",
+            scoringStatus = outcome.scoringStatus,
+            validityStatus = outcome.validityStatus,
+            validityWarnings = outcome.validityWarnings,
+            reviewStatus = outcome.reviewStatus,
+            scorerVersion = PsychometricInstrumentRegistry.SCORER_VERSION,
+            normReference = outcome.normReference ?: spec.normStatus,
+            visualizationType = spec.visualizationType,
+            observations = outcome.observations,
+            warteggDrafts = outcome.warteggDrafts,
+            rorschachResponses = outcome.rorschachResponses
+        )
+        store(result)
+    }
+
+    suspend fun saveWarteggDrafts(
+        drafts: List<WarteggBoxDraft>,
+        multimodalSummary: String? = null
+    ): AssessmentResult = withContext(Dispatchers.IO) {
+        val instrument = requireNotNull(catalog.find("wartegg"))
+        val form = instrument.form
+        val spec = PsychometricInstrumentRegistry.specFor("wartegg")
+        val outcome = AssessmentEnrichers.scoreWarteggFromDrafts(drafts, multimodalSummary)
+        val result = AssessmentResult(
+            resultId = UUID.randomUUID().toString(),
+            instrumentId = "wartegg",
+            title = form?.title ?: instrument.title,
+            version = form?.version ?: spec.formVersion,
+            sourceTitle = form?.sourceTitle ?: instrument.source,
+            sourceUrl = form?.sourceUrl ?: instrument.referenceUrl.orEmpty(),
+            sourceLocator = form?.sourceLocator ?: instrument.source,
+            createdAtMillis = System.currentTimeMillis(),
+            answered = drafts.count { it.hasContent() },
+            itemCount = 8,
+            scores = outcome.scores,
+            interpretation = outcome.interpretation,
+            schemaVersion = PsychometricInstrumentRegistry.RESULT_SCHEMA_VERSION,
+            administrationMode = "wartegg_canvas",
+            scoringStatus = outcome.scoringStatus,
+            validityStatus = outcome.validityStatus,
+            validityWarnings = outcome.validityWarnings,
+            reviewStatus = outcome.reviewStatus,
+            scorerVersion = PsychometricInstrumentRegistry.SCORER_VERSION,
+            normReference = outcome.normReference ?: spec.normStatus,
+            visualizationType = AssessmentVisualizationType.WARTEGG_EIGHT_BOX,
+            observations = outcome.observations,
+            warteggDrafts = drafts,
+            multimodalSummary = outcome.multimodalSummary
+        )
+        store(result)
+    }
+
+    suspend fun saveProjectivePanels(
+        id: String,
+        panels: List<ProjectivePanelDraft>,
+        multimodalSummary: String? = null
+    ): AssessmentResult = withContext(Dispatchers.IO) {
+        val instrument = requireNotNull(catalog.find(id))
+        val form = instrument.form
+        val spec = PsychometricInstrumentRegistry.specFor(id)
+        val outcome = AssessmentEnrichers.scoreProjectivePanels(id, instrument.title, panels, multimodalSummary)
+        val result = AssessmentResult(
+            resultId = UUID.randomUUID().toString(),
+            instrumentId = id,
+            title = form?.title ?: instrument.title,
+            version = form?.version ?: spec.formVersion,
+            sourceTitle = form?.sourceTitle ?: instrument.source,
+            sourceUrl = form?.sourceUrl ?: instrument.referenceUrl.orEmpty(),
+            sourceLocator = form?.sourceLocator ?: instrument.source,
+            createdAtMillis = System.currentTimeMillis(),
+            answered = panels.count { it.hasContent() },
+            itemCount = panels.size.coerceAtLeast(1),
+            scores = outcome.scores,
+            interpretation = outcome.interpretation,
+            schemaVersion = PsychometricInstrumentRegistry.RESULT_SCHEMA_VERSION,
+            administrationMode = "${id}_canvas",
+            scoringStatus = outcome.scoringStatus,
+            validityStatus = outcome.validityStatus,
+            validityWarnings = outcome.validityWarnings,
+            reviewStatus = outcome.reviewStatus,
+            scorerVersion = PsychometricInstrumentRegistry.SCORER_VERSION,
+            normReference = outcome.normReference ?: spec.normStatus,
+            visualizationType = spec.visualizationType,
+            observations = outcome.observations,
+            projectivePanels = panels,
+            multimodalSummary = outcome.multimodalSummary
+        )
+        store(result)
+    }
+
+    suspend fun saveRorschachResponses(
+        responses: List<RorschachResponseDraft>,
+        systemId: String = "EXNER_CS",
+        multimodalSummary: String? = null
+    ): AssessmentResult = withContext(Dispatchers.IO) {
+        val instrument = requireNotNull(catalog.find("rorschach"))
+        val form = instrument.form
+        val spec = PsychometricInstrumentRegistry.specFor("rorschach")
+        val outcome = AssessmentEnrichers.scoreRorschachFromDrafts(responses, systemId, multimodalSummary)
+        val result = AssessmentResult(
+            resultId = UUID.randomUUID().toString(),
+            instrumentId = "rorschach",
+            title = form?.title ?: instrument.title,
+            version = form?.version ?: spec.formVersion,
+            sourceTitle = form?.sourceTitle ?: instrument.source,
+            sourceUrl = form?.sourceUrl ?: instrument.referenceUrl.orEmpty(),
+            sourceLocator = form?.sourceLocator ?: instrument.source,
+            createdAtMillis = System.currentTimeMillis(),
+            answered = responses.map { it.cardNumber }.distinct().size,
+            itemCount = 10,
+            scores = outcome.scores,
+            interpretation = outcome.interpretation,
+            schemaVersion = PsychometricInstrumentRegistry.RESULT_SCHEMA_VERSION,
+            administrationMode = "rorschach_protocol",
+            scoringStatus = outcome.scoringStatus,
+            validityStatus = outcome.validityStatus,
+            validityWarnings = outcome.validityWarnings,
+            reviewStatus = outcome.reviewStatus,
+            scorerVersion = PsychometricInstrumentRegistry.SCORER_VERSION,
+            normReference = outcome.normReference ?: spec.normStatus,
+            visualizationType = AssessmentVisualizationType.EXAMINER_CODED_PROFILE,
+            observations = outcome.observations,
+            rorschachResponses = responses,
+            multimodalSummary = outcome.multimodalSummary
+        )
+        store(result)
+    }
+
+    suspend fun savePrototypeDemoResult(
+        id: String,
+        scores: List<AssessmentScore>,
+        interpretation: String,
+        observations: List<AssessmentObservation> = emptyList(),
+        warteggDrafts: List<WarteggBoxDraft> = emptyList(),
+        rorschachResponses: List<RorschachResponseDraft> = emptyList(),
+        projectivePanels: List<ProjectivePanelDraft> = emptyList(),
+        multimodalSummary: String? = null
+    ): AssessmentResult = withContext(Dispatchers.IO) {
+        val instrument = requireNotNull(catalog.find(id))
+        val form = instrument.form
+        val spec = PsychometricInstrumentRegistry.specFor(id)
+        val result = AssessmentResult(
+            resultId = UUID.randomUUID().toString(),
+            instrumentId = id,
+            title = form?.title ?: instrument.title,
+            version = "${form?.version ?: spec.formVersion} · Demo",
+            sourceTitle = form?.sourceTitle ?: instrument.source,
+            sourceUrl = form?.sourceUrl ?: instrument.referenceUrl.orEmpty(),
+            sourceLocator = form?.sourceLocator ?: instrument.source,
+            createdAtMillis = System.currentTimeMillis(),
+            answered = form?.items?.size ?: scores.size.coerceAtLeast(1),
+            itemCount = form?.items?.size ?: scores.size.coerceAtLeast(1),
+            scores = scores,
+            interpretation = interpretation,
+            fromMarkedSheet = false,
+            schemaVersion = PsychometricInstrumentRegistry.RESULT_SCHEMA_VERSION,
+            administrationMode = "prototype_demo_synthetic",
+            scoringStatus = InstrumentImplementationStatus.DEMONSTRATION,
+            validityStatus = AssessmentValidityStatus.VALID,
+            validityWarnings = listOf("Data Demo Sintetis purwarupa penelitian — bukan hasil asesmen klien nyata."),
+            reviewStatus = if (spec.requiresExaminerReview) ExaminerReviewStatus.PENDING else ExaminerReviewStatus.NOT_REQUIRED,
+            scorerVersion = PsychometricInstrumentRegistry.SCORER_VERSION,
+            normReference = spec.normStatus,
+            visualizationType = spec.visualizationType,
+            observations = observations,
+            warteggDrafts = warteggDrafts,
+            rorschachResponses = rorschachResponses,
+            projectivePanels = projectivePanels,
+            multimodalSummary = multimodalSummary
         )
         store(result)
     }
@@ -173,6 +367,7 @@ class AssessmentRepository(context: Context, private val resultDao: () -> Assess
         val instrument = requireNotNull(catalog.find(id))
         val protocol = requireNotNull(instrument.protocol)
         val entry = requireNotNull(protocol.entry)
+        val spec = PsychometricInstrumentRegistry.specFor(id)
         val (scores, dynamicInterpretation) = when {
             id == "wpt" && values.size >= 2 -> {
                 AssessmentEnrichers.enrichWptRecap(values[0], values[1])
@@ -200,6 +395,21 @@ class AssessmentRepository(context: Context, private val resultDao: () -> Assess
                 s to enrichMarkedSheetInterpretation(protocol, s)
             }
         }
+        val scoringStatus = if (spec.requiresExaminerReview) {
+            InstrumentImplementationStatus.EXAMINER_REVIEW_REQUIRED
+        } else {
+            spec.implementationStatus
+        }
+        val validityStatus = when (id) {
+            "mmpi" -> AssessmentValidityStatus.PENDING
+            else -> AssessmentValidityStatus.VALID
+        }
+        val warnings = emptyList<String>()
+        val reviewStatus = if (spec.requiresExaminerReview) {
+            ExaminerReviewStatus.PENDING
+        } else {
+            ExaminerReviewStatus.NOT_REQUIRED
+        }
         store(
             AssessmentResult(
                 resultId = UUID.randomUUID().toString(),
@@ -214,9 +424,53 @@ class AssessmentRepository(context: Context, private val resultDao: () -> Assess
                 itemCount = entry.fields.size,
                 scores = scores,
                 interpretation = dynamicInterpretation,
-                fromMarkedSheet = true
+                fromMarkedSheet = true,
+                schemaVersion = PsychometricInstrumentRegistry.RESULT_SCHEMA_VERSION,
+                administrationMode = "marked_sheet",
+                scoringStatus = scoringStatus,
+                validityStatus = validityStatus,
+                validityWarnings = warnings,
+                reviewStatus = reviewStatus,
+                scorerVersion = PsychometricInstrumentRegistry.SCORER_VERSION,
+                normReference = spec.normStatus,
+                visualizationType = spec.visualizationType
             )
         )
+    }
+
+    suspend fun submitExaminerReview(
+        instrumentId: String,
+        reviewStatus: ExaminerReviewStatus,
+        reviewerId: String,
+        reviewNotes: String,
+        examinerCodes: Map<String, String> = emptyMap(),
+        validityOverride: AssessmentValidityStatus? = null,
+        resultId: String? = null
+    ): AssessmentResult? = withContext(Dispatchers.IO) {
+        val existing = (if (!resultId.isNullOrBlank()) getResultById(resultId) else null)
+            ?: getResult(instrumentId)
+            ?: return@withContext null
+        val updated = existing.copy(
+            reviewStatus = reviewStatus,
+            reviewerId = reviewerId.ifBlank { null },
+            reviewNotes = reviewNotes.ifBlank { null },
+            reviewedAtMillis = System.currentTimeMillis(),
+            examinerCodes = existing.examinerCodes + examinerCodes,
+            validityStatus = validityOverride ?: existing.validityStatus
+        )
+        store(updated)
+    }
+
+    suspend fun updateConsentFlags(
+        instrumentId: String,
+        aiContextAllowed: Boolean,
+        researchExportAllowed: Boolean,
+        resultId: String? = null
+    ): AssessmentResult? = withContext(Dispatchers.IO) {
+        val existing = (if (!resultId.isNullOrBlank()) getResultById(resultId) else null)
+            ?: getResult(instrumentId)
+            ?: return@withContext null
+        store(existing.copy(aiContextAllowed = aiContextAllowed, researchExportAllowed = researchExportAllowed))
     }
 
     private fun enrichMarkedSheetInterpretation(protocol: AssessmentProtocol, scores: List<AssessmentScore>): String {
@@ -228,45 +482,45 @@ class AssessmentRepository(context: Context, private val resultDao: () -> Assess
         }
     }
 
-    suspend fun delete(id: String) = withContext(Dispatchers.IO) { resultDao().delete(id) }
+    suspend fun delete(id: String) = withContext(Dispatchers.IO) {
+        resultDao().delete(id)
+        resultDao().deleteSnapshotsForInstrument(id)
+    }
+
+    suspend fun deleteByResultId(resultId: String) = withContext(Dispatchers.IO) {
+        val target = getResultById(resultId) ?: return@withContext
+        resultDao().deleteSnapshot(resultId)
+        val remainingLatest = resultDao().snapshotsForInstrument(target.instrumentId).firstOrNull()?.decode()
+        if (remainingLatest != null) {
+            resultDao().save(AssessmentResultEntity(target.instrumentId, gson.toJson(remainingLatest)))
+        } else {
+            resultDao().delete(target.instrumentId)
+        }
+    }
 
     private suspend fun store(result: AssessmentResult): AssessmentResult {
-        resultDao().save(AssessmentResultEntity(result.instrumentId, gson.toJson(result)))
+        val payload = gson.toJson(result)
+        resultDao().save(AssessmentResultEntity(result.instrumentId, payload))
+        resultDao().saveSnapshot(
+            AssessmentResultSnapshotEntity(
+                resultId = result.resultId,
+                instrumentId = result.instrumentId,
+                participantId = result.participantId,
+                createdAtMillis = result.createdAtMillis,
+                payloadJson = payload
+            )
+        )
+        onResultPersisted?.let { callback ->
+            runCatching { callback(result) }.onFailure {
+                if (it is CancellationException) throw it
+            }
+        }
         return result
     }
 
     private fun AssessmentResultEntity.decode(): AssessmentResult =
         gson.fromJson(payloadJson, AssessmentResult::class.java).also { require(it.instrumentId == instrumentId) }
 
-    fun getRecentSearches(): List<String> {
-        val raw = searchPrefs.getString("recent_searches", null) ?: return emptyList()
-        return try {
-            gson.fromJson(raw, Array<String>::class.java).toList()
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
-
-    fun saveRecentSearch(query: String): List<String> {
-        val trimmed = query.trim()
-        if (trimmed.isBlank()) return getRecentSearches()
-        val current = getRecentSearches().toMutableList()
-        current.removeAll { it.equals(trimmed, ignoreCase = true) }
-        current.add(0, trimmed)
-        val capped = current.take(10)
-        searchPrefs.edit().putString("recent_searches", gson.toJson(capped)).apply()
-        return capped
-    }
-
-    fun removeRecentSearch(query: String): List<String> {
-        val current = getRecentSearches().toMutableList()
-        current.removeAll { it.equals(query.trim(), ignoreCase = true) }
-        searchPrefs.edit().putString("recent_searches", gson.toJson(current)).apply()
-        return current
-    }
-
-    fun clearRecentSearches(): List<String> {
-        searchPrefs.edit().remove("recent_searches").apply()
-        return emptyList()
-    }
+    private fun AssessmentResultSnapshotEntity.decode(): AssessmentResult =
+        gson.fromJson(payloadJson, AssessmentResult::class.java).also { require(it.instrumentId == instrumentId) }
 }

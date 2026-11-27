@@ -77,15 +77,32 @@ object DocumentGroundingIntentDetector {
         "(?i)\\b(?:definisi|penyebab|gejala|efek|manfaat|risiko|dosis|diagnosis|" +
             "definition|causes?|symptoms?|effects?|benefits?|risks?|dosage|diagnosis)\\b"
     )
+    private val counselingFollowUpPattern = Regex(
+        "(?i)\\b(?:langkah|latihan|teknik|konseling|terapi|rebt|cbt|behavioral|client[-\\s]centered|" +
+            "jurnal|journaling|napas|relaksasi|sesi|tindak lanjut|homework|self[-\\s]help)\\b"
+    )
 
-    fun isAssessmentDiscussion(userText: String): Boolean =
+    private val scoreTerms = Regex("(?i)\\b(?:skor|hasil|nilai|kategori)\\b")
+    private val instrumentTerms = Regex("(?i)\\b(?:tiu[-\\s]?5|army\\s*alpha|cfit|mmpi|wartegg|htp|hfd|16pf|psikotes|asesmen)\\b")
+    private val interpretationTerms = Regex(
+        "(?i)\\b(?:arti(?:nya)?|makna|interpretasi(?:kan)?|jelaskan|bahas|evaluasi|rekomendasi|terapi|konseling)\\b"
+    )
+
+    fun isExplicitDocumentRequest(userText: String): Boolean = explicitDocumentPattern.containsMatchIn(userText.trim())
+
+    fun isAssessmentGuide(userText: String): Boolean =
+        userText.startsWith("Halo AI Counselor, tolong jelaskan panduan asesmen") || userText.contains("Metode skoring:")
+
+    fun isAssessmentDiscussion(userText: String): Boolean = isAssessmentGuide(userText) ||
         userText.startsWith("Halo AI Counselor, saya baru saja menyelesaikan asesmen") ||
-            userText.startsWith("Halo AI Counselor, tolong jelaskan panduan asesmen") ||
-            userText.contains("Rincian Skor") ||
-            userText.contains("Interpretasi Klinis:") ||
-            userText.contains("Metode skoring:")
+        userText.contains("Rincian Skor") ||
+        userText.contains("Interpretasi Klinis:") ||
+        (
+            (scoreTerms.containsMatchIn(userText) || instrumentTerms.containsMatchIn(userText)) &&
+                interpretationTerms.containsMatchIn(userText)
+            )
 
-    /** Factual questions need grounded evidence; personal coping requests and assessment discussions remain GENERAL_SAFE. */
+    /** Factual questions need grounded evidence; personal coping, counseling follow-ups, and assessment discussions remain GENERAL_SAFE. */
     fun requiresLocalEvidence(userText: String): Boolean {
         val normalized = userText.trim()
         if (isAssessmentDiscussion(normalized)) return false
@@ -93,7 +110,8 @@ object DocumentGroundingIntentDetector {
             (factualQuestionPattern.containsMatchIn(normalized) && clinicalFactPattern.containsMatchIn(normalized)) ||
             (
                 factualQuestionPattern.containsMatchIn(normalized) &&
-                    !supportiveActionPattern.containsMatchIn(normalized)
+                    !supportiveActionPattern.containsMatchIn(normalized) &&
+                    !counselingFollowUpPattern.containsMatchIn(normalized)
                 )
     }
 }

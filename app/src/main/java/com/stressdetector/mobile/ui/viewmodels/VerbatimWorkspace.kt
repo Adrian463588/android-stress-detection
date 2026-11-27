@@ -40,7 +40,9 @@ internal enum class VerbatimMarkerFilter(val label: String) {
     TEXT("Teks"),
     AUDIO("Audio"),
     PPG("PPG"),
-    MANUAL("Catatan");
+    THERMAL("Suhu"),
+    MANUAL("Catatan"),
+    MULTIMODAL("Multimodal");
 
     fun includes(event: DivergenceEventEntity): Boolean = this == ALL || this == family(event.markerType)
 
@@ -51,7 +53,9 @@ internal enum class VerbatimMarkerFilter(val label: String) {
             "LOW_AUDIO_QUALITY", "ACOUSTIC_DIVERGENCE", "ACOUSTIC_ENERGY_CHANGE", "PROSODY_DIVERGENCE" -> AUDIO
             "BPM_TRAJECTORY", "BPM_RISE", "BPM_RECOVERY", "PHYSIOLOGICAL_BPM_TRAJECTORY",
             "TEMPORAL_BASELINE_AROUSAL", "MODEL_AROUSAL", "STRESS_ELEVATED", "CHANNEL_AGREEMENT" -> PPG
+            "THERMAL_DIVERGENCE" -> THERMAL
             "MANUAL" -> MANUAL
+            "MULTIMODAL_CUE" -> MULTIMODAL
             else -> ALL
         }
     }
@@ -61,8 +65,13 @@ internal class VerbatimMarkerCounts(state: UnifiedSessionUiState) {
     private val events = state.divergenceEvents.distinctBy { it.eventId }
     private val cues = state.reviewCues.size
     private val notes = state.annotations.distinctBy { it.id }.size
+    private val multimodalCount = state.multimodalComparisons.size
 
-    fun count(filter: VerbatimMarkerFilter): Int = events.count(filter::includes) +
-        (if (filter == VerbatimMarkerFilter.ALL || filter == VerbatimMarkerFilter.TEXT) cues else 0) +
-        (if (filter == VerbatimMarkerFilter.ALL || filter == VerbatimMarkerFilter.MANUAL) notes else 0)
+    fun count(filter: VerbatimMarkerFilter): Int = when (filter) {
+        VerbatimMarkerFilter.MULTIMODAL ->
+            multimodalCount + events.count { it.markerType == "MULTIMODAL_CUE" }
+        else -> events.count(filter::includes) +
+            (if (filter == VerbatimMarkerFilter.ALL || filter == VerbatimMarkerFilter.TEXT) cues else 0) +
+            (if (filter == VerbatimMarkerFilter.ALL || filter == VerbatimMarkerFilter.MANUAL) notes else 0)
+    }
 }

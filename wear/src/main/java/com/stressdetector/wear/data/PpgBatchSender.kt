@@ -5,11 +5,18 @@ import android.os.Handler
 import android.os.Looper
 import com.google.android.gms.wearable.Wearable
 import com.stressdetector.shared.AccelerometerSample
+import com.stressdetector.shared.MessagePath
 import com.stressdetector.shared.PpgBatch
 import com.stressdetector.shared.PpgBatchCodec
 import com.stressdetector.shared.PpgTerminalReceipt
 import com.stressdetector.shared.PpgType
 import com.stressdetector.shared.SessionIdentity
+import com.stressdetector.shared.SessionReadyAck
+import com.stressdetector.shared.SkinTemperatureReading
+import com.stressdetector.shared.WearHeartRateBatch
+import com.stressdetector.shared.WearHeartRateCodec
+import com.stressdetector.shared.WearTemperatureBatch
+import com.stressdetector.shared.WearTemperatureCodec
 import java.util.EnumMap
 
 data class PpgExpectedSequences(val green: Long, val ir: Long, val red: Long)
@@ -30,6 +37,7 @@ class PpgBatchSender(context: Context) {
     private var activeIdentity: SessionIdentity? = null
     private var activePhoneNodeId: String? = null
     private var activeGeneration: Long = 0L
+    private var temperatureSequence: Long = 0L
     private var inFlightSends: Int = 0
 
     fun beginSession(identity: SessionIdentity, phoneNodeId: String?, generation: Long) {
@@ -38,6 +46,7 @@ class PpgBatchSender(context: Context) {
             activeIdentity = identity
             activePhoneNodeId = phoneNodeId?.takeIf(String::isNotBlank)
             activeGeneration = generation
+            temperatureSequence = 0L
             sequences.clear()
             PpgType.acquisitionChannels.forEach { sequences[it] = 0L }
         }
@@ -52,7 +61,7 @@ class PpgBatchSender(context: Context) {
         elapsedMillis: Long,
         elapsedStartMillis: Long = elapsedMillis,
         elapsedEndMillis: Long = elapsedMillis,
-        callbackReceivedAtElapsedRealtimeMillis: Long = monotonicNowMillis(),
+        callbackReceivedAtElapsedRealtimeMillis: Long = System.nanoTime() / 1_000_000L,
         accelerometerSamples: List<AccelerometerSample> = emptyList()
     ) {
         if (values.isEmpty()) return
@@ -178,6 +187,52 @@ class PpgBatchSender(context: Context) {
         awaitFlush(timeoutMillis, onComplete)
     }
 
+    fun sendSessionReady(ack: SessionReadyAck) {
+        val nodeId = synchronized(lock) { activePhoneNodeId } ?: ack.peerNodeId.takeIf(String::isNotBlank) ?: return
+        runCatching {
+            Wearable.getMessageClient(appContext)
+                .sendMessage(nodeId, MessagePath.SESSION_READY, PpgBatchCodec.encodeSessionReady(ack))
+        }
+    }
+
+    fun sendHeartRate(batch: WearHeartRateBatch) {
+        val nodeId = synchronized(lock) { activePhoneNodeId } ?: return
+        runCatching {
+            Wearable.getMessageClient(appContext)
+                .sendMessage(nodeId, MessagePath.HEART_RATE_LIVE, WearHeartRateCodec.encode(batch))
+        }
+    }
+
+    fun sendSkinTemperature(sessionId: String, readings: List<SkinTemperatureReading>) {
+        if (readings.isEmpty()) return
+        val dispatch: Pair<String, ByteArray>? = synchronized(lock) {
+            val identity = activeIdentity
+            val nodeId = activePhoneNodeId
+            if (identity == null || identity.sessionId != sessionId || nodeId == null) {
+                null
+            } else {
+                val capped = readings.take(WearTemperatureBatch.MAX_READINGS_PER_BATCH)
+                temperatureSequence += 1L
+                val batch = WearTemperatureBatch(
+                    sessionId = identity.sessionId,
+                    sessionNonce = identity.nonce,
+                    generation = activeGeneration,
+                    sequenceNumber = temperatureSequence,
+                    peerNodeId = nodeId,
+                    readings = capped,
+                    sentAtEpochMillis = System.currentTimeMillis()
+                )
+                nodeId to WearTemperatureCodec.encode(batch)
+            }
+        }
+        if (dispatch != null) {
+            runCatching {
+                Wearable.getMessageClient(appContext)
+                    .sendMessage(dispatch.first, MessagePath.SKIN_TEMPERATURE_LIVE, dispatch.second)
+            }
+        }
+    }
+
     private data class DirectDispatch(
         val nodeId: String?,
         val batch: PpgBatch,
@@ -188,8 +243,6 @@ class PpgBatchSender(context: Context) {
     private fun markSendComplete() {
         synchronized(lock) { inFlightSends = (inFlightSends - 1).coerceAtLeast(0) }
     }
-
-    private fun monotonicNowMillis(): Long = System.nanoTime() / 1_000_000L
 
     companion object {
         private const val FLUSH_POLL_MILLIS = 25L

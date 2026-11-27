@@ -38,6 +38,7 @@ internal fun AiCounselorScreen(
     var showDeleteAllConfirmation by remember { mutableStateOf(false) }
     var showWebSearchMode by rememberSaveable { mutableStateOf(false) }
     var showHeaderMenu by rememberSaveable { mutableStateOf(false) }
+    var planRevisionMessageId by rememberSaveable { mutableStateOf<String?>(null) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -58,7 +59,9 @@ internal fun AiCounselorScreen(
             showDeleteAllConfirmation = showDeleteAllConfirmation,
             onDeleteAllConfirmationChanged = { showDeleteAllConfirmation = it },
             showTechnicalDetails = showTechnicalDetails,
-            onTechnicalDetailsChanged = { showTechnicalDetails = it }
+            onTechnicalDetailsChanged = { showTechnicalDetails = it },
+            planRevisionMessageId = planRevisionMessageId,
+            onPlanRevisionMessageIdChanged = { planRevisionMessageId = it }
         ),
         composer = ChatComposerState(
             inputText = inputText,

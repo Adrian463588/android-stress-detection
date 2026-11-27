@@ -10,8 +10,15 @@ import com.stressdetector.shared.PpgType
 import com.stressdetector.shared.SessionIdentity
 import com.stressdetector.shared.SessionProtocolRejection
 import com.stressdetector.shared.SessionReadyAck
+import com.stressdetector.shared.WearHeartRateBatch
 import com.stressdetector.shared.WearSessionMode
+import com.stressdetector.shared.WearTemperatureBatch
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+
+private val emptyTemperatureBatches = MutableSharedFlow<Pair<WearTemperatureBatch, Long>>().asSharedFlow()
 
 interface IPpgRepository {
     val state: StateFlow<PpgStreamState>
@@ -62,6 +69,17 @@ interface IPpgRepository {
     fun greenChartData(): ChartData
     fun irChartData(): ChartData
     fun redChartData(): ChartData
+
+    fun onHeartRateBatchReceived(batch: WearHeartRateBatch, sourceNodeId: String? = null): Boolean = false
+
+    fun currentWatchHeartRate(): WearHeartRateBatch? = null
+
+    fun currentWatchHeartRateReceivedAtMonotonicMillis(): Long = 0L
+
+    val skinTemperatureBatches: SharedFlow<Pair<WearTemperatureBatch, Long>>
+        get() = emptyTemperatureBatches
+
+    fun onSkinTemperatureBatchReceived(batch: WearTemperatureBatch, sourceNodeId: String? = null): Boolean = false
 }
 
 data class PpgBatchAppendResult(

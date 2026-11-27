@@ -3,8 +3,12 @@ package com.stressdetector.mobile.domain.reminder
 import com.stressdetector.mobile.data.db.ConsentDao
 import com.stressdetector.mobile.data.db.UserConsentEntity
 import com.stressdetector.mobile.data.reminder.ReminderRecordStatus
+import com.stressdetector.mobile.domain.engine.FollowUpReminderKind
 import com.stressdetector.mobile.domain.stress.StressHistoryContextSettings
+import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -60,8 +64,11 @@ class DefaultAiReminderCoordinator(private val dependencies: AiReminderCoordinat
                 settings.enabled,
                 stressHistorySettings.enabled
             ) { latest, reminderConsent, aiConsent, enabled, historyEnabled ->
+                val payload = latest?.takeIf { it.policyVersion == AI_MANUAL_FOLLOWUP_POLICY_VERSION }
+                    ?.let { runCatching { repository.readPayload(it.reminderId) }.getOrNull() }
                 DerivedState(
                     latest = latest,
+                    manualPayload = payload,
                     reminderConsent = reminderConsent?.isGranted == true,
                     aiCounselingConsent = aiConsent?.isGranted == true,
                     enabled = enabled,
@@ -142,13 +149,85 @@ class DefaultAiReminderCoordinator(private val dependencies: AiReminderCoordinat
         scope.launch { scheduler.reconcile(clock()) }
     }
 
+    override suspend fun scheduleFollowUpReminder(
+        kind: FollowUpReminderKind,
+        delayHours: Long,
+        sourceSessionId: String,
+        customNote: String?
+    ): Result<AiReminderRecord> = runCatching {
+        require(delayHours in 1L..AI_REMINDER_MAX_HORIZON_HOURS) { "Waktu tunda pengingat harus antara 1 hingga 48 jam." }
+        val safeHours = delayHours.coerceIn(1L, AI_REMINDER_MAX_HORIZON_HOURS)
+        val safeSessionId = sourceSessionId.trim().ifBlank { "counselor-manual" }
+        val now = clock()
+        val scheduledAt = now.plus(Duration.ofHours(safeHours))
+        val reminderId = UUID.randomUUID().toString()
+        val occurrenceKey = "$safeSessionId:${kind.name}:${scheduledAt.toEpochMilli()}"
+        val displayName = secretStore.displayName.value
+        val note = customNote?.trim()?.takeIf(String::isNotBlank)?.take(120)
+        val safeBody = buildString {
+            append(kind.defaultNonClinicalTitle)
+            if (note != null) append(" ($note)")
+            append(". Ketuk untuk membuka AI+.")
+        }.take(AI_REMINDER_MAX_MESSAGE_CODE_POINTS)
+
+        val record = AiReminderRecord(
+            reminderId = reminderId,
+            occurrenceKey = occurrenceKey,
+            sourceSessionId = safeSessionId,
+            scheduledAt = scheduledAt,
+            timezone = ZoneId.systemDefault(),
+            status = ReminderRecordStatus.SCHEDULED,
+            createdAt = now,
+            generatedAt = now,
+            deliveredAt = null,
+            modelVersion = "manual-counselor-followup",
+            policyVersion = AI_MANUAL_FOLLOWUP_POLICY_VERSION,
+            payloadKey = reminderId,
+            lastErrorCode = null
+        )
+        repository.deletePending()
+        check(repository.insertIfAbsent(record)) { "Pengingat tindak lanjut gagal disimpan ke basis data lokal." }
+        repository.writePayload(
+            reminderId,
+            ReminderPayload(
+                message = safeBody,
+                displayNameUsed = displayName,
+                sourceSessionId = safeSessionId
+            )
+        )
+        scheduler.enqueueDelivery(reminderId, scheduledAt)
+        checkNotNull(repository.getById(reminderId)) { "Pengingat tindak lanjut gagal diverifikasi setelah penyimpanan." }
+        record
+    }
+
+    override suspend fun cancelPendingReminders(): Result<Unit> = runCatching {
+        scheduler.cancelAll()
+        repository.deletePending()
+    }
+
     private suspend fun canEnable(): Boolean = consentDao.getConsent(AI_REMINDER_CONSENT_TYPE)?.isGranted == true &&
         consentDao.getConsent(AI_COUNSELING_CONSENT_TYPE)?.isGranted == true &&
         stressHistorySettings.enabled.value
 
     private fun deriveState(derived: DerivedState): AiReminderState {
         val latest = derived.latest
+        val isManualFollowUp = latest?.policyVersion == AI_MANUAL_FOLLOWUP_POLICY_VERSION
+        val followUpKind = if (isManualFollowUp && latest != null) parseFollowUpKind(latest.occurrenceKey) else null
+        val followUpDelayHours = if (isManualFollowUp && latest != null) {
+            Duration.between(latest.createdAt, latest.scheduledAt).toHours().coerceIn(1L, AI_REMINDER_MAX_HORIZON_HOURS)
+        } else {
+            null
+        }
+        val followUpNote = if (isManualFollowUp && followUpKind != null) {
+            extractFollowUpNote(derived.manualPayload?.message, followUpKind)
+        } else {
+            null
+        }
+        val manualActive = isManualFollowUp &&
+            latest != null &&
+            latest.status in setOf(ReminderRecordStatus.SCHEDULED, ReminderRecordStatus.GENERATING, ReminderRecordStatus.GENERATED)
         val baseStatus = when {
+            manualActive && latest != null -> statusForRecord(latest)
             !derived.enabled -> AiReminderStatus.Disabled
             !derived.reminderConsent || !derived.aiCounselingConsent -> AiReminderStatus.NeedsConsent(
                 "Aktifkan persetujuan AI Counselor dan AI+ Reminder."
@@ -159,7 +238,7 @@ class DefaultAiReminderCoordinator(private val dependencies: AiReminderCoordinat
             latest == null -> AiReminderStatus.NoEligibleSession
             else -> statusForRecord(latest)
         }
-        val status = if (requiresNotificationPermission(derived, baseStatus)) {
+        val status = if ((manualActive && !notificationPermissionGranted()) || requiresNotificationPermission(derived, baseStatus)) {
             AiReminderStatus.NeedsNotificationPermission
         } else {
             baseStatus
@@ -171,8 +250,25 @@ class DefaultAiReminderCoordinator(private val dependencies: AiReminderCoordinat
             status = status,
             nextReminderAt = latest?.scheduledAt,
             sourceSessionId = latest?.sourceSessionId,
-            lastErrorCode = latest?.lastErrorCode
+            lastErrorCode = latest?.lastErrorCode,
+            activeFollowUpKind = followUpKind,
+            activeFollowUpDelayHours = followUpDelayHours,
+            activeFollowUpNote = followUpNote,
+            isManualFollowUp = manualActive
         )
+    }
+
+    private fun parseFollowUpKind(occurrenceKey: String): FollowUpReminderKind? {
+        val parts = occurrenceKey.split(':')
+        val rawKind = parts.getOrNull(parts.size - 2) ?: return null
+        return runCatching { FollowUpReminderKind.valueOf(rawKind) }.getOrNull()
+    }
+
+    private fun extractFollowUpNote(message: String?, kind: FollowUpReminderKind): String? {
+        val prefix = "${kind.defaultNonClinicalTitle} ("
+        if (message == null || !message.startsWith(prefix)) return null
+        val endIdx = message.lastIndexOf("). Ketuk")
+        return if (endIdx > prefix.length) message.substring(prefix.length, endIdx) else null
     }
 
     private fun statusForRecord(record: AiReminderRecord): AiReminderStatus = when (record.status) {
@@ -201,6 +297,7 @@ class DefaultAiReminderCoordinator(private val dependencies: AiReminderCoordinat
 
     private data class DerivedState(
         val latest: AiReminderRecord?,
+        val manualPayload: ReminderPayload?,
         val reminderConsent: Boolean,
         val aiCounselingConsent: Boolean,
         val enabled: Boolean,

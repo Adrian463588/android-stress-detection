@@ -75,7 +75,9 @@ internal data class CounselorDialogState(
     val showDeleteAllConfirmation: Boolean,
     val onDeleteAllConfirmationChanged: (Boolean) -> Unit,
     val showTechnicalDetails: Boolean,
-    val onTechnicalDetailsChanged: (Boolean) -> Unit
+    val onTechnicalDetailsChanged: (Boolean) -> Unit,
+    val planRevisionMessageId: String? = null,
+    val onPlanRevisionMessageIdChanged: (String?) -> Unit = {}
 )
 
 internal data class CounselorLayout(
@@ -116,6 +118,36 @@ internal fun CounselorDialogs(model: CounselorScreenModel) {
     if (state.webConsentRequired) WebConsentDialog(model)
     dialogs.sessionPendingDelete?.let { session -> DeleteSessionDialog(model, session) }
     if (dialogs.showDeleteAllConfirmation) DeleteAllDialog(model)
+    dialogs.planRevisionMessageId?.let { targetId ->
+        PlanRevisionDialog(
+            messageId = targetId,
+            onSubmit = { id, note ->
+                model.runtime.viewModel.reviewCounselingPlan(
+                    id,
+                    com.stressdetector.mobile.domain.engine.PlanReviewStatus.REVISION_REQUESTED,
+                    note
+                )
+                dialogs.onPlanRevisionMessageIdChanged(null)
+            },
+            onDismiss = { dialogs.onPlanRevisionMessageIdChanged(null) }
+        )
+    }
+    state.activeJournalPrompt?.let { prompt ->
+        QuickJournalBottomSheet(
+            prompt = prompt,
+            onSave = { moodScore, moodLabel, reflectionText, allowAiContext ->
+                model.runtime.viewModel.saveQuickJournal(
+                    messageId = state.activeJournalMessageId,
+                    prompt = prompt,
+                    moodScore = moodScore,
+                    moodLabel = moodLabel,
+                    reflectionText = reflectionText,
+                    allowAiContext = allowAiContext
+                )
+            },
+            onDismiss = model.runtime.viewModel::dismissJournalSheet
+        )
+    }
 }
 
 @Composable

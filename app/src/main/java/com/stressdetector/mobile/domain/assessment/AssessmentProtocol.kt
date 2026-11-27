@@ -161,11 +161,11 @@ data class AssessmentScoreEntry(
         val maxVal = fields[0].maximum.toDouble()
         return listOf(
             AssessmentScore(
-                label = "Tipe MBTI",
+                label = "Selisih Dominan E/I ($fullType)",
                 value = diffEI.toDouble(),
                 minimum = 0.0,
                 maximum = maxVal,
-                meaning = "Tipe preferensi: $fullType (E/I=$diffEI, S/N=$diffSN, T/F=$diffTF, J/P=$diffJP)."
+                meaning = "Kecenderungan preferensi: $fullType (E/I=$diffEI, S/N=$diffSN, T/F=$diffTF, J/P=$diffJP)."
             ),
             AssessmentScore("Dimensi E/I ($typeE)", diffEI.toDouble(), 0.0, maxVal, "Selisih Extraversion vs Introversion."),
             AssessmentScore("Dimensi S/N ($typeS)", diffSN.toDouble(), 0.0, maxVal, "Selisih Sensing vs Intuition."),
@@ -198,20 +198,20 @@ data class AssessmentScoreEntry(
     private fun scoreMmpi(scores: List<AssessmentScore>): List<AssessmentScore> {
         val validityWarning = when {
             scores.find { it.label.startsWith("F") }?.value?.let { it >= MMPI_F_INVALID_THRESHOLD } == true ->
-                "Peringatan: Skala F >= 80 (kemungkinan over-reporting/respons berlebihan)."
+                "Peringatan: Skala F >= 80 (kemungkinan over-reporting pada MMPI-2 klasik)."
             scores.find { it.label.startsWith("L") }?.value?.let { it >= MMPI_L_DEFENSIVE_THRESHOLD } == true ->
-                "Peringatan: Skala L >= 70 (kemungkinan defensif/under-reporting)."
-            else -> "Skala validitas dapat diterima."
+                "Peringatan: Skala L >= 70 (kemungkinan defensif/under-reporting pada MMPI-2 klasik)."
+            else -> "Skala validitas MMPI-2 klasik dalam rentang skrining (wajib verifikasi psikolog)."
         }
         val elevatedScales = scores.drop(3).filter { it.value >= MMPI_ELEVATION_THRESHOLD }.map { it.label }
         val elevationSummary = if (elevatedScales.isNotEmpty()) {
-            "Skala elevasi klinis bermakna (T >= 65): ${elevatedScales.joinToString(", ")}."
+            "Skala elevasi klinis (T >= 65): ${elevatedScales.joinToString(", ")}."
         } else {
             "Tidak ada skala klinis dengan elevasi bermakna (semua T < 65)."
         }
         return listOf(
             AssessmentScore(
-                label = "Ringkasan Profil MMPI",
+                label = "Ringkasan Profil MMPI-2 Klasik",
                 value = scores.drop(3).map { it.value }.average(),
                 minimum = 30.0,
                 maximum = 120.0,
@@ -220,18 +220,10 @@ data class AssessmentScoreEntry(
         ) + scores
     }
 
-    private fun scoreWartegg(scores: List<AssessmentScore>): List<AssessmentScore> {
-        val boxScores = scores.take(8)
-        val emosi = (boxScores[1].value + boxScores[6].value) / 2.0
-        val imajinasi = (boxScores[0].value + boxScores[7].value) / 2.0
-        val intelektual = (boxScores[2].value + boxScores[5].value) / 2.0
-        val aktivitas = (boxScores[3].value + boxScores[4].value) / 2.0
-        val maxVal = fields.first().maximum.toDouble()
-        return listOf(
-            AssessmentScore("Fungsi Emosi", emosi, 0.0, maxVal, "Rerata Kotak 2 dan 7."),
-            AssessmentScore("Fungsi Imajinasi", imajinasi, 0.0, maxVal, "Rerata Kotak 1 dan 8."),
-            AssessmentScore("Fungsi Intelektual", intelektual, 0.0, maxVal, "Rerata Kotak 3 dan 6."),
-            AssessmentScore("Fungsi Aktivitas", aktivitas, 0.0, maxVal, "Rerata Kotak 4 dan 5.")
+    private fun scoreWartegg(scores: List<AssessmentScore>): List<AssessmentScore> = scores.take(8).mapIndexed { idx, box ->
+        box.copy(
+            label = "Observasi Kotak ${idx + 1}",
+            meaning = "Rekap lembar kotak ${idx + 1}; skor kepribadian memerlukan coding manual pemeriksa."
         )
     }
 

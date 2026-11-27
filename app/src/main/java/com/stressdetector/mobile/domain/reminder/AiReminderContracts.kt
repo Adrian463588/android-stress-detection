@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 const val AI_REMINDER_CONSENT_TYPE = "AI_REMINDER"
 const val AI_COUNSELING_CONSENT_TYPE = "AI_COUNSELING"
 const val AI_REMINDER_POLICY_VERSION = "ai-reminder-v1"
+const val AI_MANUAL_FOLLOWUP_POLICY_VERSION = "ai-followup-manual-v1"
 const val AI_REMINDER_CHANNEL_ID = "ai_reminder_channel"
 const val AI_REMINDER_MAX_HORIZON_HOURS = 48L
 const val AI_REMINDER_COOLDOWN_HOURS = 24L
@@ -79,7 +80,11 @@ data class AiReminderState(
     val status: AiReminderStatus,
     val nextReminderAt: Instant? = null,
     val sourceSessionId: String? = null,
-    val lastErrorCode: String? = null
+    val lastErrorCode: String? = null,
+    val activeFollowUpKind: com.stressdetector.mobile.domain.engine.FollowUpReminderKind? = null,
+    val activeFollowUpDelayHours: Long? = null,
+    val activeFollowUpNote: String? = null,
+    val isManualFollowUp: Boolean = false
 )
 
 data class AiReminderRecord(
@@ -189,6 +194,15 @@ interface AiReminderCoordinator {
     fun onSessionFinalized(sessionId: String)
     fun markOpened(reminderId: String)
     fun reconcile()
+
+    suspend fun scheduleFollowUpReminder(
+        kind: com.stressdetector.mobile.domain.engine.FollowUpReminderKind,
+        delayHours: Long,
+        sourceSessionId: String,
+        customNote: String? = null
+    ): Result<AiReminderRecord> = Result.failure(UnsupportedOperationException("Follow-up reminder scheduling is unavailable."))
+
+    suspend fun cancelPendingReminders(): Result<Unit> = Result.success(Unit)
 }
 
 object ReminderRelativeDate {

@@ -49,7 +49,9 @@ class VerbatimSessionFinalizer(
         monitorStatus: String,
         annotations: List<DomainAnnotation> = emptyList(),
         ppgArchive: VerbatimPpgArchiveResult = VerbatimPpgArchiveResult.unavailable("archive_not_provided"),
-        audioStartSessionElapsedMillis: Long? = null
+        audioStartSessionElapsedMillis: Long? = null,
+        skinTemperatureSamples: List<SkinTemperatureObservation> = emptyList(),
+        thermalAlgorithmVersion: String = ThermalPolicyConfig.DEFAULT_ALGORITHM_VERSION
     ): VerbatimSessionArtifacts {
         require(recordedAudio.sessionId == sessionId) { "Recorded audio belongs to another session." }
         val folder = "verbatim_sessions/${folderName(customSessionName, recordedAudio.startedAtUtcMillis)}"
@@ -180,6 +182,26 @@ class VerbatimSessionFinalizer(
             throw error
         }
         // The core is committed. Optional trace and cleanup failures cannot roll it back.
+        if (skinTemperatureSamples.isNotEmpty()) {
+            runCatching {
+                val csv = VerbatimResearchExporter.buildSkinTemperatureCsv(skinTemperatureSamples)
+                val meta = VerbatimResearchExporter.buildThermalMetadataJson(
+                    sessionId = sessionId,
+                    observations = skinTemperatureSamples,
+                    algorithmVersion = thermalAlgorithmVersion
+                )
+                encryptedStorage.writeEncryptedFile(
+                    userId,
+                    "$folder/skin_temperature.csv.enc",
+                    ByteArrayInputStream(csv.toByteArray(Charsets.UTF_8))
+                )
+                encryptedStorage.writeEncryptedFile(
+                    userId,
+                    "$folder/thermal_metadata.json.enc",
+                    ByteArrayInputStream(meta.toByteArray(Charsets.UTF_8))
+                )
+            }
+        }
         val tracePublisher = VerbatimSignalTracePublication(encryptedStorage)
         val trace = tracePublisher.publish(userId, recordedAudio, folder, audioStartSessionElapsedMillis)
         val cleanupPaths = buildList {

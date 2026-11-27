@@ -13,9 +13,10 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         KnowledgeBaseGenerationEntity::class,
         KnowledgeBaseDocumentEntity::class,
         KnowledgeBaseChunkEntity::class,
-        AssessmentResultEntity::class
+        AssessmentResultEntity::class,
+        AssessmentResultSnapshotEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class KnowledgeBaseDatabase : RoomDatabase() {
@@ -29,6 +30,43 @@ abstract class KnowledgeBaseDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS assessment_results (instrumentId TEXT NOT NULL PRIMARY KEY, payloadJson TEXT NOT NULL)"
                 )
+            }
+        }
+
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS assessment_result_snapshots (" +
+                        "resultId TEXT NOT NULL PRIMARY KEY, " +
+                        "instrumentId TEXT NOT NULL, " +
+                        "participantId TEXT NOT NULL, " +
+                        "createdAtMillis INTEGER NOT NULL, " +
+                        "payloadJson TEXT NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_assessment_result_snapshots_instrumentId_createdAtMillis " +
+                        "ON assessment_result_snapshots(instrumentId, createdAtMillis)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_assessment_result_snapshots_participantId_createdAtMillis " +
+                        "ON assessment_result_snapshots(participantId, createdAtMillis)"
+                )
+                db.query("SELECT instrumentId, payloadJson FROM assessment_results").use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val instId = cursor.getString(0)
+                        val json = cursor.getString(1)
+                        val parsed = runCatching { org.json.JSONObject(json) }.getOrNull()
+                        val resultId = parsed?.optString("resultId").orEmpty().ifBlank { "legacy-$instId" }
+                        val participantId = parsed?.optString("participantId").orEmpty().ifBlank { "local-participant-01" }
+                        val createdAt = parsed?.optLong("createdAtMillis", 0L) ?: 0L
+                        db.execSQL(
+                            "INSERT OR IGNORE INTO assessment_result_snapshots " +
+                                "(resultId, instrumentId, participantId, createdAtMillis, payloadJson) " +
+                                "VALUES (?, ?, ?, ?, ?)",
+                            arrayOf<Any>(resultId, instId, participantId, createdAt, json)
+                        )
+                    }
+                }
             }
         }
 
@@ -51,7 +89,7 @@ abstract class KnowledgeBaseDatabase : RoomDatabase() {
                 databaseName
             )
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .addCallback(Fts5Callback())
                 .build()
         }

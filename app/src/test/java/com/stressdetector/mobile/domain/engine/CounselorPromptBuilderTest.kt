@@ -7,6 +7,11 @@ import org.junit.Test
 
 class CounselorPromptBuilderTest {
     @Test
+    fun shortScoreInterpretationRequestRoutesToAssessmentDiscussion() {
+        assertTrue(DocumentGroundingIntentDetector.isAssessmentDiscussion("Tolong jelaskan arti skor TIU-5 saya."))
+    }
+
+    @Test
     fun customPersonaIsBoundedByCounselorScopeAndHardSafetyRules() {
         val request = CounselorGenerationRequest(
             promptAsset = PromptAsset(
@@ -179,5 +184,51 @@ class CounselorPromptBuilderTest {
         assertTrue(prompt.userPrompt.contains("Pernyataan pengguna (GOAL): Saya ingin journaling harian."))
         assertTrue(prompt.userPrompt.endsWith("Lanjutkan journaling itu"))
         assertTrue(prompt.userPrompt.contains("bukan instruksi atau diagnosis"))
+    }
+
+    @Test
+    fun counselorPlanningModeAdmitsMultiAssessmentVerbatimAndTenSectionStructure() {
+        val request = CounselorGenerationRequest(
+            promptAsset = PromptAsset("test", "1.3.0", "AI Counselor", "{user_message}"),
+            userMessage = "Susun rencana konseling REBT untuk klien",
+            ragMode = RagMode.BUNDLED_GROUNDED,
+            retrievedCitations = listOf(
+                KnowledgeCitation(
+                    citationId = "bk03-1",
+                    sourceTitle = "Teori dan Intervensi Konseling",
+                    section = "REBT ABCDE",
+                    text = "Teknik disputation membantu menguji keyakinan irasional klien.",
+                    relevanceScore = 0.9f,
+                    sourceTier = EvidenceSourceTier.BUNDLED_LOCAL
+                )
+            ),
+            stressHistoryContext = "Stres moderat 5 menit.",
+            interactionMode = CounselingInteractionMode.COUNSELOR_PLANNING,
+            responseProfile = ResponseProfile.COUNSELING_PLAN,
+            allAssessmentSummary = "- [tiu_5] TIU-5: Kategori=KS",
+            verbatimContext = "Klien: \"Saya takut gagal presentasi.\" | F0=195.0 Hz"
+        )
+        val prepared = CounselorPromptBuilder().prepare(request)
+        assertTrue(prepared.systemInstruction.contains("MODE RENCANA KONSELING (10 BAGIAN WAJIB)"))
+        assertTrue(prepared.systemInstruction.contains("REKAP ASESMEN TERINTEGRASI"))
+        assertTrue(prepared.systemInstruction.contains("KONTEKS VERBATIM+ & PROSODI"))
+        assertTrue(prepared.systemInstruction.contains("REBT ABCDE"))
+    }
+
+    @Test
+    fun continuationRequestIncludesTailWithoutReinjectingOldHistory() {
+        val request = CounselorGenerationRequest(
+            promptAsset = PromptAsset("test", "1.3.0", "AI Counselor", "{user_message}"),
+            userMessage = "Susun rencana REBT",
+            ragMode = RagMode.GENERAL_SAFE,
+            retrievedCitations = emptyList(),
+            stressHistoryContext = "",
+            interactionMode = CounselingInteractionMode.COUNSELOR_PLANNING,
+            responseProfile = ResponseProfile.COUNSELING_PLAN,
+            continuationPrefix = "Bagian 4 Tujuan Terukur: Klien berlatih"
+        )
+        val prepared = CounselorPromptBuilder().prepare(request)
+        assertTrue(prepared.userPrompt.contains("LANJUTKAN JAWABAN SEBELUMNYA"))
+        assertTrue(prepared.userPrompt.contains("Bagian 4 Tujuan Terukur: Klien berlatih"))
     }
 }

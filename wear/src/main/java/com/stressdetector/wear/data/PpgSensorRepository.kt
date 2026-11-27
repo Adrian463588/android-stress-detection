@@ -8,6 +8,9 @@ import com.stressdetector.shared.PpgType
 import com.stressdetector.shared.SensorTimestampContract
 import com.stressdetector.shared.SensorTimestampNormalizer
 import com.stressdetector.shared.SessionIdentity
+import com.stressdetector.shared.SessionReadyAck
+import com.stressdetector.shared.SkinTemperatureReading
+import com.stressdetector.shared.WearHeartRateBatch
 import com.stressdetector.wear.sensor.PpgSensorSample
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -115,6 +118,22 @@ class PpgSensorRepository(context: Context, private val onFatalError: (String) -
     fun markSessionReady(startedElapsedRealtimeMillis: Long) {
         require(startedElapsedRealtimeMillis >= 0L) { "startedElapsedRealtimeMillis must be non-negative" }
         this.startedElapsedRealtimeMillis = startedElapsedRealtimeMillis
+    }
+
+    fun sendSessionReady(ack: SessionReadyAck) {
+        sender.sendSessionReady(ack)
+    }
+
+    fun sendHeartRate(batch: WearHeartRateBatch) {
+        sender.sendHeartRate(batch)
+    }
+
+    fun sendSkinTemperature(readings: List<SkinTemperatureReading>) {
+        if (!accepting || readings.isEmpty()) return
+        val identity = sessionIdentity ?: return
+        readings.chunked(com.stressdetector.shared.WearTemperatureBatch.MAX_READINGS_PER_BATCH).forEach { chunk ->
+            sender.sendSkinTemperature(identity.sessionId, chunk)
+        }
     }
 
     fun onGreen(timestamp: Long, value: Int): Boolean = onSamples(

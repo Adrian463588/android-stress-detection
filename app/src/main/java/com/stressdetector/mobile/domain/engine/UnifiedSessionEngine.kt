@@ -107,9 +107,14 @@ class UnifiedSessionEngine(
     private var divergenceJob: Job? = null
     private var acousticJob: Job? = null
     private var pitchJob: Job? = null
+    private var temperatureJob: Job? = null
+    private var temperatureTickerJob: Job? = null
     private var livePitchHistory = emptyList<LivePitchObservation>()
     private var watchSessionActive = false
     private var biosignalMonitoringActive = false
+    private var currentWatchWearerRole: String = WatchWearerRole.CLIENT.name
+    private var isThermalWatchEnabled = false
+    private var isSessionPaused = false
 
     @Volatile private var acceptingSessionEvents = false
 
@@ -130,6 +135,8 @@ class UnifiedSessionEngine(
     private var currentMonitorStatus = "NOT_STARTED"
     private val prosodyDetector = VerbatimProsodyMarkerDetector()
     private val analyzedProsodySegments = mutableSetOf<String>()
+    private val thermalEngine = ThermalMonitoringEngine(ThermalPolicyConfig.CANDIDATE_OBSERVE_ONLY)
+    private val thermalEvents = linkedMapOf<String, com.stressdetector.mobile.data.db.DivergenceEventEntity>()
 
     @Suppress("LongParameterList")
     suspend fun startSession(
@@ -140,7 +147,8 @@ class UnifiedSessionEngine(
         sessionName: String = "Session",
         languageCode: String = "id",
         audioInput: AudioInputSource = AudioInputSource.Microphone,
-        monitoringEnabled: Boolean = monitoringConsent != null
+        monitoringEnabled: Boolean = monitoringConsent != null,
+        watchWearerRole: String = "CLIENT"
     ) = sessionLifecycleMutex.withLock {
         startSessionInternal(
             sessionId = sessionId,
@@ -150,7 +158,8 @@ class UnifiedSessionEngine(
             sessionName = sessionName,
             languageCode = languageCode,
             audioInput = audioInput,
-            monitoringEnabled = monitoringEnabled
+            monitoringEnabled = monitoringEnabled,
+            watchWearerRole = watchWearerRole
         )
     }
 
@@ -163,7 +172,8 @@ class UnifiedSessionEngine(
         sessionName: String,
         languageCode: String,
         audioInput: AudioInputSource,
-        monitoringEnabled: Boolean
+        monitoringEnabled: Boolean,
+        watchWearerRole: String = "CLIENT"
     ) {
         check(!_isSessionActive.value && !sessionStopping) { "A clinical session is already active or finalizing." }
         _sessionError.value = null
@@ -192,7 +202,9 @@ class UnifiedSessionEngine(
                 sessionId,
                 timeline.startedAtUtcMillis,
                 consentGranted = true,
-                sessionName = sessionName
+                sessionName = sessionName,
+                watchWearerRole = watchWearerRole,
+                languageCode = languageCode
             )
             currentSessionId = sessionId
             currentUserId = userId
@@ -205,11 +217,16 @@ class UnifiedSessionEngine(
             transcriptSegments.clear()
             divergenceEvents.clear()
             acousticEvents.clear()
+            synchronized(thermalEvents) { thermalEvents.clear() }
             prosodyDetector.reset()
             analyzedProsodySegments.clear()
             latestAcousticAnalysis = null
             livePitchHistory = emptyList()
             ppgArchiveResult = VerbatimPpgArchiveResult.unavailable("archive_not_started")
+            currentWatchWearerRole = watchWearerRole
+            isThermalWatchEnabled = monitoringEnabled
+            isSessionPaused = false
+            thermalEngine.beginSession(sessionId, watchWearerRole, monitoringEnabled)
             liveTranscriptReducer.reset()
             _liveTranscriptState.value = LiveTranscriptState(sessionId = sessionId)
             _liveSessionState.value = UnifiedSessionLiveSnapshot(
@@ -341,6 +358,53 @@ class UnifiedSessionEngine(
                     publishLiveSessionState(sessionId)
                 }
             }
+            temperatureJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                ppgRepository?.skinTemperatureBatches?.collect { (batch, receiptMonotonicMs) ->
+                    if (!acceptingSessionEvents ||
+                        currentSessionId != sessionId ||
+                        batch.sessionId != sessionId
+                    ) {
+                        return@collect
+                    }
+                    val cutoff = sessionStopCutoff
+                    val resolvedTranscript = synchronized(transcriptSegments) { transcriptSegments.toList() }
+                    batch.readings.forEachIndexed { idx, reading ->
+                        val sessionElapsed = timeline.ppgElapsedToSessionElapsed(reading.elapsedMillis)
+                        if (cutoff != null && sessionElapsed > cutoff.elapsedMillis) return@forEachIndexed
+                        val obs = SkinTemperatureObservation(
+                            sampleId = "$sessionId:temp:${batch.generation}:${batch.sequenceNumber}:$idx",
+                            sessionId = sessionId,
+                            generation = batch.generation,
+                            sequenceNumber = batch.sequenceNumber,
+                            sensorTimestampMs = reading.sensorTimestampEpochMillis,
+                            receivedTimestampMs = System.currentTimeMillis(),
+                            elapsedMillis = sessionElapsed,
+                            clockUncertaintyMs = timeline.clockUncertaintyMillis() ?: reading.clockUncertaintyMillis,
+                            skinTemperatureC = reading.skinTemperatureC,
+                            ambientTemperatureC = reading.ambientTemperatureC,
+                            measurementStatus = reading.status,
+                            isValid = reading.isValid,
+                            wearerRole = currentWatchWearerRole,
+                            source = reading.source,
+                            isPaused = isSessionPaused
+                        )
+                        val emitted = thermalEngine.ingest(obs, resolvedTranscript)
+                        if (emitted.isNotEmpty()) {
+                            synchronized(thermalEvents) {
+                                emitted.forEach { ev -> thermalEvents[ev.eventId] = ev }
+                            }
+                        }
+                    }
+                    if (receiptMonotonicMs > 0L) publishLiveSessionState(sessionId)
+                }
+            }
+            temperatureTickerJob = scope.launch {
+                while (true) {
+                    kotlinx.coroutines.delay(THERMAL_TICKER_MILLIS)
+                    if (!acceptingSessionEvents || currentSessionId != sessionId) return@launch
+                    if (isThermalWatchEnabled) publishLiveSessionState(sessionId)
+                }
+            }
 
             when (val audioStart = audioEngine.startRecording(sessionId, userId, languageCode, audioInput)) {
                 is AudioOperationResult.Success ->
@@ -417,13 +481,19 @@ class UnifiedSessionEngine(
         sessionStopping = true
         _finalizationStage.value = SessionFinalizationStage.STOP_REQUESTED
         val timeline = currentTimeline
+        val stopCutoffUtcMillis = System.currentTimeMillis()
+        val stopCutoffElapsedMillis = timeline?.currentElapsedMillis() ?: 0L
+        thermalEngine.applyStopCutoff(stopCutoffElapsedMillis)
         sessionStopCutoff = timeline?.let {
             SessionStopCutoff(
                 sessionId = sessionId,
                 generation = it.generation,
-                elapsedMillis = it.currentElapsedMillis()
+                elapsedMillis = stopCutoffElapsedMillis
             )
         }
+        val activeElapsedBeforeStopMs = timeline?.activeRecordingMillis(stopCutoffElapsedMillis) ?: stopCutoffElapsedMillis
+        val activeSecondsBeforeStop = (activeElapsedBeforeStopMs / ONE_SECOND_MS).coerceAtLeast(0L)
+        val recordingEndedAtMillis = timeline?.startedAtUtcMillis?.plus(stopCutoffElapsedMillis) ?: stopCutoffUtcMillis
         var stopResult: AudioRecordingStopResult? = null
         var stopFailure: Throwable? = null
         var transportWarning: String? = null
@@ -544,9 +614,11 @@ class UnifiedSessionEngine(
             val sessionEnd = runCatching {
                 repository.endSession(
                     sessionId = sessionId,
-                    timestampMs = System.currentTimeMillis(),
+                    timestampMs = recordingEndedAtMillis,
                     summaryStatus = "ERROR_AUDIO_DRAIN_FAILED",
-                    finalizationStatus = "FAILED_WITH_EVIDENCE"
+                    finalizationStatus = "FAILED_WITH_EVIDENCE",
+                    durationSecondsOverride = activeSecondsBeforeStop,
+                    audioDurationMs = 0L
                 )
             }.onFailure {
                 it.rethrowIfCancellation()
@@ -624,7 +696,14 @@ class UnifiedSessionEngine(
                     ?.filter(events)
                     ?: events
             }
-        val finalDivergences = (physiologicalDivergences + finalAudioDivergences)
+        val finalThermalDivergences = thermalEngine.markerEntities()
+            .let { events ->
+                sessionStopCutoff
+                    ?.takeIf { it.sessionId == sessionId && (timeline == null || it.generation == timeline.generation) }
+                    ?.filter(events)
+                    ?: events
+            }
+        val finalDivergences = (physiologicalDivergences + finalAudioDivergences + finalThermalDivergences)
             .associateBy { it.eventId }
             .values
             .sortedWith(compareBy({ it.episodeStartElapsedMillis }, { it.eventId }))
@@ -642,6 +721,7 @@ class UnifiedSessionEngine(
             divergenceEvents.addAll(linkedDivergences)
         }
         _finalizationStage.value = SessionFinalizationStage.PERSISTING
+        val finalTemperatureSamples = thermalEngine.allObservations()
         var finalizationFailure: Throwable? = null
         val artifacts = runCatching {
             withContext(Dispatchers.IO) {
@@ -655,7 +735,8 @@ class UnifiedSessionEngine(
                     monitorStatus = currentMonitorStatus,
                     annotations = annotationRepository.getAnnotationsForSession(sessionId),
                     ppgArchive = ppgArchiveResult,
-                    audioStartSessionElapsedMillis = timeline?.audioStartElapsedMillisOrNull()
+                    audioStartSessionElapsedMillis = timeline?.audioStartElapsedMillisOrNull(),
+                    skinTemperatureSamples = finalTemperatureSamples
                 )
             }
         }.onFailure { error ->
@@ -676,6 +757,12 @@ class UnifiedSessionEngine(
             error.rethrowIfCancellation()
             persistenceFailures += "events:${error.message ?: "failed"}"
         }
+        runCatching {
+            repository.saveSkinTemperatureSamples(sessionId, finalTemperatureSamples)
+        }.onFailure { error ->
+            error.rethrowIfCancellation()
+            persistenceFailures += "temperature:${error.message ?: "failed"}"
+        }
         val processingError = completedStop.processingError
         processingError?.let { error ->
             currentMonitorStatus = ("$currentMonitorStatus; AUDIO_PROCESSING_DEGRADED: $error")
@@ -684,10 +771,15 @@ class UnifiedSessionEngine(
         }
         val evidenceComplete = artifacts != null && transcriptPersisted.isSuccess && eventsPersisted.isSuccess
         val persistenceComplete = evidenceComplete && processingError == null && artifacts.warnings.isEmpty()
+        val finalAudioDurationMs = audio.durationMs.takeIf { it > 0L } ?: activeElapsedBeforeStopMs
+        val finalDurationSeconds = (finalAudioDurationMs / ONE_SECOND_MS).coerceAtLeast(0L)
+        val finalRecordingEndedAtMillis = timeline?.startedAtUtcMillis?.let { startedAt ->
+            startedAt + stopCutoffElapsedMillis.coerceAtLeast(finalAudioDurationMs)
+        } ?: recordingEndedAtMillis
         val sessionEnd = runCatching {
             repository.endSession(
                 sessionId,
-                System.currentTimeMillis(),
+                finalRecordingEndedAtMillis,
                 persistedAudioPath(audio, artifacts),
                 artifactFolderPath = artifacts?.folderPath.orEmpty(),
                 summaryStatus = when {
@@ -695,7 +787,9 @@ class UnifiedSessionEngine(
                     else -> artifacts?.summaryStatus ?: "ERROR_FINALIZATION_FAILED"
                 },
                 audioGaps = completedStop.audioGaps,
-                finalizationStatus = if (persistenceComplete) "COMPLETED" else "FAILED_WITH_EVIDENCE"
+                finalizationStatus = if (persistenceComplete) "COMPLETED" else "FAILED_WITH_EVIDENCE",
+                durationSecondsOverride = finalDurationSeconds,
+                audioDurationMs = audio.durationMs
             )
         }.onFailure { error ->
             error.rethrowIfCancellation()
@@ -731,7 +825,12 @@ class UnifiedSessionEngine(
     private suspend fun pauseSessionInternal() {
         if (!_isSessionActive.value) return
         when (val result = audioEngine.pauseRecording()) {
-            is AudioOperationResult.Success -> Unit
+            is AudioOperationResult.Success -> {
+                currentTimeline?.recordPauseStart()
+                isSessionPaused = true
+                thermalEngine.setPaused(true)
+                publishLiveSessionState(currentSessionId)
+            }
             is AudioOperationResult.Unavailable -> throw IllegalStateException(result.reason)
             is AudioOperationResult.Failure -> throw IllegalStateException(result.message, result.cause)
         }
@@ -744,11 +843,25 @@ class UnifiedSessionEngine(
     private suspend fun resumeSessionInternal() {
         if (!_isSessionActive.value) return
         when (val result = audioEngine.resumeRecording()) {
-            is AudioOperationResult.Success -> Unit
+            is AudioOperationResult.Success -> {
+                currentTimeline?.recordPauseEnd()
+                isSessionPaused = false
+                thermalEngine.setPaused(false)
+                publishLiveSessionState(currentSessionId)
+            }
             is AudioOperationResult.Unavailable -> throw IllegalStateException(result.reason)
             is AudioOperationResult.Failure -> throw IllegalStateException(result.message, result.cause)
         }
     }
+
+    fun updateWatchWearerRole(wearerRole: String) {
+        currentWatchWearerRole = wearerRole
+        val elapsed = currentTimeline?.currentElapsedMillis() ?: 0L
+        thermalEngine.onWearerRoleChanged(wearerRole, elapsed)
+        publishLiveSessionState(currentSessionId)
+    }
+
+    fun skinTemperatureObservations(): List<SkinTemperatureObservation> = thermalEngine.allObservations()
 
     fun updateSpeakerLabel(segmentId: String, label: String) {
         if (label.isBlank()) return
@@ -865,7 +978,13 @@ class UnifiedSessionEngine(
             markerType = "PROSODY_DIVERGENCE",
             sourceChannels = "AUDIO",
             markerConfigVersion = marker.evidence.version,
-            audioAnalysisVersion = marker.evidence.version
+            audioAnalysisVersion = marker.evidence.version,
+            speakerId = marker.speakerId.ifBlank { segment.speakerId },
+            baselineValue = marker.baselineSemitones.toFloat(),
+            observedValue = marker.pitchSemitones.toFloat(),
+            deltaValue = (marker.pitchSemitones - marker.baselineSemitones).toFloat(),
+            unit = marker.unit,
+            detectedAtElapsedMillis = start
         )
         synchronized(acousticEvents) { acousticEvents.add(event) }
     }
@@ -903,17 +1022,29 @@ class UnifiedSessionEngine(
     private fun publishLiveSessionState(sessionId: String? = currentSessionId) = synchronized(livePublicationLock) {
         if (sessionId == null || currentSessionId != sessionId) return@synchronized
         val transcript = _liveTranscriptState.value
-        val generation = currentTimeline?.takeIf { it.sessionId == sessionId }?.generation ?: 0L
+        val timeline = currentTimeline?.takeIf { it.sessionId == sessionId }
+        val generation = timeline?.generation ?: 0L
         val safeBiosignal = liveBiosignalState.value.takeIf {
             it.sessionId == sessionId && (generation == 0L || it.sessionGeneration == generation)
         } ?: LiveBiosignalSnapshot(sessionId = sessionId, sessionGeneration = generation)
         val audioEvents = synchronized(acousticEvents) { acousticEvents.toList() }
-        val combinedEvents = (safeBiosignal.divergenceEvents + audioEvents)
+        val watchState = watchSessionState.value
+        val thermalSnapshot = thermalEngine.snapshot(
+            currentElapsedMillis = timeline?.currentElapsedMillis() ?: 0L,
+            watchConnected = watchSessionActive ||
+                watchState is WatchSessionState.Ready ||
+                watchState is WatchSessionState.Streaming
+        )
+        val thermalDivergences = synchronized(thermalEvents) { thermalEvents.values.toList() }
+        val combinedEvents = (safeBiosignal.divergenceEvents + audioEvents + thermalDivergences)
             .filter { it.sessionId == sessionId }
             .associateBy { it.eventId }.values
             .sortedWith(compareBy({ it.episodeStartElapsedMillis }, { it.eventId }))
             .let { sessionStopCutoff?.filter(it) ?: it }
-        val projectedBiosignal = safeBiosignal.copy(divergenceEvents = combinedEvents)
+        val projectedBiosignal = safeBiosignal.copy(
+            divergenceEvents = combinedEvents,
+            liveTemperature = thermalSnapshot
+        )
         _liveSessionState.value = UnifiedSessionLiveSnapshot(
             sessionId = sessionId,
             generation = generation,
@@ -934,11 +1065,15 @@ class UnifiedSessionEngine(
         divergenceJob?.cancelAndJoin()
         acousticJob?.cancelAndJoin()
         pitchJob?.cancelAndJoin()
+        temperatureJob?.cancelAndJoin()
+        temperatureTickerJob?.cancelAndJoin()
         transcriptJob = null
         speechProcessingJob = null
         divergenceJob = null
         acousticJob = null
         pitchJob = null
+        temperatureJob = null
+        temperatureTickerJob = null
     }
 
     private fun clearSessionOwnership() {
@@ -1007,6 +1142,8 @@ class UnifiedSessionEngine(
         private const val TRANSCRIPT_LINK_TOLERANCE_MILLIS = 1_500L
         private const val ACOUSTIC_DELTA_NORMALIZER_DB = 20f
         private const val MAX_MONITOR_STATUS_LENGTH = 240
+        private const val ONE_SECOND_MS = 1_000L
+        private const val THERMAL_TICKER_MILLIS = 2_000L
 
         internal fun persistedAudioPath(recordedAudio: RecordedAudio, artifacts: VerbatimSessionArtifacts?): String =
             artifacts?.audioPath?.takeIf { it.isNotBlank() } ?: recordedAudio.encryptedRelativePath

@@ -18,14 +18,17 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -33,6 +36,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -62,6 +66,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.stressdetector.mobile.domain.engine.CounselingInteractionMode
+import com.stressdetector.mobile.domain.engine.ResponseProfile
 import com.stressdetector.mobile.domain.voice.VoiceLanguage
 import com.stressdetector.mobile.domain.voice.VoiceSendMode
 import com.stressdetector.mobile.ml.artifacts.ArtifactState
@@ -113,7 +119,6 @@ fun ProfileScreen(
     var showTechnicalDetails by rememberSaveable { mutableStateOf(false) }
     var showVoiceSettings by rememberSaveable { mutableStateOf(false) }
     var showSherpaSources by rememberSaveable { mutableStateOf(false) }
-    var backupAction by remember { mutableStateOf<ProfileBackupAction?>(null) }
     var destructiveAction by remember { mutableStateOf<ProfileDestructiveAction?>(null) }
     val motion = LocalAppMotion.current
 
@@ -456,6 +461,14 @@ fun ProfileScreen(
                 checked = state.aiCounselorConsentGranted,
                 onCheckedChange = { viewModel.toggleConsent("AI_COUNSELING", it) }
             )
+            AiCounselorPreferencesSection(
+                mode = state.counselingMode,
+                responseProfile = state.responseProfile,
+                includeBehavioralContext = state.includeBehavioralContext,
+                onSelectMode = viewModel::setCounselingMode,
+                onSelectProfile = viewModel::setResponseProfile,
+                onToggleBehavioralContext = viewModel::setIncludeBehavioralContext
+            )
             if (aiReminderViewModel != null && aiReminderState != null) {
                 AiReminderSettingsSection(
                     state = aiReminderState,
@@ -465,14 +478,17 @@ fun ProfileScreen(
                         onEnabledChanged = aiReminderViewModel::setEnabled,
                         onRequestNotificationPermission = onRequestNotificationPermission,
                         onPause = aiReminderViewModel::pause,
-                        onRetry = aiReminderViewModel::retry
+                        onRetry = aiReminderViewModel::retry,
+                        onScheduleFollowUp = aiReminderViewModel::scheduleFollowUpReminder,
+                        onCancelPending = aiReminderViewModel::cancelPendingReminders,
+                        onClearFeedback = aiReminderViewModel::clearActionFeedback
                     )
                 )
             }
         }
         ProfileDetail.DATA -> ProfileDetailSheet(
             title = "Data dan keamanan",
-            subtitle = "Cadangan SAF terenkripsi bisa dipulihkan setelah instal ulang dengan kata sandi Anda.",
+            subtitle = "Cadangan SAF terenkripsi bisa dipulihkan setelah instal ulang dengan satu ketukan.",
             onDismiss = { detailSheet = null }
         ) {
             ProfileBackupSection(
@@ -481,8 +497,8 @@ fun ProfileScreen(
                 operationRunning = state.isLifecycleOperationRunning,
                 actions = ProfileBackupActions(
                     onConnect = { modelFolderLauncher.launch(null) },
-                    onBackup = { backupAction = ProfileBackupAction.BACKUP },
-                    onRestore = { backupAction = ProfileBackupAction.RESTORE }
+                    onBackup = viewModel::createSafBackup,
+                    onRestore = viewModel::restoreSafBackup
                 )
             )
             Button(
@@ -606,14 +622,6 @@ fun ProfileScreen(
                     modifier = Modifier.heightIn(min = MIN_TOUCH_TARGET_DP.dp)
                 ) { Text("Impor ZIP lokal") }
             }
-        )
-    }
-
-    backupAction?.let { action ->
-        ProfileBackupDialog(
-            action = action,
-            onConfirm = if (action == ProfileBackupAction.BACKUP) viewModel::createSafBackup else viewModel::restoreSafBackup,
-            onDismiss = { backupAction = null }
         )
     }
 
@@ -742,9 +750,9 @@ private fun ProfileDetailSheet(title: String, subtitle: String, onDismiss: () ->
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .imePadding()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = AppSpacing.Screen, vertical = AppSpacing.Small),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)
         ) {
@@ -758,6 +766,7 @@ private fun ProfileDetailSheet(title: String, subtitle: String, onDismiss: () ->
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             content()
+            Spacer(modifier = Modifier.height(AppSpacing.Medium))
         }
     }
 }
@@ -849,17 +858,76 @@ private fun ArtifactSettingsRow(
 @Composable
 private fun SettingToggleRow(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = { Text(subtitle) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+            .semantics(mergeDescendants = true) {
+                contentDescription = title
+                stateDescription = if (checked) "Aktif" else "Tidak aktif"
+            },
+        headlineContent = { Text(title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)) },
+        supportingContent = { Text(subtitle, style = MaterialTheme.typography.bodySmall) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         trailingContent = {
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                modifier = Modifier.semantics { contentDescription = title }
-            )
+            Switch(checked = checked, onCheckedChange = null)
         }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+internal fun AiCounselorPreferencesSection(
+    mode: CounselingInteractionMode,
+    responseProfile: ResponseProfile,
+    includeBehavioralContext: Boolean,
+    onSelectMode: (CounselingInteractionMode) -> Unit,
+    onSelectProfile: (ResponseProfile) -> Unit,
+    onToggleBehavioralContext: (Boolean) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Compact)) {
+        Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        Text(
+            text = "Preferensi AI Counselor",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+        )
+        Text("Mode interaksi", style = MaterialTheme.typography.titleSmall)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.Compact),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.Micro)
+        ) {
+            CounselingInteractionMode.entries.forEach { item ->
+                FilterChip(
+                    selected = mode == item,
+                    onClick = { onSelectMode(item) },
+                    label = { Text(item.displayName, style = MaterialTheme.typography.labelLarge) },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                )
+            }
+        }
+        Text("Panjang jawaban", style = MaterialTheme.typography.titleSmall)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.Compact),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.Micro)
+        ) {
+            ResponseProfile.entries.forEach { item ->
+                FilterChip(
+                    selected = responseProfile == item,
+                    onClick = { onSelectProfile(item) },
+                    label = { Text(item.displayName, style = MaterialTheme.typography.labelLarge) },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                )
+            }
+        }
+        SettingToggleRow(
+            title = "Integrasi Asesmen & Verbatim+",
+            subtitle = "Sertakan ringkasan psikotes dan observasi Verbatim+ ke dalam konteks AI Counselor.",
+            checked = includeBehavioralContext,
+            onCheckedChange = onToggleBehavioralContext
+        )
+    }
 }
 
 private data class VoiceSettingsState(val language: VoiceLanguage, val reviewTranscript: Boolean, val replyEnabled: Boolean)

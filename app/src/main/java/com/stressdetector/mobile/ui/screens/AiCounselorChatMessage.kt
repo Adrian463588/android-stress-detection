@@ -32,8 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.stressdetector.mobile.domain.assessment.AssessmentRecommendation
+import com.stressdetector.mobile.domain.engine.AssessmentRecommendationBubblePayload
 import com.stressdetector.mobile.domain.engine.CrisisSupportAction
 import com.stressdetector.mobile.domain.engine.EvidenceSourceTier
+import com.stressdetector.mobile.domain.engine.GoalSuggestionPayload
+import com.stressdetector.mobile.domain.engine.JournalBubblePayload
+import com.stressdetector.mobile.domain.engine.PlanReviewStatus
 import com.stressdetector.mobile.domain.engine.RagMode
 import com.stressdetector.mobile.ui.AppSpacing
 import com.stressdetector.mobile.ui.components.CounselorMessageText
@@ -48,7 +52,13 @@ internal data class ChatMessageActions(
     val onStopSpeaking: () -> Unit,
     val onOpenCitation: (String) -> Unit,
     val onOpenCrisisSupport: (CrisisSupportAction) -> Unit,
-    val onOpenAssessment: (String) -> Unit = {}
+    val onOpenAssessment: (String) -> Unit = {},
+    val onContinueResponse: (String) -> Unit = {},
+    val onReviewPlan: (String, PlanReviewStatus) -> Unit = { _, _ -> },
+    val onRequestPlanRevision: (String) -> Unit = {},
+    val onStartJournal: (String, JournalBubblePayload) -> Unit = { _, _ -> },
+    val onAcceptGoal: (String, GoalSuggestionPayload) -> Unit = { _, _ -> },
+    val onRespondRecommendation: (String, AssessmentRecommendationBubblePayload, String) -> Unit = { _, _, _ -> }
 )
 
 @Composable
@@ -85,10 +95,49 @@ private fun MessageBubbleContent(message: UiChatMessage, isUser: Boolean, isCris
         if (message.citations.isNotEmpty()) {
             CitationList(message.citations, actions.onOpenCitation)
         }
-        if (!isUser && !isCrisis && message.assessmentRecommendations.isNotEmpty()) {
-            AssessmentRecommendationCards(message.assessmentRecommendations, actions.onOpenAssessment)
+        if (!isUser && !isCrisis) {
+            message.journalPrompt?.let { prompt ->
+                AdaptiveJournalPromptCard(
+                    payload = prompt,
+                    onStartJournal = { actions.onStartJournal(message.id, it) }
+                )
+            }
+            message.goalSuggestion?.let { goal ->
+                AdaptiveGoalSuggestionCard(
+                    payload = goal,
+                    onAcceptGoal = { actions.onAcceptGoal(message.id, it) }
+                )
+            }
+            val structuredRec = message.assessmentBubble
+            if (structuredRec != null) {
+                AdaptiveAssessmentRecommendationCard(
+                    payload = structuredRec,
+                    onStartAssessment = { payload ->
+                        actions.onRespondRecommendation(message.id, payload, "ACCEPTED")
+                        actions.onOpenAssessment(payload.instrumentId)
+                    },
+                    onDefer = { payload -> actions.onRespondRecommendation(message.id, payload, "DEFERRED") },
+                    onDecline = { payload -> actions.onRespondRecommendation(message.id, payload, "DECLINED") }
+                )
+            } else if (message.assessmentRecommendations.isNotEmpty()) {
+                AssessmentRecommendationCards(message.assessmentRecommendations, actions.onOpenAssessment)
+            }
+            message.assessmentResultSummary?.let { summary ->
+                AdaptiveAssessmentResultCard(
+                    payload = summary,
+                    onOpenDetail = actions.onOpenAssessment
+                )
+            }
         }
-        if (!isUser && !isCrisis && message.content.isNotBlank()) VoiceReplyButton(message, actions)
+        if (!isUser && !isCrisis && message.content.isNotBlank()) {
+            MessageClinicalActionRow(
+                message = message,
+                onContinueResponse = actions.onContinueResponse,
+                onReviewPlan = actions.onReviewPlan,
+                onRequestPlanRevision = actions.onRequestPlanRevision
+            )
+            VoiceReplyButton(message, actions)
+        }
     }
 }
 
@@ -131,7 +180,10 @@ private fun MessageBody(message: UiChatMessage, isUser: Boolean) {
 private fun CrisisSupportButtons(actions: List<CrisisSupportAction>, onOpen: (CrisisSupportAction) -> Unit) {
     Spacer(modifier = Modifier.height(10.dp))
     actions.forEach { action ->
-        Button(onClick = { onOpen(action) }, modifier = Modifier.fillMaxWidth()) { Text(action.label) }
+        Button(
+            onClick = { onOpen(action) },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+        ) { Text(action.label) }
     }
 }
 
@@ -142,7 +194,11 @@ private fun VoiceReplyButton(message: UiChatMessage, actions: ChatMessageActions
     } else {
         { actions.onSpeak(message.id, message.content) }
     }
-    IconButton(onClick = onVoiceClick, enabled = !actions.isVoiceStopping) {
+    IconButton(
+        onClick = onVoiceClick,
+        enabled = !actions.isVoiceStopping,
+        modifier = Modifier.heightIn(min = 48.dp)
+    ) {
         Icon(
             if (actions.isSpeaking) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
             contentDescription = if (actions.isSpeaking) "Hentikan suara" else "Bacakan jawaban"

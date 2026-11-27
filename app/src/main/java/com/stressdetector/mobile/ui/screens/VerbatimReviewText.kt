@@ -76,7 +76,7 @@ internal fun VerbatimCueButton(cue: VerbatimCue, onPlayCue: (Long) -> Unit, canP
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                "Penanda ekspresi untuk ditinjau, bukan bukti desepsi. Waktu mengikuti ujaran, bukan kata.",
+                "Penanda ekspresi leksikal pada interval ujaran.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -103,8 +103,7 @@ internal fun VerbatimProsodyStatus(evidence: VerbatimProsodyEvidence?) {
         !evidence.isAvailable -> "openSMILE: ${evidence.unavailableReason ?: "voiced frame tidak memadai"}"
         else ->
             "openSMILE eGeMAPSv02 · ${evidence.voicedFrameCount}/${evidence.frameCount} frame voiced. " +
-                prosodyValues(evidence) + "\n" +
-                "Pitch, loudness, jitter, shimmer adalah fitur akustik, bukan prediksi stres."
+                prosodyValues(evidence)
     }
     Text(message, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }

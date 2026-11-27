@@ -60,15 +60,6 @@ private fun LazyListScope.counselorMessageItems(model: CounselorScreenModel) {
     if (!state.isModelReady && state.phase != CounselorPhase.CRISIS_ESCALATION) {
         item { ModelMissingCard(state.modelDownloadState, model.navigation.onNavigateToProfile) }
     }
-    runtime.aiReminderState?.let { reminderState ->
-        item {
-            ReminderStatusRow(
-                state = reminderState,
-                onRetry = { retryReminder(model, reminderState) },
-                onRequestNotificationPermission = model.navigation.onRequestNotificationPermission
-            )
-        }
-    }
     (state.crisisPersistenceState as? CrisisPersistenceState.RetryableFailure)?.let { failure ->
         item { CrisisPersistenceRetryCard(failure.message, runtime.viewModel::retryCrisisPersistence) }
     }
@@ -86,7 +77,15 @@ private fun LazyListScope.counselorMessageItems(model: CounselorScreenModel) {
                 onStopSpeaking = runtime.viewModel::stopVoiceReply,
                 onOpenCitation = { rawUrl -> openCitation(model.layout.context, rawUrl) },
                 onOpenCrisisSupport = { action -> openCrisisSupport(model.layout.context, action) },
-                onOpenAssessment = model.navigation.onOpenAssessment
+                onOpenAssessment = model.navigation.onOpenAssessment,
+                onContinueResponse = runtime.viewModel::continueResponse,
+                onReviewPlan = { id, status -> runtime.viewModel.reviewCounselingPlan(id, status) },
+                onRequestPlanRevision = { id -> model.dialogs.onPlanRevisionMessageIdChanged(id) },
+                onStartJournal = { msgId, prompt -> runtime.viewModel.openJournalSheet(msgId, prompt) },
+                onAcceptGoal = { msgId, goal -> runtime.viewModel.acceptGoalSuggestion(msgId, goal) },
+                onRespondRecommendation = { msgId, payload, status ->
+                    runtime.viewModel.respondToAssessmentRecommendation(msgId, payload, status)
+                }
             )
         )
     }

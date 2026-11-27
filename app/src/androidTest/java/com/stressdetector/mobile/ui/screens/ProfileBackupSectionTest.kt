@@ -9,13 +9,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -83,29 +81,28 @@ class ProfileBackupSectionTest {
     }
 
     @Test
-    fun backupDialogRequiresMatchingRecoverySecret() {
-        var submitted: String? = null
-        compose.setContent { MaterialTheme { ProfileBackupDialog(ProfileBackupAction.BACKUP, { submitted = it }, {}) } }
-        compose.onNodeWithText("Cadangkan").assertIsNotEnabled()
-        compose.onNodeWithText("Kata sandi pemulihan").performTextInput("test-only-secret")
-        compose.onNodeWithText("Cadangkan").assertIsNotEnabled()
-        compose.onNodeWithText("Ulangi kata sandi").performTextInput("test-only-secret")
-        compose.onNodeWithText("Cadangkan").assertIsEnabled().performClick()
-        compose.runOnIdle { assertEquals("test-only-secret", submitted) }
-    }
-
-    @Test
-    fun restoreDialogCanBeCancelledWithoutSubmitting() {
-        var submissions = 0
-        var dismissals = 0
+    fun oneClickBackupAndRestoreTriggerDirectlyWithoutPasswordPrompt() {
+        var backups = 0
+        var restores = 0
         compose.setContent {
-            MaterialTheme { ProfileBackupDialog(ProfileBackupAction.RESTORE, { submissions++ }, { dismissals++ }) }
+            MaterialTheme {
+                Column {
+                    ProfileBackupSection(
+                        SafUserBackupState(),
+                        true,
+                        false,
+                        ProfileBackupActions({}, { backups++ }, { restores++ })
+                    )
+                }
+            }
         }
-        compose.onNodeWithText("Pulihkan").assertIsNotEnabled()
-        compose.onNodeWithText("Batal").performClick()
+        compose.onNodeWithText("Cadangkan History, AI+, dan Verbatim+").performClick()
+        compose.onNodeWithText("Pulihkan dari cadangan SAF").performClick()
+        compose.onNodeWithText("Kata sandi pemulihan").assertDoesNotExist()
+        compose.onNodeWithText("Pulihkan data").assertDoesNotExist()
         compose.runOnIdle {
-            assertEquals(0, submissions)
-            assertEquals(1, dismissals)
+            assertEquals(1, backups)
+            assertEquals(1, restores)
         }
     }
 }

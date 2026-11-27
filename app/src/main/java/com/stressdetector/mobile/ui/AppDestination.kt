@@ -22,6 +22,10 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     object AssessmentDetail : Screen("assessments/{instrumentId}", "Detail asesmen", Icons.Outlined.Description) {
         fun createRoute(instrumentId: String): String = "assessments/${Uri.encode(instrumentId)}"
     }
+    object AssessmentResult : Screen("assessments/{instrumentId}/result/{resultId}", "Hasil asesmen", Icons.Outlined.Description) {
+        fun createRoute(instrumentId: String, resultId: String): String =
+            "assessments/${Uri.encode(instrumentId)}/result/${Uri.encode(resultId)}"
+    }
     object Profile : Screen("profile", "Profile", Icons.Outlined.Person)
     object CounselorPersona : Screen("counselor-persona", "Persona", Icons.Outlined.Person)
     object DocumentLibrary : Screen("documents", "Knowledge Base", Icons.Outlined.Description)

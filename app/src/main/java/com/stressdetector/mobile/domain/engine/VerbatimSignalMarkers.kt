@@ -53,6 +53,7 @@ private fun signalMarkerLabel(type: String): String = when (type) {
     "PROSODY_DIVERGENCE" -> "Perubahan prosodi"
     "BPM_TRAJECTORY", "PHYSIOLOGICAL_BPM_TRAJECTORY", "BPM_RISE", "BPM_RECOVERY" -> "Perubahan BPM"
     "TEMPORAL_BASELINE_AROUSAL", "MODEL_AROUSAL", "STRESS_ELEVATED" -> "Arousal PPG"
+    "THERMAL_DIVERGENCE" -> "Perubahan suhu kulit"
     "CHANNEL_AGREEMENT" -> "Kesepakatan kanal"
     "MANUAL" -> "Catatan manual"
     "INCONSISTENCY_CUE" -> "Cue untuk ditinjau"

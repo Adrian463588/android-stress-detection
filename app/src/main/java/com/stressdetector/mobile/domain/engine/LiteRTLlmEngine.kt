@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
@@ -37,7 +38,7 @@ class LiteRTLlmEngine(private val context: Context, private val modelManager: Mo
         private const val TAG = "LiteRTLlmEngine"
         private const val RUNTIME_VERSION = GemmaRuntimeContract.RUNTIME_VERSION
         private const val MAX_CONTEXT_TOKENS = GemmaRuntimeContract.MAX_NUM_TOKENS
-        private const val GENERATION_TIMEOUT_MS = 120_000L
+        private const val GENERATION_TIMEOUT_MS = 180_000L
         private const val PREF_SUCCESS_FINGERPRINT = "success_fingerprint"
         private const val PREFS_NAME = "ai_runtime_preflight"
         const val MODEL_FILE_NAME = ModelManager.MODEL_FILE
@@ -262,7 +263,7 @@ class LiteRTLlmEngine(private val context: Context, private val modelManager: Mo
                     activeConversation = createdConversation
                 }
                 withTimeout(GENERATION_TIMEOUT_MS) {
-                    createdConversation.sendMessageAsync(prompt.userPrompt).collect { message ->
+                    createdConversation.sendMessageAsync(prompt.userPrompt).buffer(MAX_CONTEXT_TOKENS).collect { message ->
                         counselorContentDelta(message.textContent())?.let { emit(it) }
                     }
                 }
@@ -294,6 +295,83 @@ class LiteRTLlmEngine(private val context: Context, private val modelManager: Mo
 
     override fun cancelGeneration() {
         generationCoordinator.requestCancellation()?.cancelProcess()
+    }
+
+    override suspend fun analyzeMultimodal(prompt: String, imagesPng: List<ByteArray>): Result<String> =
+        withContext(Dispatchers.IO) {
+            if (imagesPng.isEmpty()) {
+                return@withContext Result.failure(IllegalArgumentException("No image bytes supplied"))
+            }
+            generationMutex.withLock {
+                val packageStatus = modelManager.currentReadiness()
+                if (packageStatus !is ModelReadiness.Ready) {
+                    return@withLock Result.failure(IllegalStateException("Model Gemma belum tersedia di perangkat."))
+                }
+                val visionEngine = createVisionEngineOrNull(packageStatus, imagesPng.size.coerceIn(1, 4))
+                    ?: return@withLock Result.failure(IllegalStateException("Backend visi multimodal belum didukung pada runtime ini."))
+
+                var conversation: Conversation? = null
+                try {
+                    val created = visionEngine.createConversation(
+                        ConversationConfig(
+                            systemInstruction = Contents.of(
+                                "Anda adalah asisten psikologi purwarupa. Deskripsikan gambar asesmen proyektif secara objektif dan eksploratif. " +
+                                    "Jangan mendiagnosis atau mengarang skor klinis."
+                            ),
+                            samplerConfig = SamplerConfig(topK = 20, topP = 0.9, temperature = 0.3)
+                        )
+                    )
+                    conversation = created
+                    val parts = imagesPng.map { Content.ImageBytes(it) } + Content.Text(prompt)
+                    val buffer = StringBuilder()
+                    withTimeout(GENERATION_TIMEOUT_MS) {
+                        created.sendMessageAsync(Message.user(Contents.of(parts)))
+                            .buffer(MAX_CONTEXT_TOKENS)
+                            .collect { msg ->
+                                val delta = msg.textContent()
+                                if (delta.isNotEmpty()) buffer.append(delta)
+                            }
+                    }
+                    val text = buffer.toString().trim()
+                    if (text.isBlank()) {
+                        Result.failure(IllegalStateException("Respons multimodal kosong."))
+                    } else {
+                        Result.success(text)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    Log.w(TAG, "Multimodal vision analysis failed; falling back to local features", error)
+                    Result.failure(error)
+                } finally {
+                    runCatching { conversation?.cancelProcess() }
+                    runCatching { conversation?.close() }
+                    runCatching { visionEngine.close() }
+                }
+            }
+        }
+
+    private fun createVisionEngineOrNull(ready: ModelReadiness.Ready, maxImages: Int): Engine? {
+        closeEngine()
+        val cacheDir = GemmaRuntimeContract.cacheDirectory(applicationContext).also { it.mkdirs() }.absolutePath
+        val modelPath = modelManager.getModelFile().absolutePath
+        for (visionBackend in listOf(Backend.CPU(), Backend.GPU())) {
+            val attempt = runCatching {
+                Engine(
+                    EngineConfig(
+                        modelPath = modelPath,
+                        backend = Backend.CPU(),
+                        visionBackend = visionBackend,
+                        audioBackend = null,
+                        maxNumTokens = MAX_CONTEXT_TOKENS,
+                        maxNumImages = maxImages,
+                        cacheDir = cacheDir
+                    )
+                ).also { it.initialize() }
+            }.getOrNull()
+            if (attempt != null) return attempt
+        }
+        return null
     }
 
     override suspend fun unload() = withContext(Dispatchers.IO) {
@@ -356,9 +434,18 @@ class LiteRTLlmEngine(private val context: Context, private val modelManager: Mo
 internal fun counselorContentDelta(text: String): LlmGenerationState.Content? =
     text.takeIf(String::isNotEmpty)?.let { LlmGenerationState.Content(it) }
 
+@androidx.annotation.Keep
+internal fun retainSamplerConfig(config: SamplerConfig): Int {
+    return config.topK + config.seed + (config.topP + config.temperature).toInt()
+}
+
 /** Exact evidence markers favor deterministic copying; ordinary support keeps conversational sampling. */
-internal fun counselorSamplerConfig(mode: RagMode): SamplerConfig = when (mode) {
-    RagMode.GROUNDED, RagMode.BUNDLED_GROUNDED, RagMode.WEB_GROUNDED ->
-        SamplerConfig(topK = 1, topP = 1.0, temperature = 0.0)
-    else -> SamplerConfig(topK = 40, topP = 0.95, temperature = 0.7)
+internal fun counselorSamplerConfig(mode: RagMode): SamplerConfig {
+    val config = when (mode) {
+        RagMode.GROUNDED, RagMode.BUNDLED_GROUNDED, RagMode.WEB_GROUNDED ->
+            SamplerConfig(topK = 1, topP = 1.0, temperature = 0.0)
+        else -> SamplerConfig(topK = 40, topP = 0.95, temperature = 0.7)
+    }
+    retainSamplerConfig(config)
+    return config
 }

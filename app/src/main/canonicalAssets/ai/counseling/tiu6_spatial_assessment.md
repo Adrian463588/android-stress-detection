@@ -32,25 +32,10 @@ Pada setiap butir, peserta memutuskan secara dikotomis:
 
 ## 3. Prosedur Skoring dan Norma Konversi
 
-### Kunci Jawaban Resmi LPSP3 UI (`UI-10154-96`)
-- **Baris 1 (Kubus)**: `1: S`, `2: B`, `3: B`, `4: B`, `5: S`
-- **Baris 2 (Piramida/Kotak)**: `6: B`, `7: S`, `8: S`, `9: S`, `10: S`
-- **Baris 3 (Prisma Segitiga)**: `11: B`, `12: S`, `13: B`, `14: B`, `15: S`
-- **Baris 4 (Limas Segitiga)**: `16: B`, `17: S`, `18: S`, `19: S`, `20: B`
-- **Baris 5 (Poligon)**: `21: B`, `22: B`, `23: B`, `24: B`, `25: S`
-- **Baris 6 (Bentuk Berarsir)**: `26: B`, `27: S`, `28: B`, `29: S`, `30: B`
-- **Baris 7 (Kubus Kompleks)**: `31: B`, `32: S`, `33: S`, `34: S`, `35: S`
-- **Baris 8 (Gabungan)**: `36: B`, `37: S`, `38: S`, `39: B`, `40: B`
-
-### Tabel Norma Baku `SKALA TIU 6` (`Norma TIU 6.jpg`)
-
-| Raw Score (`RS`, /40) | Weighted Score (`Skala`) | Kategori Kualitatif | Profil Kapasitas Visual-Spasial |
-|---|---|---|---|
-| **33 – 40** | **5** | **BAIK SEKALI** | Abstraksi spasial 2D–3D sangat superior. Memiliki kecepatan dan ketepatan tinggi dalam manipulasi rotasi mental, navigasi ruang kompleks, dan estimasi volumetrik. |
-| **25 – 32** | **4** | **BAIK** | Pemahaman hubungan ruang dan orientasi objek di atas rata-rata populasi. Efektif dalam membaca skema teknik, tata letak, dan konstruksi geometris. |
-| **17 – 24** | **3** | **RATA-RATA** | Kemampuan spasial memadai untuk tugas-tugas teknis standar dan kebutuhan operasional sehari-hari. Memerlukan waktu ekstra untuk struktur sangat rumit. |
-| **9 – 16** | **2** | **KURANG** | Hambatan dalam rotasi mental tanpa bantuan manipulatif fisik. Cenderung bingung pada jaring-jaring poligon atau sisi terbalik. |
-| **0 – 8** | **1** | **KURANG SEKALI** | Hambatan signifikan pada penalaran spasial. Sangat disarankan asesmen ulang (apakah ada miskonsepsi instruksi dikotomi B/S atau kelelahan visual). |
+### Ketentuan Skoring Terlindungi
+- Skoring dilakukan secara deterministik menggunakan kunci jawaban internal pada modul penilaian aplikasi; kunci jawaban per butir **tidak disebarluaskan** dalam referensi percakapan konseling untuk menjaga validitas keamanan tes.
+- Skor dilaporkan sebagai skor mentah (`Raw Score / 40`) dan rincian 8 kelompok bangun ruang (masing-masing /5 butir).
+- Konversi skala baku dan penetapan kategori kemampuan spasial wajib merujuk manual resmi LPSP3 UI (`UI-10154-96`) sesuai kelompok pembanding yang relevan.
 
 ---
 

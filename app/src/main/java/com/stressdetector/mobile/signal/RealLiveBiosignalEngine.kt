@@ -1,12 +1,16 @@
 package com.stressdetector.mobile.signal
 
+import android.os.SystemClock
 import com.stressdetector.mobile.data.IPpgRepository
+import com.stressdetector.mobile.data.PpgStreamState
 import com.stressdetector.mobile.data.db.DivergenceEventEntity
 import com.stressdetector.mobile.data.db.RealtimeInferenceRecordEntity
 import com.stressdetector.mobile.data.repository.LiveMonitorRecordStore
+import com.stressdetector.mobile.domain.engine.BpmSource
 import com.stressdetector.mobile.domain.engine.DivergenceEvent
 import com.stressdetector.mobile.domain.engine.LiveBiosignalEngine
 import com.stressdetector.mobile.domain.engine.LiveBiosignalSnapshot
+import com.stressdetector.mobile.domain.engine.LiveBpmChannelSnapshot
 import com.stressdetector.mobile.domain.engine.LiveMonitorStartResult
 import com.stressdetector.mobile.domain.engine.LiveMonitorStartResultProvider
 import com.stressdetector.mobile.domain.engine.LiveMonitorStopSummary
@@ -35,15 +39,30 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @OptIn(FlowPreview::class)
+@Suppress("MagicNumber")
 class RealLiveBiosignalEngine(
     private val realtimeInferenceEngine: RealtimeInferenceEngine,
     private val ppgRepository: IPpgRepository,
     private val recordStore: LiveMonitorRecordStore,
-    private val config: LiveMonitorConfig
+    private val config: LiveMonitorConfig,
+    private val monotonicNowMillis: () -> Long = {
+        runCatching { SystemClock.elapsedRealtime() }.getOrElse { System.nanoTime() / 1_000_000L }
+    }
 ) : LiveBiosignalEngine {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var monitoringJob: Job? = null
     private var snapshotJob: Job? = null
+    private var previewJob: Job? = null
+    private val previewTracker = LiveBpmPreviewTracker(config)
+
+    @Volatile
+    private var latestPreviewBySource: Map<BpmSource, LiveBpmChannelSnapshot> = emptyMap()
+
+    @Volatile
+    private var clockBindingSource: String = "UNBOUND"
+
+    @Volatile
+    private var clockUncertaintyMillis: Long? = null
     private val mutableDivergences = MutableSharedFlow<DivergenceEventEntity>()
     private val mutableSummaries = MutableSharedFlow<LiveMonitorStopSummary>(replay = 1)
     private val mutableLiveState = MutableStateFlow(LiveBiosignalSnapshot())
@@ -97,14 +116,11 @@ class RealLiveBiosignalEngine(
                 "Watch session does not match active phone session"
             )
         }
-        val readyReceiptMillis = initialStream.sessionReadyReceivedAtMonotonicMillis
-            .takeIf { it > 0L }
-        if (readyReceiptMillis != null) {
-            timeline.bindPpgClock(
-                ppgElapsedMillis = initialStream.sessionReadyElapsedMillis,
-                receivedAtMonotonicMillis = readyReceiptMillis
-            )
-        }
+        clockBindingSource = "UNBOUND"
+        clockUncertaintyMillis = null
+        latestPreviewBySource = emptyMap()
+        previewTracker.reset()
+        ensureWatchClockBound(timeline, initialStream)
 
         val startResult = runCatching {
             val typedEngine = realtimeInferenceEngine as? LiveMonitorStartResultProvider
@@ -141,6 +157,13 @@ class RealLiveBiosignalEngine(
                 .collect { (stream, chart, monitor) ->
                     publishLiveSnapshot(sessionId, stream, chart, monitor)
                 }
+        }
+        previewJob?.cancel()
+        previewJob = scope.launch {
+            while (isActive) {
+                delay(LIVE_PREVIEW_CADENCE_MILLIS)
+                refreshLivePreview(sessionId)
+            }
         }
         monitoringJob = scope.launch {
             // Process immediately at the normal cadence: realtime BPM/arousal uses
@@ -197,6 +220,9 @@ class RealLiveBiosignalEngine(
         } ?: return
         job.cancel()
         job.join()
+        previewJob?.cancel()
+        previewJob?.join()
+        previewJob = null
         snapshotJob?.cancel()
         snapshotJob?.join()
         snapshotJob = null
@@ -227,11 +253,13 @@ class RealLiveBiosignalEngine(
         val timeline = synchronized(lifecycleLock) { activeTimeline }
             ?.takeIf { it.sessionId == sessionId }
             ?: return
+        ensureWatchClockBound(timeline, stream)
         val available = mapOf(
             PpgType.GREEN to ppgRepository.greenWindow(),
             PpgType.IR to ppgRepository.irWindow()
         )
         realtimeInferenceEngine.processPpgWindows(available)
+        refreshLivePreview(sessionId)
         val state = realtimeInferenceEngine.monitorState.value
         state.channelStates.forEach { (channel, channelState) ->
             val sourceTimestamp = channelState.lastWindowEndElapsedMillis ?: return@forEach
@@ -271,9 +299,52 @@ class RealLiveBiosignalEngine(
         publishLiveSnapshot(sessionId)
     }
 
+    private fun refreshLivePreview(sessionId: String) {
+        val stream = ppgRepository.state.value
+        if (activeSessionId != sessionId || stream.sessionId != sessionId || stream.protocolRejected) return
+        synchronized(lifecycleLock) { activeTimeline }
+            ?.takeIf { it.sessionId == sessionId }
+            ?.let { ensureWatchClockBound(it, stream) }
+        val available = mapOf(
+            PpgType.GREEN to ppgRepository.greenWindow(),
+            PpgType.IR to ppgRepository.irWindow()
+        )
+        latestPreviewBySource = previewTracker.evaluate(
+            windows = available,
+            stream = stream,
+            monotonicNowMillis = monotonicNowMillis(),
+            watchHeartRate = ppgRepository.currentWatchHeartRate(),
+            watchHeartRateReceiptMonotonicMillis = ppgRepository.currentWatchHeartRateReceivedAtMonotonicMillis()
+        )
+        publishLiveSnapshot(sessionId, stream = stream)
+    }
+
+    private fun ensureWatchClockBound(timeline: SessionTimeline, stream: PpgStreamState) {
+        val readyReceipt = stream.sessionReadyReceivedAtMonotonicMillis.takeIf { it > 0L }
+        if (readyReceipt != null && clockBindingSource != "SESSION_READY") {
+            timeline.bindPpgClock(
+                ppgElapsedMillis = stream.sessionReadyElapsedMillis,
+                receivedAtMonotonicMillis = readyReceipt,
+                bindingSource = "SESSION_READY",
+                uncertaintyMillis = READY_CLOCK_UNCERTAINTY_MS
+            )
+            clockBindingSource = "SESSION_READY"
+            clockUncertaintyMillis = READY_CLOCK_UNCERTAINTY_MS
+        } else if (clockBindingSource == "UNBOUND" && stream.firstBatchReceivedAtMonotonicMillis > 0L) {
+            timeline.bindPpgClock(
+                ppgElapsedMillis = stream.firstBatchElapsedMillis,
+                receivedAtMonotonicMillis = stream.firstBatchReceivedAtMonotonicMillis,
+                bindingSource = "FIRST_BATCH_FALLBACK",
+                uncertaintyMillis = FIRST_BATCH_CLOCK_UNCERTAINTY_MS
+            )
+            clockBindingSource = "FIRST_BATCH_FALLBACK"
+            clockUncertaintyMillis = FIRST_BATCH_CLOCK_UNCERTAINTY_MS
+        }
+    }
+
     private fun publishLiveSnapshot(
         sessionId: String?,
-        stream: com.stressdetector.mobile.data.PpgStreamState = ppgRepository.state.value,
+        stream: PpgStreamState = ppgRepository.state.value,
         chart: com.stressdetector.mobile.data.PpgChartFrame = ppgRepository.chartFrames.value,
         monitor: com.stressdetector.mobile.domain.engine.LiveMonitorState = realtimeInferenceEngine.monitorState.value
     ) {
@@ -288,14 +359,27 @@ class RealLiveBiosignalEngine(
             .filter { it.sessionId == sessionId }
             .map { it.toEntity(timeline) }
             .toList()
+        val previewMap = latestPreviewBySource
+        val activePreview = previewTracker.selectActivePreview(previewMap)
+        val mergedPrv = monitor.latestPrvByChannel.toMutableMap().apply {
+            previewMap[BpmSource.PPG_GREEN]?.prvMetrics?.let { putIfAbsent(PpgType.GREEN, it) }
+            previewMap[BpmSource.PPG_IR]?.prvMetrics?.let { putIfAbsent(PpgType.IR, it) }
+        }
+        val enrichedMonitor = monitor.copy(
+            liveBpmBySource = previewMap,
+            activeBpmPreview = activePreview,
+            latestPrvByChannel = mergedPrv,
+            clockBindingSource = clockBindingSource,
+            clockUncertaintyMillis = clockUncertaintyMillis
+        )
         mutableLiveState.value = LiveBiosignalSnapshot(
             sessionId = sessionId,
             sessionGeneration = timeline?.generation ?: 0L,
-            monitor = monitor,
-            ppgStream = if (ownsSession) stream else com.stressdetector.mobile.data.PpgStreamState(sessionId = sessionId),
+            monitor = enrichedMonitor,
+            ppgStream = if (ownsSession) stream else PpgStreamState(sessionId = sessionId),
             chart = chart.takeIf { ownsSession },
-            latestBpm = monitor.latestBpm,
-            latestBpmByChannel = monitor.latestBpmByChannel,
+            latestBpm = enrichedMonitor.latestBpm,
+            latestBpmByChannel = enrichedMonitor.latestBpmByChannel,
             divergenceEvents = synchronized(lifecycleLock) {
                 (persistedDivergences.values + activeEntities)
                     .associateBy(DivergenceEventEntity::eventId)
@@ -348,6 +432,9 @@ class RealLiveBiosignalEngine(
 
     private companion object {
         const val LIVE_STATE_SAMPLE_MILLIS = 200L
+        const val LIVE_PREVIEW_CADENCE_MILLIS = 1_000L
+        const val READY_CLOCK_UNCERTAINTY_MS = 250L
+        const val FIRST_BATCH_CLOCK_UNCERTAINTY_MS = 1_000L
     }
 }
 

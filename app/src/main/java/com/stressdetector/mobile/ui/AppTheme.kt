@@ -1,13 +1,16 @@
 package com.stressdetector.mobile.ui
 
 import android.provider.Settings
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +52,45 @@ data class AppMotionSpec(val enabled: Boolean) {
 
 val LocalAppMotion = staticCompositionLocalOf { AppMotionSpec(enabled = true) }
 
+@Immutable
+data class AppClinicalColors(
+    val physiological: Color,
+    val acoustic: Color,
+    val marker: Color,
+    val thermal: Color,
+    val recording: Color,
+    val surfaceSubtle: Color,
+    val borderSubtle: Color
+)
+
+@Suppress("MagicNumber")
+internal val DarkClinicalColors = AppClinicalColors(
+    physiological = AppPalette.Primary,
+    acoustic = AppPalette.Secondary,
+    marker = AppPalette.Warning,
+    thermal = Color(0xFFF59E0B),
+    recording = AppPalette.Error,
+    surfaceSubtle = Color(0xFF111B2B),
+    borderSubtle = Color(0xFF2B3B54)
+)
+
+@Suppress("MagicNumber")
+internal val LightClinicalColors = AppClinicalColors(
+    physiological = Color(0xFF047857),
+    acoustic = Color(0xFF1D4ED8),
+    marker = Color(0xFFB45309),
+    thermal = Color(0xFFB45309),
+    recording = Color(0xFFB91C1C),
+    surfaceSubtle = Color(0xFFF1F5F9),
+    borderSubtle = Color(0xFFCBD5E1)
+)
+
+val LocalClinicalColors = staticCompositionLocalOf { DarkClinicalColors }
+
+val MaterialTheme.clinicalColors: AppClinicalColors
+    @Composable
+    get() = LocalClinicalColors.current
+
 private val AppColorScheme = darkColorScheme(
     primary = AppPalette.Primary,
     secondary = AppPalette.Secondary,
@@ -64,6 +106,23 @@ private val AppColorScheme = darkColorScheme(
     onError = AppPalette.Background
 )
 
+@Suppress("MagicNumber")
+private val AppLightColorScheme = lightColorScheme(
+    primary = AppPalette.Primary,
+    secondary = Color(0xFF2563EB),
+    background = Color(0xFFF8FAFC),
+    surface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFFE2E8F0),
+    onPrimary = Color(0xFF062019),
+    onSecondary = Color(0xFFFFFFFF),
+    onBackground = Color(0xFF0F172A),
+    onSurface = Color(0xFF0F172A),
+    onSurfaceVariant = Color(0xFF475569),
+    outline = Color(0xFFCBD5E1),
+    error = Color(0xFFDC2626),
+    onError = Color(0xFFFFFFFF)
+)
+
 private val AppShapes = Shapes(
     extraSmall = RoundedCornerShape(4.dp),
     small = RoundedCornerShape(8.dp),
@@ -74,7 +133,7 @@ private val AppShapes = Shapes(
 
 @Composable
 @Suppress("FunctionNaming")
-fun StressDetectorTheme(content: @Composable () -> Unit) {
+fun StressDetectorTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val context = LocalContext.current
     val animationScale by remember(context) {
         mutableStateOf(
@@ -88,9 +147,14 @@ fun StressDetectorTheme(content: @Composable () -> Unit) {
         )
     }
     val motion = remember(animationScale) { AppMotionSpec(animationScale > 0f) }
-    CompositionLocalProvider(LocalAppMotion provides motion) {
+    val colorScheme = if (darkTheme) AppColorScheme else AppLightColorScheme
+    val clinicalColors = if (darkTheme) DarkClinicalColors else LightClinicalColors
+    CompositionLocalProvider(
+        LocalAppMotion provides motion,
+        LocalClinicalColors provides clinicalColors
+    ) {
         MaterialTheme(
-            colorScheme = AppColorScheme,
+            colorScheme = colorScheme,
             typography = Typography(),
             shapes = AppShapes,
             content = content

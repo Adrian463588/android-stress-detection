@@ -66,7 +66,6 @@ internal fun VerbatimPitchPanel(
         isArchive && latest == null -> "Pitch tidak tersedia"
         else -> pitchStatusLabel(latest)
     }
-    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -80,11 +79,6 @@ internal fun VerbatimPitchPanel(
             VerbatimPitchSection(viewport, status, isPaused, chartMarkers)
             VerbatimTimelineCaption(viewport, isArchive, playbackOffsetMs)
             VerbatimMarkerReview(visibleMarkers, selectedMarkerId, isArchive, { selectedMarkerId = it }, onSelectMarker)
-            Text(
-                "Pitch suara bukan ukuran stres atau bukti desepsi.",
-                style = MaterialTheme.typography.bodySmall,
-                color = mutedColor
-            )
         }
     }
 }

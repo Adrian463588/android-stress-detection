@@ -50,7 +50,7 @@ Total skor mentah ($RS = r_1 + r_2 + r_3 + r_4 \in [0, 50]$) dikonversikan ke St
 | **16 – 23** | **90 – 109** | *Average (Rata-Rata)* | Kapasitas inteligensi umum memadai untuk tuntutan akademis dan profesional sehari-hari. |
 | **12 – 15** | **80 – 89** | *Low Average* | Cenderung membutuhkan waktu ekstra dan panduan konkret saat menghadapi pola abstrak yang sangat kompleks. |
 | **9 – 11** | **70 – 79** | *Borderline* | Keterbatasan nyata dalam penalaran induktif-spasial nonverbal murni. |
-| **$\le 8$** | **38 – 67** | *Mentally Retardation* | Indikasi hambatan kognitif berat; memerlukan asesmen adaptif dan klinis komprehensif. |
+| **$\le 8$** | *Perlu Evaluasi Tambahan* | Indikasi performa penalaran nonverbal jauh di bawah rentang rata-rata; memerlukan asesmen klinis dan fungsi adaptif komprehensif. |
 
 ---
 

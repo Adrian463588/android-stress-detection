@@ -25,6 +25,9 @@ interface CounselorOutputGuard {
             if (DANGEROUS_CLAIM.containsMatchIn(normalized)) {
                 return GuardedCounselorOutput.Rejected(SAFE_SCOPE_RESPONSE)
             }
+            if (containsAnswerKeyDisclosure(normalized)) {
+                return GuardedCounselorOutput.Rejected(ANSWER_KEY_GUARD_RESPONSE, "answer_key_disclosure")
+            }
 
             val markers = CITATION_MARKER.findAll(normalized).toList()
             val withoutExactMarkers = normalized.replace(CITATION_MARKER, " ")
@@ -104,6 +107,9 @@ sealed interface GuardedCounselorOutput {
     data class Rejected(val text: String, val reasonCode: String = "output_rejected") : GuardedCounselorOutput
 }
 
+fun containsAnswerKeyDisclosure(text: String): Boolean =
+    ANSWER_KEY_DISCLOSURE.containsMatchIn(text.trim())
+
 private val CITATION_MARKER = Regex("\\[((?:S|W)[0-9]+)\\|([^\\[\\]\\s|]+)]")
 private val HAS_CITATION_LIKE_MARKER = Regex(
     "[\\[［][\\s\\p{Cf}]*[SWswＳＷｓｗ](?=[\\s\\p{Cf}]*(?:[\\p{N}#|｜\\]］]|$)|[^]\\r\\n]*[|｜])"
@@ -114,6 +120,11 @@ private val DANGEROUS_CLAIM = Regex(
         "(?:minum|gunakan|konsumsi|dosis|resep|take)\\s+(?:obat|antidepresan|benzodiazepin|medication)|" +
         "(?:saya\\s+(?:mendiagnosis|meresepkan)|i\\s+(?:diagnose|prescribe))"
 )
+private val ANSWER_KEY_DISCLOSURE = Regex(
+    "(?i)\\b(?:kunci\\s+jawaban|answer\\s+key|daftar\\s+kunci\\s+soal)\\b|" +
+        "\\b1[.)]\\s*[A-ES]\\s*[,;|]\\s*2[.)]\\s*[A-ES]\\s*[,;|]\\s*3[.)]\\s*[A-ES]|" +
+        "\\bSet\\s+[A-E]\\s*[:=]\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*\\d+"
+)
 
 const val DOCUMENT_ABSTENTION_RESPONSE =
     "Saya belum menemukan evidence dokumen yang cukup untuk menjawab dengan aman. Silakan pilih dokumen yang relevan atau ajukan pertanyaan umum tanpa mengatasnamakan dokumen."
@@ -123,3 +134,7 @@ private const val CITATION_FAILURE_RESPONSE =
 
 private const val SAFE_SCOPE_RESPONSE =
     "Saya fokus pada dukungan emosional, stres, dan coping umum. Saya tidak dapat mendiagnosis, memberi resep, atau menentukan kebohongan."
+
+private const val ANSWER_KEY_GUARD_RESPONSE =
+    "Saya tidak dapat membagikan kunci jawaban, urutan jawaban soal, atau norma mentah tertutup instrumen psikotes. " +
+        "Gunakan hasil skor terverifikasi atau panduan interpretasi umum."

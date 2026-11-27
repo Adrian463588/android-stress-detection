@@ -59,12 +59,19 @@ internal data class VerbatimSignalViewport(val observations: List<LivePitchObser
 internal fun verbatimSignalViewport(
     observations: List<LivePitchObservation>,
     isArchive: Boolean,
-    archiveStartOffsetMs: Long? = null
+    archiveStartOffsetMs: Long? = null,
+    totalDurationMs: Long? = null
 ): VerbatimSignalViewport? {
     val ordered = observations.filter { it.endOffsetMs > it.startOffsetMs }.sortedBy { it.startOffsetMs }
     if (isArchive && archiveStartOffsetMs != null) {
         require(archiveStartOffsetMs in 0..Long.MAX_VALUE - SIGNAL_PAGE_MILLIS)
-        val end = archiveStartOffsetMs + SIGNAL_PAGE_MILLIS
+        val maxDataEnd = ordered.maxOfOrNull { it.endOffsetMs }
+        val boundEnd = totalDurationMs?.takeIf { it > 0L } ?: maxDataEnd
+        val end = if (boundEnd != null && boundEnd > archiveStartOffsetMs) {
+            minOf(archiveStartOffsetMs + SIGNAL_PAGE_MILLIS, boundEnd)
+        } else {
+            archiveStartOffsetMs + SIGNAL_PAGE_MILLIS
+        }
         return VerbatimSignalViewport(
             ordered.filter { it.endOffsetMs > archiveStartOffsetMs && it.startOffsetMs < end },
             archiveStartOffsetMs,

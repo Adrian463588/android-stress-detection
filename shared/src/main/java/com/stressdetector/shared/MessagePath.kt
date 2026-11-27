@@ -27,6 +27,8 @@ object MessagePath {
     /** Watch -> phone correlated stop request initiated from the Watch UI. */
     const val SESSION_STOP_REQUEST = "/session/stop-request"
     const val SESSION_STOP = "/session/stop"
+    const val HEART_RATE_LIVE = "/ppg/heart-rate"
+    const val SKIN_TEMPERATURE_LIVE = "/ppg/skin-temperature"
     const val PREDICTION_STRESS = "/prediction/stress"
     const val CONNECTION_PING = "/connection/ping"
     const val CONNECTION_PONG = "/connection/pong"

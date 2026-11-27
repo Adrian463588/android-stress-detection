@@ -24,7 +24,8 @@ data class LiveBiosignalSnapshot(
     val latestBpmByChannel: Map<PpgType, Float> = emptyMap(),
     val divergenceEvents: List<DivergenceEventEntity> = emptyList(),
     val backlogFrames: Int = 0,
-    val audioGaps: List<AudioGap> = emptyList()
+    val audioGaps: List<AudioGap> = emptyList(),
+    val liveTemperature: LiveTemperatureSnapshot = LiveTemperatureSnapshot()
 )
 
 private val EMPTY_LIVE_BIOSIGNAL_STATE = MutableStateFlow(LiveBiosignalSnapshot()).asStateFlow()

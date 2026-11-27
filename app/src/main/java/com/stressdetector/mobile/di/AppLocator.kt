@@ -25,9 +25,11 @@ import com.stressdetector.mobile.data.reminder.EncryptedAiReminderSecretStore
 import com.stressdetector.mobile.data.reminder.RoomAiReminderRepository
 import com.stressdetector.mobile.data.reminder.SharedPreferencesAiReminderSettings
 import com.stressdetector.mobile.data.repository.AssessmentRepository
+import com.stressdetector.mobile.data.repository.LocalSearchRepository
 import com.stressdetector.mobile.data.repository.RoomCounselorPersonaRepository
 import com.stressdetector.mobile.data.repository.RoomLiveMonitorRecordStore
 import com.stressdetector.mobile.data.repository.SafCounselorPersonaRepository
+import com.stressdetector.mobile.data.repository.SharedPreferencesCounselorPreferencesStore
 import com.stressdetector.mobile.data.search.FileBackedWebResearchEvidenceStore
 import com.stressdetector.mobile.data.search.HtmlWebSearchDiscovery
 import com.stressdetector.mobile.data.search.OkHttpKsoupWebPageScraper
@@ -42,6 +44,7 @@ import com.stressdetector.mobile.domain.StressInferenceUseCase
 import com.stressdetector.mobile.domain.engine.AnnotationRepository
 import com.stressdetector.mobile.domain.engine.AssetPromptAssetProvider
 import com.stressdetector.mobile.domain.engine.AudioCaptureEngine
+import com.stressdetector.mobile.domain.engine.CounselorPreferencesStore
 import com.stressdetector.mobile.domain.engine.LiteRTLlmEngine
 import com.stressdetector.mobile.domain.engine.OnDeviceLlmEngine
 import com.stressdetector.mobile.domain.engine.RagRetriever
@@ -64,6 +67,7 @@ import com.stressdetector.mobile.domain.reminder.ReminderContentGenerator
 import com.stressdetector.mobile.domain.reminder.ReminderNotificationPublisher
 import com.stressdetector.mobile.domain.reminder.ReminderSchedulePlanner
 import com.stressdetector.mobile.domain.reminder.WorkManagerAiReminderScheduler
+import com.stressdetector.mobile.domain.search.SearchRepository
 import com.stressdetector.mobile.domain.search.WebConsentStore
 import com.stressdetector.mobile.domain.search.WebGroundingGateway
 import com.stressdetector.mobile.domain.search.WebPageScraper
@@ -214,9 +218,38 @@ object AppLocator {
     @Volatile private var knowledgeBaseDatabaseInstance: KnowledgeBaseDatabase? = null
     fun assessmentRepository(context: Context): AssessmentRepository {
         val appContext = context.applicationContext
-        return AssessmentRepository(appContext) {
-            knowledgeBaseDatabase(appContext).assessmentResultDao()
+        return AssessmentRepository(
+            context = appContext,
+            resultDao = { knowledgeBaseDatabase(appContext).assessmentResultDao() },
+            onResultPersisted = { result -> journalAndGoalRepository(appContext).recordAssessmentLifecycle(result) }
+        )
+    }
+
+    fun searchRepository(context: Context): SearchRepository {
+        val appContext = context.applicationContext
+        return LocalSearchRepository(
+            assessmentRepository = assessmentRepository(appContext),
+            searchHistoryDao = database(appContext).searchHistoryDao()
+        )
+    }
+
+    @Volatile private var journalAndGoalRepoInstance: com.stressdetector.mobile.data.repository.JournalAndGoalRepository? = null
+    fun journalAndGoalRepository(context: Context): com.stressdetector.mobile.data.repository.JournalAndGoalRepository =
+        journalAndGoalRepoInstance ?: synchronized(this) {
+            journalAndGoalRepoInstance ?: com.stressdetector.mobile.data.repository.RoomJournalAndGoalRepository(
+                dao = database(context.applicationContext).longitudinalDao()
+            ).also { journalAndGoalRepoInstance = it }
         }
+
+    fun researchExportService(context: Context): com.stressdetector.mobile.lifecycle.ResearchExportService {
+        val appContext = context.applicationContext
+        val db = database(appContext)
+        return com.stressdetector.mobile.lifecycle.ResearchExportService(
+            longitudinalDao = db.longitudinalDao(),
+            assessmentRepository = assessmentRepository(appContext),
+            stressSessionDao = db.stressSessionDao(),
+            exportDirectory = java.io.File(appContext.cacheDir, "research_exports")
+        )
     }
 
     fun knowledgeBaseDatabase(context: Context): KnowledgeBaseDatabase = knowledgeBaseDatabaseInstance ?: synchronized(this) {
@@ -227,6 +260,13 @@ object AppLocator {
     }
 
     @Volatile private var stressHistoryContextProviderInstance: StressHistoryContextProvider? = null
+
+    @Volatile private var counselorPreferencesStoreInstance: CounselorPreferencesStore? = null
+    fun counselorPreferencesStore(context: Context): CounselorPreferencesStore = synchronized(this) {
+        counselorPreferencesStoreInstance ?: SharedPreferencesCounselorPreferencesStore(
+            context.applicationContext
+        ).also { counselorPreferencesStoreInstance = it }
+    }
 
     @Volatile private var stressHistoryContextSettingsInstance: StressHistoryContextSettings? = null
     fun stressHistoryContextSettings(context: Context): StressHistoryContextSettings =
@@ -482,7 +522,13 @@ object AppLocator {
                 ),
                 bundledLocal = BundledLocalRagRetriever(
                     AssetBundledLocalCorpus(context.applicationContext),
-                    policy = policy,
+                    policy = policy.copy(
+                        thresholdPolicy = com.stressdetector.mobile.ml.rag.CalibratedRetrievalThresholdPolicy(
+                            calibrationVersion = "bundled-counseling-kb-v2",
+                            semanticHybridMinimumRrf = 0.012f,
+                            lexicalOnlyMinimumRrf = 0.012f
+                        )
+                    ),
                     ranker = contract.retrievalRanker()
                 )
             )
@@ -622,6 +668,13 @@ object AppLocator {
 
     fun verbatimArtifactService(context: Context): VerbatimArtifactService =
         VerbatimArtifactService(context.applicationContext, encryptedStorage(context))
+
+    fun verbatimSessionPackageService(context: Context): com.stressdetector.mobile.domain.engine.VerbatimSessionPackageService =
+        com.stressdetector.mobile.domain.engine.VerbatimSessionPackageService(
+            context.applicationContext,
+            encryptedStorage(context),
+            unifiedSessionRepository(context)
+        )
 
     @Volatile private var webHttpClientInstance: OkHttpClient? = null
     private fun webHttpClient(): OkHttpClient = webHttpClientInstance ?: synchronized(this) {

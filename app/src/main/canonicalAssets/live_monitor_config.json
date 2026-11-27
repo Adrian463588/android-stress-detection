@@ -25,7 +25,5 @@
   "bpm_recovery_relative_threshold": 0.05,
   "bpm_recovery_within_seconds": 60,
   "marker_merge_gap_seconds": 10,
-  "channel_agreement_delta_min": 0.20,
-  "primary_channel": "ppg_green",
-  "fallback_channel": "ppg_ir"
+  "channel_agreement_delta_min": 0.20
 }

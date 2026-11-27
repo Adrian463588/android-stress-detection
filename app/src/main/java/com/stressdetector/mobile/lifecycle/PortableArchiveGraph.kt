@@ -17,7 +17,7 @@ internal class PortableArchiveGraph(private val schema: Map<String, List<Archive
 
     fun include(table: String, row: List<Any?>): Boolean = when (table) {
         "transcript_segments", "ai_analyses", "live_sessions", "realtime_inference_records",
-        "divergence_events", "annotations" -> value(table, row, "sessionId") in verbatimIds
+        "divergence_events", "annotations", "skin_temperature_samples" -> value(table, row, "sessionId") in verbatimIds
         "psychology_codes" -> value(table, row, "segmentId") in segmentIds
         else -> true
     }
@@ -44,7 +44,8 @@ internal class PortableArchiveGraph(private val schema: Map<String, List<Archive
                 reference("verbatim", id(table, row, "sessionId"))
             }
             "psychology_codes" -> reference("segment", id(table, row, "segmentId"))
-            "ai_analyses", "live_sessions", "realtime_inference_records", "divergence_events", "annotations" ->
+            "ai_analyses", "live_sessions", "realtime_inference_records", "divergence_events",
+            "annotations", "skin_temperature_samples" ->
                 reference("verbatim", id(table, row, "sessionId"))
         }
     }
@@ -94,6 +95,8 @@ internal class PortableArchiveGraph(private val schema: Map<String, List<Archive
                         relative in CORE_FILES ||
                             relative == "artifact_warnings.json.enc" ||
                             relative == "ppg_manifest.json.enc" ||
+                            relative == "skin_temperature.csv.enc" ||
+                            relative == "thermal_metadata.json.enc" ||
                             relative.startsWith("audio_signal/") &&
                             isAudioSignalTraceFile(relative.removePrefix("audio_signal/")) ||
                             relative.matches(Regex("ppg_raw/[A-Za-z0-9_-]+_[0-9]{6}\\.jsonl\\.enc"))

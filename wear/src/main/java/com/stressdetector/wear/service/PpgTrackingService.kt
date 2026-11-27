@@ -18,10 +18,15 @@ import com.stressdetector.shared.MessagePath
 import com.stressdetector.shared.PpgType
 import com.stressdetector.shared.SessionCommand
 import com.stressdetector.shared.SessionCommandCodec
+import com.stressdetector.shared.SessionReadyAck
 import com.stressdetector.shared.WearSessionMode
 import com.stressdetector.wear.HealthSdkResolutionRegistry
 import com.stressdetector.wear.data.PpgSensorRepository
 import com.stressdetector.wear.data.WearTrackingState
+import com.stressdetector.wear.data.samsung.HeartRateListener
+import com.stressdetector.wear.data.samsung.SamsungHeartRateExtractor
+import com.stressdetector.wear.data.samsung.SamsungSkinTemperatureExtractor
+import com.stressdetector.wear.data.samsung.SkinTemperatureListener
 import com.stressdetector.wear.hasRequiredWearPermissions
 import com.stressdetector.wear.sensor.BaseSamsungListener
 import com.stressdetector.wear.sensor.PpgIndividualListener
@@ -75,6 +80,8 @@ class PpgTrackingService : Service() {
     private var greenListener: BaseSamsungListener? = null
     private var irListener: BaseSamsungListener? = null
     private var redListener: BaseSamsungListener? = null
+    private var heartRateListener: HeartRateListener? = null
+    private var skinTemperatureListener: SkinTemperatureListener? = null
     private val handler = Handler(Looper.getMainLooper())
     private var sessionState: PpgSessionState? = null
     private var terminalSensorFailure: String? = null
@@ -277,8 +284,22 @@ class PpgTrackingService : Service() {
             startedAtEpochMillis = trackingStartedAtMillis,
             phoneNodeId = active.peerNodeId,
             generation = active.generation,
-            collectMotion = active.mode == WearSessionMode.HOME_STRESS
+            collectMotion = true
         )
+        repository.sendSessionReady(
+            SessionReadyAck(
+                sessionId = active.sessionId,
+                sessionNonce = active.identity.nonce,
+                elapsedMillis = 0L,
+                greenAvailable = true,
+                irAvailable = true,
+                protocolVersion = active.identity.protocolVersion,
+                peerNodeId = active.peerNodeId,
+                generation = active.generation
+            )
+        )
+        startOptionalHeartRateTracker(active, trackingStartedAtMillis)
+        startOptionalSkinTemperatureTracker(active, trackingStartedAtMillis)
         WearTrackingState.beginSession(active.sessionId, active.mode, sourceNodeId = active.peerNodeId)
         // The SDK is reported READY only after the service returned usable
         // individual tracker instances and the listener lifecycle was wired.
@@ -288,6 +309,42 @@ class PpgTrackingService : Service() {
         WearTrackingState.updateElapsed(0L)
         handler.removeCallbacks(progressTicker)
         handler.post(progressTicker)
+    }
+
+    private fun startOptionalHeartRateTracker(active: PpgSessionState, sessionStartEpochMillis: Long) {
+        val service = healthService
+        if (active.mode != WearSessionMode.VERBATIM_AROUSAL || service == null) return
+        runCatching {
+            val supportedTypes = service.trackingCapability.supportHealthTrackerTypes
+            SamsungHeartRateExtractor.selectSupportedTrackerType(supportedTypes)?.let { trackerType ->
+                val tracker = service.getHealthTracker(trackerType)
+                heartRateListener = HeartRateListener(
+                    tracker = tracker,
+                    sensorHandler = handler,
+                    identity = active.identity,
+                    generation = active.generation,
+                    sessionStartEpochMillis = sessionStartEpochMillis,
+                    onBatch = repository::sendHeartRate
+                ).also(HeartRateListener::start)
+            }
+        }
+    }
+
+    private fun startOptionalSkinTemperatureTracker(active: PpgSessionState, sessionStartEpochMillis: Long) {
+        val service = healthService
+        if (active.mode != WearSessionMode.VERBATIM_AROUSAL || service == null) return
+        runCatching {
+            val supportedTypes = service.trackingCapability.supportHealthTrackerTypes
+            SamsungSkinTemperatureExtractor.selectSupportedTrackerType(supportedTypes)?.let { trackerType ->
+                val tracker = service.getHealthTracker(trackerType)
+                skinTemperatureListener = SkinTemperatureListener(
+                    tracker = tracker,
+                    sensorHandler = handler,
+                    sessionStartEpochMillis = sessionStartEpochMillis,
+                    onReadings = repository::sendSkinTemperature
+                ).also(SkinTemperatureListener::start)
+            }
+        }
     }
 
     private fun failWithoutTracker(message: String) {
@@ -444,6 +501,10 @@ class PpgTrackingService : Service() {
         greenListener = null
         irListener = null
         redListener = null
+        heartRateListener?.stop()
+        heartRateListener = null
+        skinTemperatureListener?.stop()
+        skinTemperatureListener = null
         val listeners = listOfNotNull(green, ir, red)
         if (listeners.isEmpty()) {
             onComplete(true)

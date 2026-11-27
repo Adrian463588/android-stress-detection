@@ -73,14 +73,26 @@ class BundledKnowledgeManifestTest {
         assertTrue("loadDocuments must succeed: ${docsResult.exceptionOrNull()}", docsResult.isSuccess)
 
         val docs = docsResult.getOrThrow()
-        assertEquals(14, docs.size)
+        assertEquals(34, docs.size)
 
         for (doc in docs) {
+            assertTrue("collection missing for ${doc.documentId}", doc.collection.isNotBlank())
+            assertTrue("category missing for ${doc.documentId}", doc.category.isNotBlank())
+            assertTrue("reviewStatus missing for ${doc.documentId}", doc.reviewStatus.isNotBlank())
             val fileBytes = File("src/main/canonicalAssets/${doc.assetPath}").readBytes()
             `when`(assetManager.open(doc.assetPath)).thenAnswer { ByteArrayInputStream(fileBytes) }
             val readResult = corpus.read(doc)
             assertTrue("read must succeed for ${doc.documentId}: ${readResult.exceptionOrNull()}", readResult.isSuccess)
             assertEquals(fileBytes.size, readResult.getOrThrow().size)
+            if (doc.format == "markdown") {
+                val text = fileBytes.toString(Charsets.UTF_8)
+                assertTrue(
+                    "Disallowed archaic label in ${doc.documentId}",
+                    listOf("Mentally Retardation", "Mentally Defective", "Borderline Defective").none {
+                        text.contains(it, ignoreCase = true)
+                    }
+                )
+            }
         }
     }
 

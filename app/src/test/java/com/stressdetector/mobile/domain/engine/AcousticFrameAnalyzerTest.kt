@@ -9,7 +9,7 @@ import org.junit.Test
 class AcousticFrameAnalyzerTest {
     @Test
     fun amplitudeDeviationProducesAcousticMarkerAfterBaselineWarmup() {
-        val analyzer = AcousticFrameAnalyzer()
+        val analyzer = AcousticFrameAnalyzer(AcousticAnalysisConfig(emitGlobalRmsDivergence = true))
 
         repeat(5) { index ->
             val snapshot = analyzer.analyze(frame("session", 0.1f, index * 100L))
@@ -33,7 +33,17 @@ class AcousticFrameAnalyzerTest {
     }
 
     @Test
-    fun silenceIsRecordedAsLowAudioQuality() {
+    fun defaultConfigDoesNotEmitGlobalUnattributedAcousticDivergence() {
+        val analyzer = AcousticFrameAnalyzer()
+        repeat(5) { index -> analyzer.analyze(frame("session", 0.1f, index * 100L)) }
+        var snapshot = analyzer.analyze(frame("session", 0.4f, 500L))
+        repeat(4) { index -> snapshot = analyzer.analyze(frame("session", 0.4f, 600L + index * 100L)) }
+        assertNull(snapshot.markerType)
+        assertNull(snapshot.markerTransition)
+    }
+
+    @Test
+    fun silenceIsClassifiedAsSilenceNotLowAudioQuality() {
         val analyzer = AcousticFrameAnalyzer()
         val first = analyzer.analyze(frame("session", 0f, 0L))
         assertNull(first.markerTransition)
@@ -41,9 +51,10 @@ class AcousticFrameAnalyzerTest {
             analyzer.analyze(frame("session", 0f, index * 100L))
         }
 
-        assertEquals(SessionMarkerType.LOW_AUDIO_QUALITY, snapshot.markerType)
-        assertEquals(SessionMarkerType.LOW_AUDIO_QUALITY, snapshot.markerTransition)
-        assertEquals(0f, snapshot.qualityScore)
+        assertTrue(snapshot.isSilence)
+        assertNull(snapshot.markerType)
+        assertNull(snapshot.markerTransition)
+        assertTrue(snapshot.qualityScore > 0.9f)
         assertEquals(0f, snapshot.clippingRatio)
     }
 
@@ -79,7 +90,8 @@ class AcousticFrameAnalyzerTest {
                 baselineWindowFrames = 20,
                 markerEnterPersistenceMillis = 200L,
                 markerExitPersistenceMillis = 200L,
-                markerCooldownMillis = 1_000L
+                markerCooldownMillis = 1_000L,
+                emitGlobalRmsDivergence = true
             )
         )
         analyzer.analyze(frame("session", 0.1f, 0L))

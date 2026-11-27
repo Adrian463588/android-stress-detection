@@ -6,6 +6,10 @@ import com.stressdetector.mobile.BuildConfig
 import com.stressdetector.mobile.consent.ConsentRecord
 import com.stressdetector.mobile.consent.ConsentRepository
 import com.stressdetector.mobile.consent.ConsentScope
+import com.stressdetector.mobile.data.IWearConnectionRepository
+import com.stressdetector.mobile.data.WatchConnectionStatus
+import com.stressdetector.mobile.data.WearConnectionState
+import com.stressdetector.mobile.data.WearReachabilityPhase
 import com.stressdetector.mobile.data.db.DivergenceEventEntity
 import com.stressdetector.mobile.domain.engine.AcousticAnalysisSnapshot
 import com.stressdetector.mobile.domain.engine.AnnotationRepository
@@ -18,6 +22,8 @@ import com.stressdetector.mobile.domain.engine.DomainAnnotation
 import com.stressdetector.mobile.domain.engine.LiveBiosignalEngine
 import com.stressdetector.mobile.domain.engine.LiveBiosignalSnapshot
 import com.stressdetector.mobile.domain.engine.LiveMonitorStopSummary
+import com.stressdetector.mobile.domain.engine.MultimodalComparisonFinding
+import com.stressdetector.mobile.domain.engine.MultimodalCueAnalyzer
 import com.stressdetector.mobile.domain.engine.PlaybackState
 import com.stressdetector.mobile.domain.engine.SessionFinalizationStage
 import com.stressdetector.mobile.domain.engine.SessionFinalizationState
@@ -29,12 +35,19 @@ import com.stressdetector.mobile.domain.engine.UnifiedSessionLiveSnapshot
 import com.stressdetector.mobile.domain.engine.UniqueSessionNameGenerator
 import com.stressdetector.mobile.domain.engine.VerbatimArtifactService
 import com.stressdetector.mobile.domain.engine.VerbatimAudioSignalTrace
+import com.stressdetector.mobile.domain.engine.VerbatimCueAnalysis
+import com.stressdetector.mobile.domain.engine.VerbatimCueAnalyzer
 import com.stressdetector.mobile.domain.engine.VerbatimPlaybackCoordinator
 import com.stressdetector.mobile.domain.engine.VerbatimSessionDetail
 import com.stressdetector.mobile.domain.engine.VerbatimSessionRepository
 import com.stressdetector.mobile.domain.engine.VerbatimSessionSummary
+import com.stressdetector.mobile.domain.engine.WatchWearerRole
 import com.stressdetector.mobile.domain.engine.verbatimSignalMarkers
 import com.stressdetector.mobile.domain.interaction.IdempotentActionGate
+import com.stressdetector.mobile.domain.voice.VoiceLanguage
+import com.stressdetector.mobile.domain.voice.VoiceOutputEngine
+import com.stressdetector.mobile.domain.voice.VoicePlaybackCoordinator
+import com.stressdetector.mobile.domain.voice.VoicePlaybackUiState
 import com.stressdetector.mobile.ml.storage.ModelStorageManager
 import com.stressdetector.mobile.ml.storage.ModelStorageState
 import com.stressdetector.mobile.ml.storage.SafStorageStatus
@@ -75,6 +88,8 @@ sealed interface UnifiedSessionEffect {
     data class ShowToast(val message: String) : UnifiedSessionEffect
 }
 
+private const val ADJACENT_SEGMENT_WINDOW_MS = 5_000L
+
 @androidx.compose.runtime.Immutable
 data class UnifiedSessionUiState(
     val isSessionActive: Boolean = false,
@@ -93,6 +108,7 @@ data class UnifiedSessionUiState(
     val storageState: ModelStorageState = ModelStorageState(),
     val monitorStatus: String = "UNAVAILABLE: not started",
     val watchStatus: String = "Watch belum terhubung",
+    val wearConnectionState: WearConnectionState = WearConnectionState(),
     val isPaused: Boolean = false,
     val savedFolderPath: String? = null,
     val playbackFilePath: String? = null,
@@ -114,20 +130,58 @@ data class UnifiedSessionUiState(
     val finalizationWarnings: List<String> = emptyList(),
     val speechProcessingState: SpeechProcessingState = SpeechProcessingState(),
     val isExporting: Boolean = false,
+    val isImportingPackage: Boolean = false,
     val isDeletingSession: Boolean = false,
     val isSavingTranscript: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val watchWearerRole: WatchWearerRole = WatchWearerRole.CLIENT,
+    val aiSummaryText: String? = null,
+    val searchQuery: String = "",
+    val selectedMarkerForDetail: DivergenceEventEntity? = null,
+    val showTechnicalDetails: Boolean = false,
+    val multimodalComparisons: List<MultimodalComparisonFinding> = emptyList(),
+    val skinTemperatureSamples: List<com.stressdetector.mobile.domain.engine.SkinTemperatureObservation> = emptyList(),
+    val cachedCueAnalyses: Map<String, VerbatimCueAnalysis>? = null,
+    val ttsPlayback: VoicePlaybackUiState = VoicePlaybackUiState()
 ) {
-    /** Pure review projection; business rules remain outside Composables. */
-    val cueAnalyses: Map<String, com.stressdetector.mobile.domain.engine.VerbatimCueAnalysis> by lazy {
-        val analyzer = com.stressdetector.mobile.domain.engine.VerbatimCueAnalyzer()
-        transcriptSegments.associate { it.id to analyzer.analyze(it) }
+    /** Pure review projection; uses ViewModel's LRU cache when populated to avoid 200ms recomputation. */
+    val cueAnalyses: Map<String, VerbatimCueAnalysis> by lazy {
+        cachedCueAnalyses ?: run {
+            val analyzer = VerbatimCueAnalyzer()
+            transcriptSegments.associate { it.id to analyzer.analyze(it) }
+        }
     }
     val markerPlaybackOffsets: Map<String, Long> by lazy {
         divergenceEvents.mapNotNull { event ->
             com.stressdetector.mobile.domain.engine.TranscriptTimelineLinker.playbackOffset(event, transcriptSegments)
                 ?.let { event.eventId to it }
         }.toMap()
+    }
+    val markersBySegmentId: Map<String, List<DivergenceEventEntity>> by lazy {
+        val grouped = linkedMapOf<String, MutableList<DivergenceEventEntity>>()
+        divergenceEvents.forEach { event ->
+            val targetId = event.transcriptSegmentId ?: transcriptSegments.firstOrNull { seg ->
+                val minStart = seg.startOffsetMs - ADJACENT_SEGMENT_WINDOW_MS
+                val maxEnd = seg.endOffsetMs + ADJACENT_SEGMENT_WINDOW_MS
+                event.markerElapsedMillis in minStart..maxEnd
+            }?.id
+            if (targetId != null) {
+                grouped.getOrPut(targetId) { mutableListOf() }.add(event)
+            }
+        }
+        grouped
+    }
+    val filteredTranscriptSegments: List<SpeechSegment> by lazy {
+        val query = searchQuery.trim()
+        if (query.isEmpty()) {
+            transcriptSegments
+        } else {
+            transcriptSegments.filter { seg ->
+                seg.displayText.contains(query, ignoreCase = true) ||
+                    seg.rawText.contains(query, ignoreCase = true) ||
+                    seg.speakerId.contains(query, ignoreCase = true)
+            }
+        }
     }
     val reviewCues: List<com.stressdetector.mobile.domain.engine.VerbatimCue> by lazy {
         cueAnalyses.values.flatMap { it.cues }
@@ -241,9 +295,14 @@ class UnifiedSessionViewModel(
     private val sessionRepository: VerbatimSessionRepository,
     private val playbackCoordinator: VerbatimPlaybackCoordinator,
     private val annotationRepository: AnnotationRepository,
-    private val modelStorageManager: ModelStorageManager? = null
+    private val modelStorageManager: ModelStorageManager? = null,
+    private val wearConnectionRepository: IWearConnectionRepository? = null,
+    private val voiceOutputEngine: VoiceOutputEngine? = null,
+    private val packageService: com.stressdetector.mobile.domain.engine.VerbatimSessionPackageService? = null
 ) : ViewModel() {
+    private val appContext = context.applicationContext
     private val applicationContext = context.applicationContext
+    private val ttsCoordinator = voiceOutputEngine?.let { VoicePlaybackCoordinator(it, viewModelScope) }
 
     private val _uiState = MutableStateFlow(UnifiedSessionUiState())
     val uiState: StateFlow<UnifiedSessionUiState> = _uiState.asStateFlow()
@@ -265,6 +324,15 @@ class UnifiedSessionViewModel(
     private var pendingAudioInput: AudioInputSource = AudioInputSource.Microphone
     private var pendingTextExport: Pair<VerbatimSessionDetail, List<DomainAnnotation>>? = null
     private var pendingZipExport: VerbatimSessionSummary? = null
+    private var pendingZipExportDetail: VerbatimSessionDetail? = null
+    private var pendingZipExportAnnotations: List<DomainAnnotation> = emptyList()
+    private var pendingZipExportSummaryText: String? = null
+    private var pendingResearchExport: VerbatimSessionDetail? = null
+    private var pendingTemperatureCsvExport: VerbatimSessionDetail? = null
+    private val cueAnalyzer = VerbatimCueAnalyzer()
+    private val cueCache = object : LinkedHashMap<String, VerbatimCueAnalysis>(CUE_CACHE_INIT_CAP, CUE_CACHE_LOAD_FACTOR, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, VerbatimCueAnalysis>?): Boolean = size > MAX_CUE_CACHE_SIZE
+    }
 
     init {
         checkModelState()
@@ -278,6 +346,31 @@ class UnifiedSessionViewModel(
             }
             viewModelScope.launch(Dispatchers.IO) {
                 storage.reconcile()
+            }
+        }
+
+        ttsCoordinator?.let { coordinator ->
+            viewModelScope.launch {
+                coordinator.state.collect { ttsState ->
+                    _uiState.update { it.copy(ttsPlayback = ttsState) }
+                }
+            }
+        }
+
+        wearConnectionRepository?.let { wearRepo ->
+            viewModelScope.launch {
+                wearRepo.state.collect { wearState ->
+                    _uiState.update { current ->
+                        current.copy(
+                            wearConnectionState = wearState,
+                            watchStatus = if (current.isSessionActive) {
+                                current.watchStatus
+                            } else {
+                                wearConnectionStatusText(wearState)
+                            }
+                        )
+                    }
+                }
             }
         }
 
@@ -501,6 +594,13 @@ class UnifiedSessionViewModel(
             } else {
                 val safeBiosignal = live.biosignal.takeIf { it.sessionId == live.sessionId }
                     ?: LiveBiosignalSnapshot(sessionId = live.sessionId)
+                val cachedCues = computeCachedCueAnalyses(live.transcript.segments)
+                val multimodal = MultimodalCueAnalyzer.analyze(
+                    sessionId = live.sessionId.orEmpty(),
+                    watchWearerRole = current.watchWearerRole,
+                    events = safeBiosignal.divergenceEvents,
+                    segments = live.transcript.segments
+                )
                 current.copy(
                     transcriptSegments = live.transcript.segments,
                     speechProcessingState = live.transcript.processing,
@@ -509,7 +609,10 @@ class UnifiedSessionViewModel(
                     livePitch = live.livePitch,
                     audioStartSessionElapsedMs = live.audioStartSessionElapsedMs,
                     sessionGeneration = live.generation,
-                    divergenceEvents = safeBiosignal.divergenceEvents
+                    divergenceEvents = safeBiosignal.divergenceEvents,
+                    skinTemperatureSamples = unifiedSessionEngine.skinTemperatureObservations(),
+                    cachedCueAnalyses = cachedCues,
+                    multimodalComparisons = multimodal
                 )
             }
         }
@@ -545,6 +648,87 @@ class UnifiedSessionViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             storage.reconcile()
         }
+    }
+
+    fun refreshWatchConnection() {
+        val repo = wearConnectionRepository ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.refreshAndPing(appContext) }
+        }
+    }
+
+    fun setWatchWearerRole(role: WatchWearerRole) {
+        val activeSelectedId = _uiState.value.selectedSessionId
+        val isActiveSession = _uiState.value.isSessionActive
+        _uiState.update { current ->
+            val updatedComparisons = activeSelectedId?.let { id ->
+                MultimodalCueAnalyzer.analyze(id, role, current.divergenceEvents, current.transcriptSegments)
+            } ?: current.multimodalComparisons
+            current.copy(watchWearerRole = role, multimodalComparisons = updatedComparisons)
+        }
+        if (isActiveSession) {
+            unifiedSessionEngine.updateWatchWearerRole(role.name)
+        } else if (activeSelectedId != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                sessionRepository.updateWatchWearerRole(activeSelectedId, role.name)
+            }
+        }
+    }
+
+    fun setSearchQuery(query: String) {
+        _uiState.update { it.copy(searchQuery = query) }
+    }
+
+    fun openMarkerDetail(marker: DivergenceEventEntity?) {
+        _uiState.update { it.copy(selectedMarkerForDetail = marker) }
+    }
+
+    fun toggleTechnicalDetails(expanded: Boolean? = null) {
+        _uiState.update { it.copy(showTechnicalDetails = expanded ?: !it.showTechnicalDetails) }
+    }
+
+    fun openSessionSetup() {
+        if (_uiState.value.isSessionActive || _uiState.value.isFinalizing) return
+        stopTts()
+        selectedSessionJob?.cancel()
+        signalTraceJob?.cancel()
+        _uiState.update {
+            it.copy(
+                selectedSessionId = null,
+                selectedSession = null,
+                transcriptSegments = emptyList(),
+                divergenceEvents = emptyList(),
+                annotations = emptyList(),
+                aiSummaryText = null,
+                signalTracePage = null,
+                selectedMarkerForDetail = null,
+                searchQuery = "",
+                cachedCueAnalyses = emptyMap(),
+                multimodalComparisons = emptyList(),
+                skinTemperatureSamples = emptyList(),
+                showTechnicalDetails = false
+            )
+        }
+    }
+
+    private fun computeCachedCueAnalyses(segments: List<SpeechSegment>): Map<String, VerbatimCueAnalysis> {
+        val out = LinkedHashMap<String, VerbatimCueAnalysis>(segments.size)
+        synchronized(cueCache) {
+            segments.forEach { seg ->
+                val cacheKey = "${seg.id}|${seg.displayText.hashCode()}|${seg.language}"
+                val analysis = cueCache[cacheKey] ?: cueAnalyzer.analyze(seg).also { cueCache[cacheKey] = it }
+                out[seg.id] = analysis
+            }
+        }
+        return out
+    }
+
+    private fun wearConnectionStatusText(wearState: WearConnectionState): String = when {
+        wearState.reachabilityPhase == WearReachabilityPhase.STREAMING -> "Watch streaming"
+        wearState.isAppReachable -> "Galaxy Watch siap"
+        wearState.status == WatchConnectionStatus.NODE_ONLY -> "Node Watch terdeteksi (buka app Watch)"
+        wearState.status == WatchConnectionStatus.ERROR -> "Watch gangguan: ${wearState.message}"
+        else -> "Watch belum terhubung"
     }
 
     /** Routes every new-recording entry point through one readiness decision. */
@@ -700,6 +884,10 @@ class UnifiedSessionViewModel(
             putExtra(com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_MONITORING_ENABLED, usePpg)
             putExtra(com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_SESSION_NAME, name)
             putExtra(com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_SESSION_LANGUAGE, _uiState.value.selectedLanguage)
+            putExtra(
+                com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_WATCH_WEARER_ROLE,
+                _uiState.value.watchWearerRole.name
+            )
             if (input is AudioInputSource.Imported) {
                 putExtra(
                     com.stressdetector.mobile.service.UnifiedSessionService.EXTRA_AUDIO_URI,
@@ -770,14 +958,64 @@ class UnifiedSessionViewModel(
             "Psychologist" -> "Patient"
             else -> "Psychologist"
         }
+        setSpeakerLabel(segmentId, label)
+    }
+
+    fun setSpeakerLabel(segmentId: String, requestedLabel: String) {
+        if (!VerbatimWorkspace(_uiState.value).canEditTranscript) return
+        val normalizedLabel = when {
+            requestedLabel.equals("Psikolog", ignoreCase = true) ||
+                requestedLabel.equals("Psychologist", ignoreCase = true) -> "Psychologist"
+            requestedLabel.equals("Klien", ignoreCase = true) ||
+                requestedLabel.equals("Patient", ignoreCase = true) -> "Patient"
+            else -> requestedLabel.trim().ifBlank { return }
+        }
         if (unifiedSessionEngine.isSessionActive.value) {
-            unifiedSessionEngine.updateSpeakerLabel(segmentId, label)
+            unifiedSessionEngine.updateSpeakerLabel(segmentId, normalizedLabel)
         } else {
             saveTranscriptReview(
                 segmentId,
-                save = { sessionId -> sessionRepository.updateSpeakerLabel(sessionId, segmentId, label) },
-                applyEdit = { it.copy(speakerId = label) }
+                save = { sessionId -> sessionRepository.updateSpeakerLabel(sessionId, segmentId, normalizedLabel) },
+                applyEdit = { it.copy(speakerId = normalizedLabel) }
             )
+        }
+    }
+
+    fun toggleSpeakUtterance(segmentId: String, text: String) {
+        val state = _uiState.value
+        val activeMicGuard = state.isSessionActive && !state.isPaused
+        val coordinator = ttsCoordinator
+        when {
+            activeMicGuard -> {
+                viewModelScope.launch {
+                    _effects.emit(
+                        UnifiedSessionEffect.ShowToast(
+                            "Jeda atau hentikan rekaman sebelum memutar TTS agar mikrofon tidak terkontaminasi."
+                        )
+                    )
+                }
+            }
+            coordinator == null -> {
+                viewModelScope.launch {
+                    _effects.emit(UnifiedSessionEffect.ShowToast("TTS lokal tidak tersedia pada konfigurasi ini."))
+                }
+            }
+            text.isNotBlank() -> {
+                val language = if (state.selectedLanguage == "en") VoiceLanguage.ENGLISH else VoiceLanguage.INDONESIAN
+                viewModelScope.launch(Dispatchers.Main.immediate) {
+                    if (_uiState.value.playbackState == PlaybackState.Playing) {
+                        playbackCoordinator.pause()
+                    }
+                    coordinator.toggle(segmentId, text, language)
+                }
+            }
+        }
+    }
+
+    fun stopTts() {
+        val coordinator = ttsCoordinator ?: return
+        viewModelScope.launch(Dispatchers.Main.immediate) {
+            coordinator.stopAndWait()
         }
     }
 
@@ -952,9 +1190,13 @@ class UnifiedSessionViewModel(
                 }
                 val archiveKey = "${detail.summary.artifactFolderPath}|${detail.summary.finalizationStatus}"
                 val archiveChanged = evidenceKey != archiveKey
+                var loadedSummary: String? = _uiState.value.aiSummaryText
                 if (evidenceKey != archiveKey) {
                     val restored = withContext(Dispatchers.IO) {
                         artifactService.restoreTranscriptEvidence(PrivacyIdentity.LOCAL_PROFILE_ID, detail)
+                    }
+                    loadedSummary = withContext(Dispatchers.IO) {
+                        artifactService.readAiSummary(PrivacyIdentity.LOCAL_PROFILE_ID, detail.summary)
                     }
                     archivedEvidence = restored.transcript.associateBy { it.id }
                     evidenceKey = archiveKey
@@ -968,6 +1210,14 @@ class UnifiedSessionViewModel(
                         )
                     }
                 )
+                val wearerRole = WatchWearerRole.fromStored(detail.summary.watchWearerRole)
+                val cachedCues = computeCachedCueAnalyses(reviewed.transcript)
+                val multimodal = MultimodalCueAnalyzer.analyze(
+                    sessionId = sessionId,
+                    watchWearerRole = wearerRole,
+                    events = detail.divergenceEvents,
+                    segments = reviewed.transcript
+                )
                 _uiState.update {
                     it.copy(
                         selectedSessionId = sessionId,
@@ -975,7 +1225,12 @@ class UnifiedSessionViewModel(
                         transcriptSegments = reviewed.transcript,
                         divergenceEvents = detail.divergenceEvents,
                         annotations = annotationRepository.getAnnotationsForSession(sessionId),
-                        savedFolderPath = detail.summary.artifactFolderPath.ifBlank { detail.summary.audioFilePath }
+                        savedFolderPath = detail.summary.artifactFolderPath.ifBlank { detail.summary.audioFilePath },
+                        watchWearerRole = wearerRole,
+                        aiSummaryText = loadedSummary,
+                        cachedCueAnalyses = cachedCues,
+                        multimodalComparisons = multimodal,
+                        skinTemperatureSamples = detail.skinTemperatureSamples
                     )
                 }
                 if (archiveChanged) loadSignalTracePage(detail.summary, 0L)
@@ -1088,7 +1343,10 @@ class UnifiedSessionViewModel(
             message.contains("tidak tersedia", ignoreCase = true)
     }
 
-    fun playAudio() = runPlaybackCommand("play") { playbackCoordinator.play() }
+    fun playAudio() = runPlaybackCommand("play") {
+        ttsCoordinator?.stopAndWait()
+        playbackCoordinator.play()
+    }
 
     fun pauseAudio() = runPlaybackCommand("pause") { playbackCoordinator.pause() }
 
@@ -1100,6 +1358,7 @@ class UnifiedSessionViewModel(
 
     /** Marker action is atomic: prepare if needed, seek, then start playback. */
     fun playFromMarker(positionMillis: Long) = runPlaybackCommand("seek-and-play") {
+        ttsCoordinator?.stopAndWait()
         playbackCoordinator.seekAndPlay(positionMillis)
     }
 
@@ -1117,13 +1376,23 @@ class UnifiedSessionViewModel(
     fun prepareZipExport(): String? {
         val state = _uiState.value
         if (!VerbatimWorkspace(state).canExportZip) return null
-        pendingZipExport = state.selectedSession?.summary
+        val detail = state.selectedSession
+        pendingZipExport = detail?.summary
+        pendingZipExportDetail = detail
+        pendingZipExportAnnotations = state.annotations.toList()
+        pendingZipExportSummaryText = state.aiSummaryText
         return pendingZipExport?.sessionName?.let { exportFileName(it, "zip") }
     }
 
     fun exportLastSession(destination: android.net.Uri?) {
         val frozen = pendingZipExport
+        val frozenDetail = pendingZipExportDetail
+        val frozenAnnotations = pendingZipExportAnnotations
+        val frozenAiSummary = pendingZipExportSummaryText
         pendingZipExport = null
+        pendingZipExportDetail = null
+        pendingZipExportAnnotations = emptyList()
+        pendingZipExportSummaryText = null
         if (destination == null || frozen == null) return
         val state = _uiState.value
         val folder = frozen.artifactFolderPath
@@ -1136,20 +1405,115 @@ class UnifiedSessionViewModel(
             actionGate.run(ACTION_SESSION_EXPORT) {
                 try {
                     runCatching {
-                        artifactService.exportSessionBundle(
-                            PrivacyIdentity.LOCAL_PROFILE_ID,
-                            folder,
-                            destination,
-                            applicationContext
-                        )
+                        val pkgService = packageService
+                        if (pkgService != null && frozenDetail != null) {
+                            pkgService.exportSessionPackage(
+                                userId = PrivacyIdentity.LOCAL_PROFILE_ID,
+                                detail = frozenDetail,
+                                annotations = frozenAnnotations,
+                                aiSummaryText = frozenAiSummary,
+                                destination = destination
+                            )
+                        } else {
+                            artifactService.exportSessionBundle(
+                                PrivacyIdentity.LOCAL_PROFILE_ID,
+                                folder,
+                                destination,
+                                applicationContext
+                            )
+                        }
                     }.onSuccess {
-                        _effects.emit(UnifiedSessionEffect.ShowToast("Arsip ZIP berhasil diekspor."))
+                        _effects.emit(UnifiedSessionEffect.ShowToast("Arsip paket sesi ZIP berhasil diekspor."))
                     }.onFailure { error ->
                         if (error is kotlinx.coroutines.CancellationException) throw error
                         _uiState.update { it.copy(error = error.message ?: "Ekspor ZIP gagal.") }
                     }
                 } finally {
                     _uiState.update { it.copy(isExporting = false) }
+                }
+            }
+        }
+    }
+
+    fun prepareSkinTemperatureCsvExport(): String? {
+        val state = _uiState.value
+        val detail = state.selectedSession
+        if (!VerbatimWorkspace(state).canMutateArchive || detail == null || detail.skinTemperatureSamples.isEmpty()) {
+            _uiState.update { it.copy(error = "Data suhu kulit tidak tersedia pada sesi ini.") }
+            return null
+        }
+        pendingTemperatureCsvExport = detail
+        return "skin_temperature_${detail.summary.sessionId.take(RESEARCH_FILE_PREFIX_LEN)}.csv"
+    }
+
+    fun exportSkinTemperatureCsv(destination: android.net.Uri?) {
+        val frozen = pendingTemperatureCsvExport
+        pendingTemperatureCsvExport = null
+        if (destination == null || frozen == null) return
+        if (!VerbatimWorkspace(_uiState.value).canManageStoredSessions) {
+            _uiState.update { it.copy(error = "Selesaikan operasi sesi aktif sebelum ekspor suhu.") }
+            return
+        }
+        _uiState.update { it.copy(isExporting = true, error = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            actionGate.run(ACTION_SESSION_EXPORT) {
+                try {
+                    runCatching {
+                        val stream = checkNotNull(applicationContext.contentResolver.openOutputStream(destination)) {
+                            "Tidak dapat membuka tujuan berkas CSV suhu."
+                        }
+                        stream.use { out ->
+                            com.stressdetector.mobile.domain.engine.VerbatimResearchExporter.writeSkinTemperatureCsv(
+                                output = out,
+                                observations = frozen.skinTemperatureSamples
+                            )
+                        }
+                        _effects.emit(UnifiedSessionEffect.ShowToast("Observasi suhu kulit (CSV) berhasil diekspor."))
+                    }.onFailure { error ->
+                        if (error is kotlinx.coroutines.CancellationException) throw error
+                        _uiState.update { it.copy(error = error.message ?: "Ekspor suhu CSV gagal.") }
+                    }
+                } finally {
+                    _uiState.update { it.copy(isExporting = false) }
+                }
+            }
+        }
+    }
+
+    fun importSessionPackage(source: android.net.Uri?) {
+        val pkgService = packageService
+        if (source == null || pkgService == null) return
+        if (!VerbatimWorkspace(_uiState.value).canManageStoredSessions) {
+            _uiState.update { it.copy(error = "Selesaikan sesi aktif sebelum mengimpor paket ZIP.") }
+            return
+        }
+        _uiState.update { it.copy(isImportingPackage = true, error = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            actionGate.run(ACTION_SESSION_IMPORT) {
+                try {
+                    when (val result = pkgService.importSessionPackage(PrivacyIdentity.LOCAL_PROFILE_ID, source)) {
+                        is com.stressdetector.mobile.domain.engine.SessionPackageImportResult.Imported -> {
+                            withContext(Dispatchers.Main) { selectSession(result.sessionId) }
+                            val suffix = if (result.temperatureSampleCount > 0) {
+                                " (${result.temperatureSampleCount} sampel suhu, ${result.markerCount} marker)"
+                            } else {
+                                " (tanpa data suhu)"
+                            }
+                            _effects.emit(
+                                UnifiedSessionEffect.ShowToast("Sesi «${result.sessionName}» berhasil diimpor$suffix.")
+                            )
+                        }
+                        is com.stressdetector.mobile.domain.engine.SessionPackageImportResult.DuplicateSession -> {
+                            _uiState.update {
+                                it.copy(error = "Sesi «${result.sessionName}» sudah ada; impor duplikat dilewati.")
+                            }
+                        }
+                        is com.stressdetector.mobile.domain.engine.SessionPackageImportResult.Rejected -> {
+                            _uiState.update { it.copy(error = result.reason) }
+                        }
+                    }
+                } finally {
+                    _uiState.update { it.copy(isImportingPackage = false) }
                 }
             }
         }
@@ -1194,6 +1558,55 @@ class UnifiedSessionViewModel(
                     }.onFailure { error ->
                         if (error is kotlinx.coroutines.CancellationException) throw error
                         _uiState.update { it.copy(error = error.message ?: "Ekspor TXT gagal.") }
+                    }
+                } finally {
+                    _uiState.update { it.copy(isExporting = false) }
+                }
+            }
+        }
+    }
+
+    /** Freeze selected session before SAF opens for consented de-identified research export. */
+    fun prepareResearchExport(): String? {
+        val state = _uiState.value
+        val detail = state.selectedSession
+        if (!VerbatimWorkspace(state).canMutateArchive || detail == null) {
+            _uiState.update { it.copy(error = "Pilih sesi selesai untuk ekspor riset teranonimisasi.") }
+            return null
+        }
+        pendingResearchExport = detail
+        return "research_export_${detail.summary.sessionId.take(RESEARCH_FILE_PREFIX_LEN)}.csv"
+    }
+
+    fun exportResearchCsv(destination: android.net.Uri?) {
+        val frozen = pendingResearchExport
+        pendingResearchExport = null
+        if (destination == null || frozen == null) return
+        if (!VerbatimWorkspace(_uiState.value).canManageStoredSessions) {
+            _uiState.update { it.copy(error = "Selesaikan operasi sesi aktif sebelum ekspor riset.") }
+            return
+        }
+        val stateSnapshot = _uiState.value
+        _uiState.update { it.copy(isExporting = true, error = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            actionGate.run(ACTION_SESSION_EXPORT) {
+                try {
+                    runCatching {
+                        val stream = checkNotNull(applicationContext.contentResolver.openOutputStream(destination)) {
+                            "Tidak dapat membuka tujuan berkas CSV."
+                        }
+                        stream.use { out ->
+                            com.stressdetector.mobile.domain.engine.VerbatimResearchExporter.writeCsv(
+                                output = out,
+                                summary = frozen.summary,
+                                events = frozen.divergenceEvents,
+                                prvByChannel = stateSnapshot.liveBiosignal.monitor.latestPrvByChannel
+                            )
+                        }
+                        _effects.emit(UnifiedSessionEffect.ShowToast("Data riset teranonimisasi (CSV) berhasil diekspor."))
+                    }.onFailure { error ->
+                        if (error is kotlinx.coroutines.CancellationException) throw error
+                        _uiState.update { it.copy(error = error.message ?: "Ekspor riset CSV gagal.") }
                     }
                 } finally {
                     _uiState.update { it.copy(isExporting = false) }
@@ -1346,6 +1759,7 @@ class UnifiedSessionViewModel(
     override fun onCleared() {
         super.onCleared()
         stopTimer()
+        ttsCoordinator?.close()
         playbackCoordinator.clearCache()
         playbackCoordinator.close()
     }
@@ -1368,7 +1782,10 @@ class UnifiedSessionViewModel(
                     com.stressdetector.mobile.di.AppLocator.audioPlaybackEngine(appCtx)
                 ),
                 com.stressdetector.mobile.di.AppLocator.annotationRepository(appCtx),
-                modelStorageManager = com.stressdetector.mobile.di.AppLocator.modelStorageManager(appCtx)
+                modelStorageManager = com.stressdetector.mobile.di.AppLocator.modelStorageManager(appCtx),
+                wearConnectionRepository = com.stressdetector.mobile.di.AppLocator.wearConnectionRepository,
+                voiceOutputEngine = com.stressdetector.mobile.di.AppLocator.voiceOutputEngine(appCtx),
+                packageService = com.stressdetector.mobile.di.AppLocator.verbatimSessionPackageService(appCtx)
             ) as T
         }
     }
@@ -1381,12 +1798,17 @@ class UnifiedSessionViewModel(
         const val ACTION_SESSION_PAUSE = "session:pause"
         const val ACTION_SESSION_RESUME = "session:resume"
         const val ACTION_SESSION_EXPORT = "session:export"
+        const val ACTION_SESSION_IMPORT = "session:import"
         const val ACTION_SESSION_DELETE_ALL = "session:delete-all"
         const val ACTION_SPEECH_RUNTIME_REFRESH = "speech-runtime:refresh"
         const val PLAYBACK_LOAD_ATTEMPTS = 3
         val PLAYBACK_RETRY_DELAYS_MILLIS = longArrayOf(150L, 350L, 750L)
         const val LIVE_SESSION_UI_SAMPLE_MILLIS = 200L
         const val MAX_EXPORT_NAME_LENGTH = 80
+        const val MAX_CUE_CACHE_SIZE = 2048
+        const val CUE_CACHE_INIT_CAP = 64
+        const val CUE_CACHE_LOAD_FACTOR = 0.75f
+        const val RESEARCH_FILE_PREFIX_LEN = 12
     }
 }
 

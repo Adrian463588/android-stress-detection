@@ -1,5 +1,6 @@
 package com.stressdetector.mobile.domain.engine
 
+import com.stressdetector.mobile.domain.assessment.AssessmentResult
 import com.stressdetector.mobile.domain.counselor.CounselorPersonaProfile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,7 +90,15 @@ data class CounselorGenerationRequest(
     val personaMarkdown: String = "",
     val personaVersion: Int = 0,
     val recentHistory: List<ConversationTurn> = emptyList(),
-    val webCitations: List<KnowledgeCitation> = emptyList()
+    val webCitations: List<KnowledgeCitation> = emptyList(),
+    val assessmentDiscussion: Boolean = false,
+    val assessmentResult: AssessmentResult? = null,
+    val interactionMode: CounselingInteractionMode = CounselingInteractionMode.GENERAL_COUNSELING,
+    val responseProfile: ResponseProfile = ResponseProfile.STANDARD,
+    val allAssessmentSummary: String = "",
+    val verbatimContext: String = "",
+    val continuationPrefix: String = "",
+    val imageAttachmentsPng: List<ByteArray> = emptyList()
 )
 
 /** Runtime status is deliberately separate from the validated model-file status. */
@@ -128,6 +137,9 @@ interface OnDeviceLlmEngine {
     }
 
     suspend fun load(): LlmReadiness = readiness()
+
+    suspend fun analyzeMultimodal(prompt: String, imagesPng: List<ByteArray>): Result<String> =
+        Result.failure(UnsupportedOperationException("Multimodal vision backend is unavailable on this engine."))
 
     suspend fun unload() = Unit
 
@@ -192,5 +204,6 @@ sealed interface RagRetrievalResult {
 
 enum class RetrievalMethod {
     SEMANTIC_HYBRID,
-    LEXICAL_ONLY
+    LEXICAL_ONLY,
+    CURATED_REFERENCE
 }

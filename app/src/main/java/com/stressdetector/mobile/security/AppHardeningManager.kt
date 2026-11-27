@@ -33,11 +33,11 @@ object AppHardeningManager {
         // Additional authorized developer/CI signing keys can be registered here
     )
 
-    // Expected genuine SHA-256 hashes of critical offline assets
+    // Expected genuine canonical LF SHA-256 hashes of critical offline assets
     val CRITICAL_ASSET_CHECKSUMS: Map<String, String> = mapOf(
-        "ai/psychometrics/catalog.json" to "52DAC3696C90EF8244FE55FC8962CABEF6A92AB4B4356CD1ADE1EA1183BFFA7E",
-        "ai/psychometrics/protocols.json" to "E99F428A2ACBA8E4090DDBC131F5342F018CCBAC99C8A0CB449FFBA6434EA501",
-        "ai/bundled_knowledge_manifest.json" to "864A31D260D84AFF30DC20F016988A837D64B4A8EB73B1D02260665BFD332F32"
+        "ai/psychometrics/catalog.json" to "876C41CE0C93AFF815B570803476CE0F97520D529287DAC3CAEEAE7894669EED",
+        "ai/psychometrics/protocols.json" to "EBD2069E183C7115CA5B8A4E634C4E07654996E74D4D1656F398C8B58C6D7E49",
+        "ai/bundled_knowledge_manifest.json" to "12BAE4591389995337EC8AFC27D61FD5C63BC8D286E53F8137B110D116AB4DAB"
     )
 
     private val KNOWN_SU_BINARY_PATHS = listOf(
@@ -206,17 +206,38 @@ object AppHardeningManager {
         val assets = context.assets
 
         for ((path, expectedHash) in CRITICAL_ASSET_CHECKSUMS) {
-            val actualHash = runCatching {
-                assets.open(path).use { stream ->
-                    computeSha256Hex(stream)
-                }
+            val rawBytes = runCatching {
+                assets.open(path).use { stream -> stream.readBytes() }
             }.getOrNull()
 
-            if (actualHash == null || !actualHash.equals(expectedHash, ignoreCase = true)) {
+            if (rawBytes == null) {
+                failed.add(path)
+                continue
+            }
+
+            val rawMatches = computeSha256Hex(rawBytes).equals(expectedHash, ignoreCase = true)
+            val lfMatches = if (rawMatches) {
+                true
+            } else {
+                val lfBytes = rawBytes.toString(Charsets.UTF_8)
+                    .replace("\r\n", "\n")
+                    .toByteArray(Charsets.UTF_8)
+                computeSha256Hex(lfBytes).equals(expectedHash, ignoreCase = true)
+            }
+
+            if (!lfMatches) {
                 failed.add(path)
             }
         }
         return failed
+    }
+
+    /**
+     * Computes uppercase hex SHA-256 digest from raw bytes.
+     */
+    private fun computeSha256Hex(bytes: ByteArray): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        return digest.joinToString("") { "%02X".format(it) }
     }
 
     /**

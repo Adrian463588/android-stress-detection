@@ -40,7 +40,8 @@ internal object PortableArchiveFormat {
         "live_sessions",
         "realtime_inference_records",
         "divergence_events",
-        "annotations"
+        "annotations",
+        "skin_temperature_samples"
     )
     private val gson = Gson()
     private val sha256 = Regex("[0-9a-f]{64}")

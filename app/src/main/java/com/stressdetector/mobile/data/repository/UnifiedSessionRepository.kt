@@ -1,13 +1,17 @@
 package com.stressdetector.mobile.data.repository
 
+import com.stressdetector.mobile.data.db.AiAnalysisEntity
 import com.stressdetector.mobile.data.db.DivergenceEventEntity
 import com.stressdetector.mobile.data.db.LiveSessionEntity
+import com.stressdetector.mobile.data.db.SkinTemperatureSampleEntity
 import com.stressdetector.mobile.data.db.StressDatabase
 import com.stressdetector.mobile.data.db.TranscriptSegmentEntity
 import com.stressdetector.mobile.data.db.VerbatimSessionEntity
 import com.stressdetector.mobile.domain.engine.AudioGap
 import com.stressdetector.mobile.domain.engine.AudioGapCodec
+import com.stressdetector.mobile.domain.engine.SkinTemperatureObservation
 import com.stressdetector.mobile.domain.engine.SpeechSegment
+import com.stressdetector.mobile.domain.engine.VerbatimImportedSessionRecord
 import com.stressdetector.mobile.domain.engine.VerbatimSessionDetail
 import com.stressdetector.mobile.domain.engine.VerbatimSessionRepository
 import com.stressdetector.mobile.domain.engine.VerbatimSessionSummary
@@ -20,8 +24,17 @@ import kotlinx.coroutines.withContext
 class UnifiedSessionRepository(private val database: StressDatabase) : VerbatimSessionRepository {
     private val verbatimDao = database.verbatimDao()
     private val liveDao = database.liveMonitorDao()
+    private val temperatureDao = database.skinTemperatureDao()
 
-    suspend fun startSession(sessionId: String, timestampMs: Long, consentGranted: Boolean, sessionName: String = "Sesi Verbatim") {
+    @Suppress("LongParameterList")
+    suspend fun startSession(
+        sessionId: String,
+        timestampMs: Long,
+        consentGranted: Boolean,
+        sessionName: String = "Sesi Verbatim",
+        watchWearerRole: String = "CLIENT",
+        languageCode: String = "id"
+    ) {
         withContext(Dispatchers.IO) {
             val verbatim = VerbatimSessionEntity(
                 sessionId = sessionId,
@@ -31,7 +44,9 @@ class UnifiedSessionRepository(private val database: StressDatabase) : VerbatimS
                 consentGranted = consentGranted,
                 durationSeconds = 0L,
                 status = "RECORDING",
-                sessionName = sessionName.trim().ifBlank { "Sesi Verbatim" }
+                sessionName = sessionName.trim().ifBlank { "Sesi Verbatim" },
+                watchWearerRole = watchWearerRole,
+                languageCode = languageCode
             )
 
             val live = LiveSessionEntity(
@@ -57,12 +72,15 @@ class UnifiedSessionRepository(private val database: StressDatabase) : VerbatimS
         artifactFolderPath: String = "",
         summaryStatus: String = "NOT_REQUESTED",
         finalizationStatus: String = "COMPLETED",
-        audioGaps: List<AudioGap> = emptyList()
+        audioGaps: List<AudioGap> = emptyList(),
+        durationSecondsOverride: Long? = null,
+        audioDurationMs: Long = 0L
     ) {
         withContext(Dispatchers.IO) {
             val verbatim = verbatimDao.getSessionById(sessionId)
             if (verbatim != null) {
-                val duration = (timestampMs - verbatim.startedAtMillis) / 1000
+                val duration = (durationSecondsOverride ?: ((timestampMs - verbatim.startedAtMillis) / 1000L))
+                    .coerceAtLeast(0L)
                 verbatimDao.updateSession(
                     verbatim.copy(
                         endedAtMillis = timestampMs,
@@ -72,14 +90,16 @@ class UnifiedSessionRepository(private val database: StressDatabase) : VerbatimS
                         artifactFolderPath = artifactFolderPath,
                         summaryStatus = summaryStatus,
                         finalizationStatus = finalizationStatus,
-                        audioGapsJson = AudioGapCodec.encode(audioGaps)
+                        audioGapsJson = AudioGapCodec.encode(audioGaps),
+                        audioDurationMs = audioDurationMs.coerceAtLeast(0L)
                     )
                 )
             }
 
             val live = liveDao.getLiveSessionById(sessionId)
             if (live != null) {
-                val duration = (timestampMs - live.startedAtMillis) / 1000
+                val duration = (durationSecondsOverride ?: ((timestampMs - live.startedAtMillis) / 1000L))
+                    .coerceAtLeast(0L)
                 liveDao.updateLiveSession(
                     live.copy(
                         endedAtMillis = timestampMs,
@@ -146,6 +166,70 @@ class UnifiedSessionRepository(private val database: StressDatabase) : VerbatimS
         withContext(Dispatchers.IO) { liveDao.replaceDivergenceEvents(sessionId, events) }
     }
 
+    suspend fun saveSkinTemperatureSamples(sessionId: String, samples: List<SkinTemperatureObservation>) {
+        if (samples.isEmpty()) return
+        require(samples.all { it.sessionId == sessionId }) { "Skin temperature sample belongs to another session" }
+        withContext(Dispatchers.IO) {
+            temperatureDao.insertAll(samples.map { it.toEntity() })
+        }
+    }
+
+    override suspend fun hasSession(sessionId: String): Boolean = withContext(Dispatchers.IO) {
+        verbatimDao.getSessionById(sessionId) != null
+    }
+
+    @Suppress("LongParameterList")
+    override suspend fun importSessionAtomically(record: VerbatimImportedSessionRecord): Result<Boolean> = runCatching {
+        val session = record.session
+        val segments = record.segments
+        val events = record.events
+        val annotations = record.annotations
+        val temperatureSamples = record.temperatureSamples
+        val aiSummaryText = record.aiSummaryText
+        withContext(Dispatchers.IO) {
+            var inserted = false
+            database.runInTransaction {
+                kotlinx.coroutines.runBlocking {
+                    if (verbatimDao.getSessionById(session.sessionId) != null) {
+                        inserted = false
+                        return@runBlocking
+                    }
+                    verbatimDao.insertSession(session)
+                    liveDao.insertLiveSession(
+                        LiveSessionEntity(
+                            sessionId = session.sessionId,
+                            startedAtMillis = session.startedAtMillis,
+                            endedAtMillis = session.endedAtMillis,
+                            durationSeconds = session.durationSeconds,
+                            consentGranted = session.consentGranted,
+                            averageStressProbability = 0f
+                        )
+                    )
+                    if (segments.isNotEmpty()) verbatimDao.insertSegments(segments)
+                    if (events.isNotEmpty()) liveDao.insertDivergenceEvents(events)
+                    annotations.forEach { database.annotationDao().insertAnnotation(it) }
+                    if (temperatureSamples.isNotEmpty()) {
+                        temperatureDao.insertAll(temperatureSamples.map { it.toEntity() })
+                    }
+                    if (!aiSummaryText.isNullOrBlank()) {
+                        verbatimDao.insertAnalysis(
+                            AiAnalysisEntity(
+                                analysisId = "${session.sessionId}:imported-summary",
+                                sessionId = session.sessionId,
+                                version = 1,
+                                summaryText = aiSummaryText,
+                                keyInsightsJson = "[]",
+                                generatedAtMillis = session.endedAtMillis
+                            )
+                        )
+                    }
+                    inserted = true
+                }
+            }
+            inserted
+        }
+    }
+
     override fun observeSessions(): Flow<List<VerbatimSessionSummary>> = verbatimDao.getAllSessions().map { sessions ->
         sessions.map(::toSummary)
     }
@@ -153,13 +237,15 @@ class UnifiedSessionRepository(private val database: StressDatabase) : VerbatimS
     override fun observeSession(sessionId: String): Flow<VerbatimSessionDetail?> = combine(
         verbatimDao.observeSessionById(sessionId),
         verbatimDao.getSegmentsForSession(sessionId),
-        liveDao.getDivergenceEventsForSession(sessionId)
-    ) { session, segments, events ->
+        liveDao.getDivergenceEventsForSession(sessionId),
+        temperatureDao.observeForSession(sessionId)
+    ) { session, segments, events, temperatureRows ->
         session?.let {
             VerbatimSessionDetail(
                 summary = toSummary(it),
                 transcript = segments.map { segment -> segment.toSpeechSegment(it.startedAtMillis) },
-                divergenceEvents = events
+                divergenceEvents = events,
+                skinTemperatureSamples = temperatureRows.map(SkinTemperatureSampleEntity::toObservation)
             )
         }
     }
@@ -182,10 +268,15 @@ class UnifiedSessionRepository(private val database: StressDatabase) : VerbatimS
         }
     }
 
+    override suspend fun getLatestSessionNotes(sessionId: String): String? = withContext(Dispatchers.IO) {
+        verbatimDao.getLatestAnalysis(sessionId)?.summaryText
+    }
+
     override suspend fun deleteSession(sessionId: String): Result<Unit> = runCatching {
         withContext(Dispatchers.IO) {
             verbatimDao.deleteSessionGraph(sessionId)
             liveDao.deleteSessionGraph(sessionId)
+            temperatureDao.deleteForSession(sessionId)
             database.annotationDao().deleteAnnotationsForSession(sessionId)
         }
     }
@@ -195,6 +286,7 @@ class UnifiedSessionRepository(private val database: StressDatabase) : VerbatimS
             verbatimDao.getAllSessionsOnce().forEach { session ->
                 verbatimDao.deleteSessionGraph(session.sessionId)
                 liveDao.deleteSessionGraph(session.sessionId)
+                temperatureDao.deleteForSession(session.sessionId)
                 database.annotationDao().deleteAnnotationsForSession(session.sessionId)
             }
         }
@@ -210,9 +302,55 @@ class UnifiedSessionRepository(private val database: StressDatabase) : VerbatimS
         artifactFolderPath = session.artifactFolderPath,
         finalizationStatus = session.finalizationStatus,
         summaryStatus = session.summaryStatus,
-        audioGaps = AudioGapCodec.decode(session.audioGapsJson)
+        audioGaps = AudioGapCodec.decode(session.audioGapsJson),
+        audioDurationMs = session.audioDurationMs,
+        watchWearerRole = session.watchWearerRole,
+        languageCode = session.languageCode
     )
+
+    override suspend fun updateWatchWearerRole(sessionId: String, role: String): Result<Unit> = runCatching {
+        withContext(Dispatchers.IO) {
+            val existing = verbatimDao.getSessionById(sessionId) ?: return@withContext
+            verbatimDao.updateSession(existing.copy(watchWearerRole = role))
+        }
+    }
 }
+
+internal fun SkinTemperatureObservation.toEntity(): SkinTemperatureSampleEntity = SkinTemperatureSampleEntity(
+    sampleId = sampleId,
+    sessionId = sessionId,
+    generation = generation,
+    sequenceNumber = sequenceNumber,
+    sensorTimestampMs = sensorTimestampMs,
+    receivedTimestampMs = receivedTimestampMs,
+    elapsedMillis = elapsedMillis,
+    clockUncertaintyMs = clockUncertaintyMs,
+    skinTemperatureC = skinTemperatureC,
+    ambientTemperatureC = ambientTemperatureC,
+    measurementStatus = measurementStatus,
+    isValid = isValid,
+    wearerRole = wearerRole,
+    source = source,
+    isPaused = isPaused
+)
+
+internal fun SkinTemperatureSampleEntity.toObservation(): SkinTemperatureObservation = SkinTemperatureObservation(
+    sampleId = sampleId,
+    sessionId = sessionId,
+    generation = generation,
+    sequenceNumber = sequenceNumber,
+    sensorTimestampMs = sensorTimestampMs,
+    receivedTimestampMs = receivedTimestampMs,
+    elapsedMillis = elapsedMillis,
+    clockUncertaintyMs = clockUncertaintyMs,
+    skinTemperatureC = skinTemperatureC,
+    ambientTemperatureC = ambientTemperatureC,
+    measurementStatus = measurementStatus,
+    isValid = isValid,
+    wearerRole = wearerRole,
+    source = source,
+    isPaused = isPaused
+)
 
 internal fun TranscriptSegmentEntity.toSpeechSegment(sessionStartedAtMillis: Long): SpeechSegment = SpeechSegment(
     id = segmentId,

@@ -10,46 +10,320 @@ object AssessmentEnrichers {
         form: AssessmentForm,
         answers: Map<Int, Int>,
         rawScores: List<AssessmentScore>
-    ): Pair<List<AssessmentScore>, String> = when (id) {
+    ): Pair<List<AssessmentScore>, String> = enrichDetailed(id, form, answers, rawScores).let { it.scores to it.interpretation }
+
+    fun enrichDetailed(
+        id: String,
+        form: AssessmentForm,
+        answers: Map<Int, Int>,
+        rawScores: List<AssessmentScore>
+    ): EnrichedScoringOutcome = when (id) {
         "bdi" -> enrichBdi(answers)
         "srq-29" -> enrichSrq29(answers)
-        "vak" -> enrichVak(answers)
-        "adversity_quotient" -> enrichAq(answers)
-        "big_five" -> enrichBigFive(rawScores)
-        "cbi" -> enrichCbi(rawScores)
-        "disc" -> enrichDisc(answers)
-        "mmpi" -> enrichMmpi(answers)
-        "tiu_6" -> enrichTiu6(answers)
-        "spm" -> enrichSpm(answers)
-        "mbti" -> enrichMbti(answers)
-        "tiu_5" -> enrichTiu5(answers)
-        "holland" -> enrichHolland(answers)
-        "wpt" -> enrichWpt(answers)
-        "16pf" -> enrich16pf(answers)
-        "army_alpha" -> enrichArmyAlpha(answers)
-        "frt" -> enrichFrt(answers)
-        "cfit_2a" -> enrichCfit2a(answers)
-        "cfit_3a" -> enrichCfit3a(answers)
-        "enneagram" -> enrichEnneagram(answers)
-        "ist" -> enrichIst(answers)
-        "kuder" -> enrichKuder(answers)
-        "kraepelin" -> enrichKraepelin(answers)
-        "mit" -> enrichMit(answers)
-        "msai" -> enrichMsai(answers)
-        "msdt" -> enrichMsdt(answers)
-        "papikostick" -> enrichPapikostick(answers)
-        "pauli" -> enrichPauli(answers)
-        "personality_test" -> enrichPersonalityTest(answers)
-        "wartegg" -> enrichWartegg(answers)
-        "rmib" -> enrichRmib(answers)
-        "vrt" -> enrichVrt(answers)
-        "mseai" -> enrichMseai(answers)
-        "epps" -> enrichEpps(answers)
-        "rorschach" -> enrichRorschach(answers)
-        else -> rawScores to form.interpretationNote
+        "vak" -> outcomeRaw(id, enrichVak(answers))
+        "adversity_quotient" -> outcomeRaw(id, enrichAq(answers))
+        "big_five" -> outcomeVerified(id, enrichBigFive(rawScores))
+        "cbi" -> outcomeRaw(id, enrichCbi(rawScores))
+        "disc" -> outcomeRaw(id, enrichDisc(answers))
+        "mmpi" -> enrichMmpi(answers, form.items.size)
+        "tiu_6" -> outcomeRaw(id, enrichTiu6(answers))
+        "spm" -> outcomeRaw(id, enrichSpm(answers))
+        "mbti" -> outcomeRaw(id, enrichMbti(answers))
+        "tiu_5" -> outcomeRaw(id, enrichTiu5(answers))
+        "holland" -> outcomeRaw(id, enrichHolland(answers))
+        "wpt" -> outcomeRaw(id, enrichWpt(answers))
+        "16pf" -> outcomeRaw(id, enrich16pf(answers))
+        "army_alpha" -> outcomeRaw(id, enrichArmyAlpha(answers))
+        "frt" -> outcomeRaw(id, enrichFrt(answers))
+        "cfit_2a" -> outcomeRaw(id, enrichCfit2a(answers))
+        "cfit_3a" -> outcomeRaw(id, enrichCfit3a(answers))
+        "enneagram" -> outcomeRaw(id, enrichEnneagram(answers))
+        "ist" -> outcomeRaw(id, enrichIst(answers))
+        "kuder" -> outcomeRaw(id, enrichKuder(answers))
+        "kraepelin" -> enrichKraepelinDetailed(answers)
+        "mit" -> outcomeRaw(id, enrichMit(answers))
+        "msai" -> enrichMsaiDetailed(answers)
+        "msdt" -> enrichMsdtDetailed(answers)
+        "papikostick" -> outcomeRaw(id, enrichPapikostick(answers))
+        "pauli" -> enrichPauliDetailed(answers)
+        "personality_test" -> outcomeRaw(id, enrichPersonalityTest(answers))
+        "wartegg" -> enrichWarteggDetailed(answers)
+        "rmib" -> enrichRmibDetailed(answers)
+        "vrt" -> enrichVrtDetailed(answers)
+        "mseai" -> enrichMseaiDetailed(answers, rawScores)
+        "epps" -> enrichEppsDetailed(answers)
+        "rorschach" -> enrichRorschachDetailed(answers)
+        "cbi_tbi" -> EnrichedScoringOutcome(
+            scores = rawScores,
+            interpretation = "CBI-TBI (Eksploratif Purwarupa): " + rawScores.joinToString("; ") { "${it.label}=${it.displayValue()}" } +
+                ". Hasil mencerminkan beban kelelahan yang dilaporkan tanpa klaim normatif resmi.",
+            scoringStatus = InstrumentImplementationStatus.EXPLORATORY,
+            validityStatus = AssessmentValidityStatus.VALID,
+            normReference = PsychometricInstrumentRegistry.specFor("cbi_tbi").normStatus
+        )
+        "esj" -> EnrichedScoringOutcome(
+            scores = rawScores,
+            interpretation = "ESJ (Eksploratif Purwarupa): " + rawScores.joinToString("; ") { "${it.label}=${it.displayValue()}" } +
+                ". Digunakan sebagai bahan refleksi konseling purwarupa.",
+            scoringStatus = InstrumentImplementationStatus.EXPLORATORY,
+            validityStatus = AssessmentValidityStatus.VALID,
+            normReference = PsychometricInstrumentRegistry.specFor("esj").normStatus
+        )
+        "htp", "dap", "baum" -> EnrichedScoringOutcome(
+            scores = rawScores,
+            interpretation = "${form.title} (${answers.size}/${form.items.size} panel dicatat). " + form.interpretationNote,
+            scoringStatus = InstrumentImplementationStatus.EXAMINER_REVIEW_REQUIRED,
+            validityStatus = if (answers.isNotEmpty()) AssessmentValidityStatus.VALID else AssessmentValidityStatus.QUESTIONABLE,
+            reviewStatus = ExaminerReviewStatus.PENDING,
+            normReference = PsychometricInstrumentRegistry.specFor(id).normStatus
+        )
+        else -> EnrichedScoringOutcome(
+            scores = rawScores,
+            interpretation = form.interpretationNote,
+            scoringStatus = PsychometricInstrumentRegistry.specFor(id).implementationStatus,
+            normReference = PsychometricInstrumentRegistry.specFor(id).normStatus
+        )
     }
 
-    private fun enrichBdi(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
+    fun scoreWarteggFromDrafts(
+        drafts: List<WarteggBoxDraft>,
+        multimodalSummary: String? = null
+    ): EnrichedScoringOutcome {
+        val completed = drafts.count { it.hasContent() }
+        val ordered = drafts.filter { it.drawOrder != null }.sortedBy { it.drawOrder }
+        val seqText = if (ordered.isNotEmpty()) {
+            ordered.joinToString(" -> ") { "K${it.boxNumber}" }
+        } else {
+            "Belum ada urutan tercatat"
+        }
+        val totalRevisions = drafts.sumOf { it.revisionCount.coerceAtLeast(0) }
+        val overallTelemetry = ProjectiveTelemetryExtractor.extractMetrics(drafts.map { it.strokes }, totalRevisions)
+        val totalDuration = drafts.sumOf { it.durationSeconds.coerceAtLeast(0) }
+        val subjectiveMarks = drafts.count { it.valence != null || it.difficulty != null }
+        val boxCoverages = drafts.filter { it.strokes.isNotEmpty() }.map { box ->
+            ProjectiveTelemetryExtractor.extractMetrics(listOf(box.strokes)).spaceCoveragePercent
+        }
+        val avgCoverage = boxCoverages.takeIf { it.isNotEmpty() }?.average()?.toDouble() ?: 0.0
+
+        val observations = mutableListOf(
+            AssessmentObservation("wartegg_completed", "Kotak Diselesaikan", "$completed/8"),
+            AssessmentObservation("wartegg_sequence", "Urutan Pengerjaan", seqText),
+            AssessmentObservation(
+                key = "wartegg_telemetry_summary",
+                label = "Telemetri Goresan & Stylus",
+                value = overallTelemetry.toFormattedSummary(),
+                pressure = overallTelemetry.meanPressure
+            )
+        )
+        drafts.sortedBy { it.boxNumber }.forEach { box ->
+            val boxMetrics = ProjectiveTelemetryExtractor.extractMetrics(listOf(box.strokes))
+            val tags = listOfNotNull(
+                box.valence?.let { "Valensi: $it" },
+                box.difficulty?.let { "Kemudahan: $it" },
+                if (boxMetrics.strokeCount > 0) "Arah: ${boxMetrics.dominantDirection}" else null,
+                if (boxMetrics.strokeCount > 0) String.format(Locale.US, "Ruang: %.0f%%", boxMetrics.spaceCoveragePercent) else null,
+                if (boxMetrics.stylusUsed) "Stylus" else null
+            )
+            val titlePart = box.title.takeIf(String::isNotBlank)?.let { "Judul: \"$it\"" } ?: "Tanpa judul"
+            observations += AssessmentObservation(
+                key = "wartegg_box_${box.boxNumber}",
+                label = "Kotak ${box.boxNumber}",
+                value = titlePart,
+                durationSeconds = box.durationSeconds.takeIf { it > 0 },
+                orderIndex = box.drawOrder,
+                pressure = boxMetrics.meanPressure,
+                tags = tags
+            )
+        }
+        val scores = listOf(
+            AssessmentScore("Kotak Diselesaikan", completed.toDouble(), 0.0, 8.0, "Kelengkapan kotak terisi dari 8 stimulus."),
+            AssessmentScore("Cakupan Ruang Rata-rata (%)", avgCoverage, 0.0, 100.0, "Persentase area bounding-box goresan rata-rata (observasi spasial, bukan skor sifat)."),
+            AssessmentScore("Total Durasi Gambar (dtk)", totalDuration.toDouble(), 0.0, 1800.0, "Akumulasi waktu pengerjaan aktif seluruh kotak."),
+            AssessmentScore("Kelengkapan Evaluasi Subjektif", subjectiveMarks.toDouble(), 0.0, 8.0, "Kotak yang diberi penanda (+/-/M/S).")
+        )
+        val warnings = if (completed < 8) {
+            listOf("Baru $completed dari 8 kotak Wartegg terisi (analisis bersifat eksploratif parsial).")
+        } else {
+            emptyList()
+        }
+        return EnrichedScoringOutcome(
+            scores = scores,
+            interpretation = "Tes Proyektif Wartegg ($completed/8 kotak selesai; urutan: $seqText; durasi total: ${totalDuration}dtk). " +
+                "${overallTelemetry.toFormattedSummary()} " +
+                "Metrik eksekusi dan telemetri stylus bersifat observasional terstruktur sebelum coding Kinget & review psikolog.",
+            scoringStatus = InstrumentImplementationStatus.EXAMINER_REVIEW_REQUIRED,
+            validityStatus = if (completed == 8) AssessmentValidityStatus.VALID else AssessmentValidityStatus.QUESTIONABLE,
+            validityWarnings = warnings,
+            reviewStatus = ExaminerReviewStatus.PENDING,
+            normReference = PsychometricInstrumentRegistry.specFor("wartegg").normStatus,
+            observations = observations,
+            warteggDrafts = drafts,
+            multimodalSummary = multimodalSummary
+        )
+    }
+
+    fun scoreRorschachFromDrafts(
+        responses: List<RorschachResponseDraft>,
+        systemId: String = "EXNER_CS",
+        multimodalSummary: String? = null
+    ): EnrichedScoringOutcome {
+        val totalR = responses.size
+        val warnings = buildList {
+            if (totalR < 14) {
+                add("Total respons R = $totalR berada di bawah ambang minimum validitas standar (R >= 14 pada $systemId); dibaca sebagai protokol eksploratif parsial.")
+            }
+            if (responses.any { it.freeAssociation.isBlank() && it.location.isNullOrBlank() }) {
+                add("Sebagian respons belum dilengkapi asosiasi bebas atau coding pemeriksa.")
+            }
+        }
+        val validity = if (totalR < 14) AssessmentValidityStatus.INVALID else AssessmentValidityStatus.QUESTIONABLE
+        val wCount = responses.count { it.location == "W" }
+        val dCount = responses.count { it.location == "D" }
+        val ddCount = responses.count { it.location == "Dd" }
+        val sCount = responses.count { it.location == "S" }
+        val popCount = responses.count { it.popular }
+        val mCount = responses.count { it.determinant?.contains("M", ignoreCase = false) == true }
+        val colorCount = responses.count { it.determinant?.contains("C", ignoreCase = true) == true }
+        val fqoCount = responses.count { it.formQuality in setOf("FQo", "FQ+", "+") }
+        val fqmCount = responses.count { it.formQuality in setOf("FQ-", "-") }
+
+        val observations = mutableListOf(
+            AssessmentObservation("rorschach_r", "Total Respons (R)", totalR.toString()),
+            AssessmentObservation("rorschach_system", "Sistem Coding Tunggal", systemId),
+            AssessmentObservation("rorschach_loc", "Distribusi Lokasi", "W=$wCount, D=$dCount, Dd=$ddCount, S=$sCount"),
+            AssessmentObservation("rorschach_pop", "Popular Terkode", popCount.toString())
+        )
+        responses.forEach { resp ->
+            val assocText = resp.freeAssociation.ifBlank { "Tanpa teks asosiasi" }
+            val inqText = resp.inquiry.takeIf(String::isNotBlank)?.let { " [Inquiry: $it]" }.orEmpty()
+            observations += AssessmentObservation(
+                key = "card_${resp.cardNumber}_r${resp.responseIndex}",
+                label = "Kartu ${resp.cardNumber} (#${resp.responseIndex})",
+                value = "$assocText$inqText",
+                tags = listOfNotNull(resp.location, resp.determinant, resp.formQuality, if (resp.popular) "P" else null)
+            )
+        }
+        val scores = listOf(
+            AssessmentScore("Total Respons (R)", totalR.toDouble(), 0.0, 50.0, "Jumlah total respons di 10 kartu ($systemId)."),
+            AssessmentScore("W (Whole)", wCount.toDouble(), 0.0, 30.0, "Respons menyeluruh atas seluruh bercak kartu."),
+            AssessmentScore("D (Common Detail)", dCount.toDouble(), 0.0, 40.0, "Respons pada detail lazim."),
+            AssessmentScore("Dd (Unusual Detail)", ddCount.toDouble(), 0.0, 30.0, "Respons pada detail kecil/tak lazim."),
+            AssessmentScore("S (Space)", sCount.toDouble(), 0.0, 20.0, "Integrasi ruang putih kartu."),
+            AssessmentScore("P (Popular)", popCount.toDouble(), 0.0, 13.0, "Respons populer yang telah dikode."),
+            AssessmentScore("M (Human Movement)", mCount.toDouble(), 0.0, 20.0, "Determinan gerakan manusia yang telah dikode."),
+            AssessmentScore("FC/CF/C (Color)", colorCount.toDouble(), 0.0, 20.0, "Determinan warna yang telah dikode."),
+            AssessmentScore("FQo/FQ+ (Kesesuaian Bentuk)", fqoCount.toDouble(), 0.0, 40.0, "Bentuk akurat/lazim terkode (FQ-=$fqmCount).")
+        )
+        return EnrichedScoringOutcome(
+            scores = scores,
+            interpretation = "Protokol Rorschach ($systemId, R = $totalR respons; W=$wCount, D=$dCount, Dd=$ddCount, S=$sCount, P=$popCount, M=$mCount). " +
+                "Skor hitungan di atas berasal langsung dari protokol dan coding yang tercatat; tetap bersifat eksploratif hingga review psikolog final.",
+            scoringStatus = InstrumentImplementationStatus.EXAMINER_REVIEW_REQUIRED,
+            validityStatus = validity,
+            validityWarnings = warnings,
+            reviewStatus = ExaminerReviewStatus.PENDING,
+            normReference = PsychometricInstrumentRegistry.specFor("rorschach").normStatus,
+            observations = observations,
+            rorschachResponses = responses,
+            multimodalSummary = multimodalSummary
+        )
+    }
+
+    fun scoreProjectivePanels(
+        instrumentId: String,
+        title: String,
+        panels: List<ProjectivePanelDraft>,
+        multimodalSummary: String? = null
+    ): EnrichedScoringOutcome {
+        val completed = panels.count { it.hasContent() }
+        val totalRevisions = panels.sumOf { it.revisionCount.coerceAtLeast(0) }
+        val overallTelemetry = ProjectiveTelemetryExtractor.extractMetrics(panels.map { it.strokes }, totalRevisions)
+        val totalDuration = panels.sumOf { it.durationSeconds.coerceAtLeast(0) }
+        val ordered = panels.filter { it.drawOrder != null }.sortedBy { it.drawOrder }
+        val seqText = ordered.joinToString(" -> ") { it.panelLabel }.ifBlank { "Belum ada urutan tercatat" }
+
+        val observations = mutableListOf(
+            AssessmentObservation("${instrumentId}_completed", "Panel Diselesaikan", "$completed/${panels.size}"),
+            AssessmentObservation("${instrumentId}_sequence", "Urutan Pengerjaan", seqText),
+            AssessmentObservation(
+                key = "${instrumentId}_telemetry_summary",
+                label = "Telemetri Goresan & Stylus",
+                value = overallTelemetry.toFormattedSummary(),
+                pressure = overallTelemetry.meanPressure
+            )
+        )
+        panels.forEach { panel ->
+            val metrics = ProjectiveTelemetryExtractor.extractMetrics(listOf(panel.strokes), panel.revisionCount)
+            val tags = listOfNotNull(
+                if (metrics.strokeCount > 0) "Arah: ${metrics.dominantDirection}" else null,
+                if (metrics.strokeCount > 0) String.format(Locale.US, "Ruang: %.0f%%", metrics.spaceCoveragePercent) else null,
+                if (metrics.stylusUsed) "Stylus" else null
+            )
+            val desc = listOfNotNull(
+                panel.title.takeIf(String::isNotBlank)?.let { "Judul: \"$it\"" },
+                panel.notes.takeIf(String::isNotBlank)
+            ).joinToString(" · ").ifBlank { if (panel.strokes.isNotEmpty()) "Digambar (${metrics.strokeCount} goresan)" else "Kosong" }
+            observations += AssessmentObservation(
+                key = "${instrumentId}_panel_${panel.panelIndex}",
+                label = panel.panelLabel,
+                value = desc,
+                durationSeconds = panel.durationSeconds.takeIf { it > 0 },
+                orderIndex = panel.drawOrder,
+                pressure = metrics.meanPressure,
+                tags = tags
+            )
+        }
+        val scores = listOf(
+            AssessmentScore("Panel Diselesaikan", completed.toDouble(), 0.0, panels.size.toDouble().coerceAtLeast(1.0), "Kelengkapan panel gambar proyektif."),
+            AssessmentScore("Cakupan Ruang (%)", overallTelemetry.spaceCoveragePercent.toDouble(), 0.0, 100.0, "Cakupan area bounding-box gabungan (observasional, bukan skor kepribadian)."),
+            AssessmentScore("Total Goresan", overallTelemetry.strokeCount.toDouble(), 0.0, 500.0, "Jumlah goresan tercatat."),
+            AssessmentScore("Total Durasi Gambar (dtk)", totalDuration.toDouble(), 0.0, 1800.0, "Akumulasi waktu pengerjaan aktif.")
+        )
+        val warnings = if (completed < panels.size) {
+            listOf("Baru $completed dari ${panels.size} panel $title diselesaikan.")
+        } else {
+            emptyList()
+        }
+        return EnrichedScoringOutcome(
+            scores = scores,
+            interpretation = "Asesmen Proyektif $title ($completed/${panels.size} panel; urutan: $seqText; durasi ${totalDuration}dtk). " +
+                "${overallTelemetry.toFormattedSummary()} Analisis visual dan telemetri bersifat observasional eksploratif sebelum review psikolog.",
+            scoringStatus = InstrumentImplementationStatus.EXAMINER_REVIEW_REQUIRED,
+            validityStatus = if (completed > 0) AssessmentValidityStatus.VALID else AssessmentValidityStatus.QUESTIONABLE,
+            validityWarnings = warnings,
+            reviewStatus = ExaminerReviewStatus.PENDING,
+            normReference = PsychometricInstrumentRegistry.specFor(instrumentId).normStatus,
+            observations = observations,
+            projectivePanels = panels,
+            multimodalSummary = multimodalSummary
+        )
+    }
+
+    private fun outcomeVerified(id: String, pair: Pair<List<AssessmentScore>, String>): EnrichedScoringOutcome =
+        EnrichedScoringOutcome(
+            scores = pair.first,
+            interpretation = pair.second,
+            scoringStatus = InstrumentImplementationStatus.VERIFIED,
+            normReference = PsychometricInstrumentRegistry.specFor(id).normStatus
+        )
+
+    private fun outcomeRaw(
+        id: String,
+        pair: Pair<List<AssessmentScore>, String>,
+        warnings: List<String> = emptyList(),
+        validity: AssessmentValidityStatus = AssessmentValidityStatus.VALID,
+        observations: List<AssessmentObservation> = emptyList()
+    ): EnrichedScoringOutcome = EnrichedScoringOutcome(
+        scores = pair.first,
+        interpretation = pair.second,
+        scoringStatus = InstrumentImplementationStatus.RAW_SCORE_ONLY,
+        validityStatus = validity,
+        validityWarnings = warnings,
+        normReference = PsychometricInstrumentRegistry.specFor(id).normStatus,
+        observations = observations
+    )
+
+    private fun enrichBdi(answers: Map<Int, Int>): EnrichedScoringOutcome {
         val cognitive = answers.filterKeys { it in 0..13 }.values.sum().toDouble()
         val somatic = answers.filterKeys { it in 14..20 }.values.sum().toDouble()
         val total = cognitive + somatic
@@ -60,36 +334,56 @@ object AssessmentEnrichers {
             else -> "Berat (29–63)"
         }
         val item9 = answers[8] ?: 0
+        val warnings = if (item9 > 0) {
+            listOf("Butir 9 (pikiran/harapan bunuh diri) bernilai $item9/3 — prioritaskan pemeriksaan keselamatan segera.")
+        } else {
+            emptyList()
+        }
         val alert = if (item9 > 0) {
-            " ⚠️ PERINGATAN KESELAMATAN: Butir 9 (Ide Bunuh Diri) bernilai $item9. Evaluasi risiko segera!"
+            " PERINGATAN KESELAMATAN: Butir 9 bernilai $item9/3; evaluasi keselamatan segera diperlukan."
         } else {
             ""
         }
         val scores = listOf(
-            AssessmentScore("Total Skor BDI-II", total, 0.0, 63.0, "Tingkat keparahan gejala: $severity.$alert"),
+            AssessmentScore("Total Skor BDI-II", total, 0.0, 63.0, "Band gejala: $severity.$alert"),
             AssessmentScore("Butir 9 Ide Bunuh Diri", item9.toDouble(), 0.0, 3.0, "Item kritis keselamatan."),
             AssessmentScore("Subskala Kognitif-Afektif", cognitive, 0.0, 42.0, "Jumlah butir 1–14."),
             AssessmentScore("Subskala Somatik", somatic, 0.0, 21.0, "Jumlah butir 15–21.")
         )
-        val interpretation = "Tingkat keparahan gejala depresi selama 2 minggu terakhir berada pada kategori $severity " +
-            "(Skor Total: ${total.toInt()}/63). Rincian: Kognitif-Afektif ${cognitive.toInt()}, Somatik ${somatic.toInt()}.$alert " +
-            "Hasil ini bersifat skrining suportif dan bukan penegak diagnosis klinis tunggal."
-        return scores to interpretation
+        val interpretation = "Skrining gejala depresi BDI-II (2 minggu terakhir): $severity " +
+            "(Skor Total: ${total.toInt()}/63; butir 1–14=${cognitive.toInt()}, butir 15–21=${somatic.toInt()}).$alert " +
+            "Bersifat skrining terukur dan bukan diagnosis klinis tunggal."
+        return EnrichedScoringOutcome(
+            scores = scores,
+            interpretation = interpretation,
+            scoringStatus = InstrumentImplementationStatus.VERIFIED,
+            validityWarnings = warnings,
+            normReference = PsychometricInstrumentRegistry.specFor("bdi").normStatus
+        )
     }
 
-    private fun enrichSrq29(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
+    private fun enrichSrq29(answers: Map<Int, Int>): EnrichedScoringOutcome {
         val gme = answers.filterKeys { it in 0..19 }.values.sum()
         val substance = answers[20] ?: 0
         val psychotic = answers.filterKeys { it in 21..23 }.values.sum()
         val ptsd = answers.filterKeys { it in 24..28 }.values.sum()
         val totalYes = answers.values.sum()
         val item17 = answers[16] ?: 0
-        val gmeStatus = if (gme >= 5) "Indikasi Gangguan Mental Emosional (ambang >=5)" else "Dalam batas normal"
-        val subStatus = if (substance >= 1) "Indikasi Penggunaan Zat/Alkohol" else "Negatif"
-        val psyStatus = if (psychotic >= 1) "Indikasi Gejala Psikotik (Perlu Rujukan)" else "Negatif"
-        val ptsdStatus = if (ptsd >= 1) "Indikasi Gejala PTSD" else "Negatif"
+        val gmeStatus = if (gme >= 6) {
+            "Skor domain GME >= 6 (indikasi skrining Kemenkes RI; bergantung versi/populasi)"
+        } else {
+            "Di bawah ambang >= 6 pada skrining GME Kemenkes RI"
+        }
+        val subStatus = if (substance >= 1) "Ada indikasi respons Ya pada domain zat" else "Tidak ada"
+        val psyStatus = if (psychotic >= 1) "Ada indikasi respons Ya pada domain gejala psikotik (perlu evaluasi profesional)" else "Tidak ada"
+        val ptsdStatus = if (ptsd >= 1) "Ada indikasi respons Ya pada domain gejala PTSD" else "Tidak ada"
+        val warnings = if (item17 == 1) {
+            listOf("Butir 17 (pikiran mengakhiri hidup) dijawab Ya — prioritaskan pemeriksaan keselamatan segera.")
+        } else {
+            emptyList()
+        }
         val alert = if (item17 == 1) {
-            " ⚠️ PERINGATAN: Jawaban YA pada Butir 17 (pikiran mengakhiri hidup). Wajib konsultasi/rujukan segera."
+            " PERINGATAN KESELAMATAN: Jawaban Ya pada Butir 17; wajib pemeriksaan keselamatan/rujukan segera."
         } else {
             ""
         }
@@ -100,10 +394,15 @@ object AssessmentEnrichers {
             AssessmentScore("Gejala Psikotik", psychotic.toDouble(), 0.0, 3.0, psyStatus),
             AssessmentScore("Gejala PTSD", ptsd.toDouble(), 0.0, 5.0, ptsdStatus)
         )
-        val interpretation = "Hasil Skrining SRQ-29 Kemenkes RI: $gmeStatus (Skor GME: $gme/20). Status zat: $subStatus. " +
-            "Status psikotik: $psyStatus. Status PTSD: $ptsdStatus.$alert " +
-            "Konsultasikan hasil ini dengan konselor atau psikolog untuk evaluasi komprehensif."
-        return scores to interpretation
+        val interpretation = "Hasil Skrining SRQ-29: GME=$gme/20 ($gmeStatus); Zat=$substance/1; Psikotik=$psychotic/3; PTSD=$ptsd/5.$alert " +
+            "Bersifat skrining awal dan bukan diagnosis pasti."
+        return EnrichedScoringOutcome(
+            scores = scores,
+            interpretation = interpretation,
+            scoringStatus = InstrumentImplementationStatus.VERIFIED,
+            validityWarnings = warnings,
+            normReference = PsychometricInstrumentRegistry.specFor("srq-29").normStatus
+        )
     }
 
     private fun enrichVak(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
@@ -114,71 +413,89 @@ object AssessmentEnrichers {
         val pV = countV * 100.0 / total
         val pA = countA * 100.0 / total
         val pK = countK * 100.0 / total
-        val dominant = when {
-            pV >= pA && pV >= pK -> "Visual (Modalitas Penglihatan)"
-            pA >= pV && pA >= pK -> "Auditori (Modalitas Pendengaran)"
-            else -> "Kinestetik (Modalitas Praktik & Gerak)"
-        }
         val scores = listOf(
-            AssessmentScore("Gaya Dominan", 1.0, 1.0, 1.0, dominant),
-            AssessmentScore("Modalitas Visual", pV, 0.0, 100.0, "$countV butir (${format1(pV)}%)"),
-            AssessmentScore("Modalitas Auditori", pA, 0.0, 100.0, "$countA butir (${format1(pA)}%)"),
-            AssessmentScore("Modalitas Kinestetik", pK, 0.0, 100.0, "$countK butir (${format1(pK)}%)")
+            AssessmentScore("Preferensi Visual", pV, 0.0, 100.0, "$countV/$total butir (${format1(pV)}%)."),
+            AssessmentScore("Preferensi Auditori", pA, 0.0, 100.0, "$countA/$total butir (${format1(pA)}%)."),
+            AssessmentScore("Preferensi Kinestetik", pK, 0.0, 100.0, "$countK/$total butir (${format1(pK)}%).")
         )
-        val interpretation = "Modalitas belajar dominan Anda adalah $dominant. " +
-            "Proporsi: Visual ${format1(pV)}%, Auditori ${format1(pA)}%, Kinestetik ${format1(pK)}%. " +
-            "Manfaatkan strategi belajar yang mengoptimalkan modalitas utama untuk daya serap maksimal."
+        val interpretation = "Distribusi refleksi preferensi VAK: Visual ${format1(pV)}% ($countV), Auditori ${format1(pA)}% ($countA), " +
+            "Kinestetik ${format1(pK)}% ($countK). Catatan ini merupakan refleksi preferensi laporan diri, bukan penetapan gaya belajar baku."
         return scores to interpretation
     }
 
     private fun enrichAq(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
-        val c = answers.filterKeys { it in listOf(0, 4, 8, 12) }.values.sum()
-        val o = answers.filterKeys { it in listOf(1, 5, 9, 13) }.values.sum()
-        val r = answers.filterKeys { it in listOf(2, 6, 10, 14) }.values.sum()
-        val e = answers.filterKeys { it in listOf(3, 7, 11) }.values.sum()
-        val rawSum = c + o + r + e
-        val totalAq = rawSum * 2
-        val profile = when {
-            totalAq >= 166 -> "Climber (Daya Juang Tinggi)"
-            totalAq >= 134 -> "Camper (Daya Juang Cukup)"
-            else -> "Quitter (Daya Juang Rentan)"
-        }
-        val scores = listOf(
-            AssessmentScore("Total Skor AQ", totalAq.toDouble(), 0.0, 200.0, "Profil: $profile"),
-            AssessmentScore("Dimensi C (Control)", c.toDouble(), 0.0, 20.0, "Persepsi kendali atas kesulitan."),
-            AssessmentScore("Dimensi O (Ownership)", o.toDouble(), 0.0, 20.0, "Tanggung jawab terhadap solusi."),
-            AssessmentScore("Dimensi R (Reach)", r.toDouble(), 0.0, 20.0, "Sejauh mana kesulitan merembet."),
-            AssessmentScore("Dimensi E (Endurance)", e.toDouble(), 0.0, 20.0, "Persepsi daya tahan kesulitan.")
+        // Pemetaan eksak 15 butir (a=0, b=1, c=2) -> Q (Quitter), Ca (Camper), Cl (Climber)
+        // sesuai sheet Interpretasi & Kode pada Adversity Quotient.xlsx (Paket 25 Item).
+        val aqKey = listOf(
+            listOf("Q", "Ca", "Cl"),
+            listOf("Q", "Cl", "Ca"),
+            listOf("Cl", "Ca", "Q"),
+            listOf("Ca", "Q", "Cl"),
+            listOf("Ca", "Q", "Cl"),
+            listOf("Cl", "Q", "Ca"),
+            listOf("Ca", "Cl", "Q"),
+            listOf("Q", "Ca", "Cl"),
+            listOf("Cl", "Q", "Ca"),
+            listOf("Cl", "Q", "Ca"),
+            listOf("Q", "Ca", "Cl"),
+            listOf("Cl", "Q", "Ca"),
+            listOf("Ca", "Q", "Cl"),
+            listOf("Q", "Ca", "Cl"),
+            listOf("Ca", "Cl", "Q")
         )
-        val interpretation = "Adversity Quotient Anda berada pada kategori $profile (Skor AQ: $totalAq/200). " +
-            "Dimensi: Control $c/20, Ownership $o/20, Reach $r/20, Endurance $e/20. " +
-            "Tingkatkan persepsi kendali dan kepemilikan solusi dalam menghadapi tantangan berat."
+
+        var qCount = 0
+        var caCount = 0
+        var clCount = 0
+        var answered = 0
+        for (i in aqKey.indices) {
+            val choice = answers[i] ?: continue
+            if (choice in 0..2) {
+                answered++
+                when (aqKey[i][choice]) {
+                    "Q" -> qCount++
+                    "Ca" -> caCount++
+                    "Cl" -> clCount++
+                }
+            }
+        }
+
+        // Aturan Kode matrix (136 kombinasi di sheet Kode): pemenang tunggal menang, seri -> CAMPER.
+        val dominantCategory = when {
+            answered == 0 -> "Belum Terisi"
+            clCount > caCount && clCount > qCount -> "CLIMBER"
+            qCount > caCount && qCount > clCount -> "QUITTER"
+            else -> "CAMPER"
+        }
+
+        val scores = listOf(
+            AssessmentScore("Climber (Cl)", clCount.toDouble(), 0.0, 15.0, "Frekuensi respons tipe Climber dari 15 butir."),
+            AssessmentScore("Camper (Ca)", caCount.toDouble(), 0.0, 15.0, "Frekuensi respons tipe Camper dari 15 butir."),
+            AssessmentScore("Quitter (Q)", qCount.toDouble(), 0.0, 15.0, "Frekuensi respons tipe Quitter dari 15 butir.")
+        )
+        val interpretation = "Profil AQ 15-butir lokal (Adversity Quotient.xlsx; $answered/15 butir terisi): " +
+            "Kategori dominan $dominantCategory (Climber=$clCount, Camper=$caCount, Quitter=$qCount). " +
+            "Pemetaan a/b/c per butir mengikuti worksheet lokal (terpisah dari skor 40–200 pada rekap ARP 20-butir)."
         return scores to interpretation
     }
 
     private fun enrichBigFive(rawScores: List<AssessmentScore>): Pair<List<AssessmentScore>, String> {
         val summary = rawScores.joinToString(", ") { "${it.label}: ${it.displayValue()}" }
         val highest = rawScores.maxByOrNull { it.value }?.label ?: "Seimbang"
-        val interpretation = "Profil Big Five Personality mengindikasikan dimensi paling menonjol pada $highest. " +
-            "Rincian dimensi: $summary. Gunakan pemahaman ini untuk mengoptimalkan potensi kerja dan komunikasi."
+        val interpretation = "Profil Big Five IPIP-BFM-50 (skor mentah deskriptif 10–50 per skala) menunjukkan skor tertinggi pada $highest. " +
+            "Rincian: $summary."
         return rawScores to interpretation
     }
 
     private fun enrichCbi(rawScores: List<AssessmentScore>): Pair<List<AssessmentScore>, String> {
-        val overall = rawScores.map { it.value }.average()
-        val level = when {
-            overall < 25.0 -> "Sangat Rendah (Bebas Kejenuhan)"
-            overall < 50.0 -> "Rendah (Tingkat Stres Terkendali)"
-            overall < 75.0 -> "Sedang (Waspada Kelelahan)"
-            else -> "Tinggi (Risiko Kejenuhan Berat)"
-        }
-        val interpretation = "Tingkat keletihan dan kejenuhan kerja (CBI) berada pada level $level " +
-            "(Rerata: ${format1(overall)}/100). Jaga keseimbangan istirahat dan pulihkan energi mental secara teratur."
+        val summary = rawScores.joinToString(", ") { "${it.label}: ${it.displayValue()}/100" }
+        val interpretation = "Skor subskala Copenhagen Burnout Inventory (CBI NFA-2004, skala 0–100): $summary. " +
+            "Dilaporkan per subskala tanpa cutoff diagnostik universal; interpretasi mempertimbangkan konteks kerja & klinis."
         return rawScores to interpretation
     }
 
     // =========================================================================
-    // 1. DISC Scoring & Profiling (24 Groups Most & Least)
+    // 1. DISC Scoring & Profiling (24 Groups Most & Least — Raw Counts)
     // =========================================================================
     private fun enrichDisc(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
         var d1 = 0
@@ -215,76 +532,39 @@ object AssessmentEnrichers {
         val i3 = i1 - i2
         val s3 = s1 - s2
         val c3 = c1 - c2
-
-        val line3Map = listOf("D" to d3, "I" to i3, "S" to s3, "C" to c3).sortedByDescending { it.second }
-        val dominantLetter = line3Map.first().first
-        val secondLetter = line3Map[1].first
-        val archetype = getDiscArchetype(dominantLetter, secondLetter, line3Map.first().second, line3Map[1].second)
+        val topMirror = listOf("D (Dominance)" to d3, "I (Influence)" to i3, "S (Steadiness)" to s3, "C (Compliance)" to c3)
+            .maxByOrNull { it.second }?.first ?: "Seimbang"
 
         val scores = listOf(
-            AssessmentScore("Pola Dominan", 1.0, 1.0, 1.0, "$dominantLetter (${archetype.first})"),
-            AssessmentScore("Grafik 1 (Mask) Dominance", d1.toDouble(), 0.0, 24.0, "Perilaku adaptasi publik."),
-            AssessmentScore("Grafik 1 (Mask) Influence", i1.toDouble(), 0.0, 24.0, "Perilaku adaptasi publik."),
-            AssessmentScore("Grafik 1 (Mask) Steadiness", s1.toDouble(), 0.0, 24.0, "Perilaku adaptasi publik."),
-            AssessmentScore("Grafik 1 (Mask) Compliance", c1.toDouble(), 0.0, 24.0, "Perilaku adaptasi publik."),
-            AssessmentScore("Grafik 2 (Core) Dominance", d2.toDouble(), 0.0, 24.0, "Respon alami di bawah tekanan."),
-            AssessmentScore("Grafik 2 (Core) Influence", i2.toDouble(), 0.0, 24.0, "Respon alami di bawah tekanan."),
-            AssessmentScore("Grafik 2 (Core) Steadiness", s2.toDouble(), 0.0, 24.0, "Respon alami di bawah tekanan."),
-            AssessmentScore("Grafik 2 (Core) Compliance", c2.toDouble(), 0.0, 24.0, "Respon alami di bawah tekanan."),
-            AssessmentScore("Grafik 3 (Mirror) D", d3.toDouble(), -24.0, 24.0, "Selisih Most - Least."),
-            AssessmentScore("Grafik 3 (Mirror) I", i3.toDouble(), -24.0, 24.0, "Selisih Most - Least."),
-            AssessmentScore("Grafik 3 (Mirror) S", s3.toDouble(), -24.0, 24.0, "Selisih Most - Least."),
-            AssessmentScore("Grafik 3 (Mirror) C", c3.toDouble(), -24.0, 24.0, "Selisih Most - Least.")
+            AssessmentScore("Profil A (Most) Dominance", d1.toDouble(), 0.0, 24.0, "Frekuensi pilihan paling menggambarkan diri (D)."),
+            AssessmentScore("Profil A (Most) Influence", i1.toDouble(), 0.0, 24.0, "Frekuensi pilihan paling menggambarkan diri (I)."),
+            AssessmentScore("Profil A (Most) Steadiness", s1.toDouble(), 0.0, 24.0, "Frekuensi pilihan paling menggambarkan diri (S)."),
+            AssessmentScore("Profil A (Most) Compliance", c1.toDouble(), 0.0, 24.0, "Frekuensi pilihan paling menggambarkan diri (C)."),
+            AssessmentScore("Profil B (Least) Dominance", d2.toDouble(), 0.0, 24.0, "Frekuensi pilihan paling tidak menggambarkan diri (D)."),
+            AssessmentScore("Profil B (Least) Influence", i2.toDouble(), 0.0, 24.0, "Frekuensi pilihan paling tidak menggambarkan diri (I)."),
+            AssessmentScore("Profil B (Least) Steadiness", s2.toDouble(), 0.0, 24.0, "Frekuensi pilihan paling tidak menggambarkan diri (S)."),
+            AssessmentScore("Profil B (Least) Compliance", c2.toDouble(), 0.0, 24.0, "Frekuensi pilihan paling tidak menggambarkan diri (C)."),
+            AssessmentScore("Profil C (Selisih Most-Least) D", d3.toDouble(), -24.0, 24.0, "Selisih mentah D (Profil A - Profil B)."),
+            AssessmentScore("Profil C (Selisih Most-Least) I", i3.toDouble(), -24.0, 24.0, "Selisih mentah I (Profil A - Profil B)."),
+            AssessmentScore("Profil C (Selisih Most-Least) S", s3.toDouble(), -24.0, 24.0, "Selisih mentah S (Profil A - Profil B)."),
+            AssessmentScore("Profil C (Selisih Most-Least) C", c3.toDouble(), -24.0, 24.0, "Selisih mentah C (Profil A - Profil B).")
         )
 
-        val interpretation = "Profil DISC menunjukkan tipe dominan ${archetype.first} ($dominantLetter/$secondLetter). " +
-            "Grafik 1 (Perilaku Publik/Mask): D=$d1, I=$i1, S=$s1, C=$c1. " +
-            "Grafik 2 (Respon Stres/Core): D=$d2, I=$i2, S=$s2, C=$c2. " +
-            "Grafik 3 (Konsep Diri/Mirror): D=$d3, I=$i3, S=$s3, C=$c3. " +
-            "Karakteristik: ${archetype.second}."
+        val interpretation = "Skor mentah DISC-24 (dimensi selisih tertinggi: $topMirror): " +
+            "Profil A (Most) [D=$d1, I=$i1, S=$s1, C=$c1], Profil B (Least) [D=$d2, I=$i2, S=$s2, C=$c2], " +
+            "Profil C (Selisih) [D=$d3, I=$i3, S=$s3, C=$c3]. " +
+            "Grafik & klasifikasi normatif lebih lanjut memerlukan tabel norma formulir DISC resmi."
         return scores to interpretation
     }
 
-    private fun getDiscArchetype(dom: String, sec: String, val1: Int, val2: Int): Pair<String, String> = when (dom) {
-        "D" -> if (sec == "I" && val2 > 0) {
-            "NEGOTIATOR / RESULT-ORIENTED" to "Tegas, persuasif, berorientasi hasil cepat, dan aktif memotivasi tim"
-        } else if (sec == "C" && val2 > 0) {
-            "DESIGNER / ARCHITECT" to "Visioner, berstandar tinggi, kritis, dan fokus pada efisiensi sistematis"
-        } else {
-            "ESTABLISHER / DEVELOPER" to "Percaya diri, menyukai tantangan, berorientasi target, dan berani mengambil risiko"
-        }
-        "I" -> if (sec == "S" && val2 > 0) {
-            "COUNSELOR / HARMONIZER" to "Hangat, empatik, ramah, membina relasi harmonis, dan pendengar suportif"
-        } else if (sec == "D" && val2 > 0) {
-            "PROMOTER / INSPIRER" to "Antusias, komunikatif, ekspresif, dan mendorong aksi positif orang lain"
-        } else {
-            "PERSUADER / MOTIVATOR" to "Optimis, mudah bergaul, persuasif, dan membangun jejaring luas"
-        }
-        "S" -> if (sec == "C" && val2 > 0) {
-            "PERFECTIONIST / STABILIZER" to "Sabar, konsisten, teliti, loyal, dan menjaga ketertiban prosedur"
-        } else if (sec == "I" && val2 > 0) {
-            "AGENT / SUPPORTER" to "Kooperatif, toleran, mengutamakan kenyamanan bersama, dan stabil"
-        } else {
-            "SPECIALIST / RELIABLE" to "Tenang di bawah tekanan, fokus pada tugas rutin, dan pendengar andal"
-        }
-        else -> if (sec == "S" && val2 > 0) {
-            "QUALITY CONTROLLER / AUDITOR" to "Sistematis, hati-hati, patuh standar, dan menjaga kualitas tanpa cela"
-        } else if (sec == "D" && val2 > 0) {
-            "LOGICAL THINKER / ANALYST" to "Objektif, berbasis data, analitis tajam, dan memecahkan masalah terstruktur"
-        } else {
-            "THINKER / COMPLIER" to "Teliti, akurat, menjaga integritas prosedur, dan menghindari spekulasi"
-        }
-    }
-
     // =========================================================================
-    // 2. MMPI-2-RF Scoring (51 Scales, Safety SUI, Validity Flags)
+    // 2. MMPI-2-RF Raw Scale Scoring (Safety SUI, Completeness, Review Required)
     // =========================================================================
-    private fun enrichMmpi(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
+    private fun enrichMmpi(answers: Map<Int, Int>, totalItems: Int): EnrichedScoringOutcome {
         val suiItems = listOf(92, 119, 163, 250, 333)
         val suiScore = suiItems.count { answers[it] == 1 }
         val hasSuiRisk = suiScore > 0
 
-        // Higher-Order
         val eidScore = listOf(
             5, 21, 29, 47, 61, 73, 88, 116, 129, 143, 157,
             171, 186, 203, 231, 246, 260, 273, 287, 298, 314, 330
@@ -298,17 +578,16 @@ object AssessmentEnrichers {
             222, 225, 230, 247, 252, 265, 291, 311, 315, 328
         ).count { answers[it] == 1 }
 
-        // Validity Scales
         val frScore = listOf(
             13, 29, 45, 55, 66, 70, 73, 105, 116, 119, 138, 145, 163,
             202, 217, 230, 239, 252, 263, 274, 276, 280, 293, 300, 309, 311, 321
         ).count { answers[it] == 1 } + listOf(58, 82, 101, 173, 226).count { answers[it] == 0 }
         val lrScore = listOf(60, 181, 267).count { answers[it] == 1 } +
             listOf(15, 44, 69, 94, 126, 153, 182, 210, 240, 297, 324).count { answers[it] == 0 }
-        val krScore = listOf(79, 201).count { answers[it] == 1 } +
+        // Item 201 appears in ==0 false-keyed K-r adjustment direction only (never both 1 and 0).
+        val krScore = listOf(79).count { answers[it] == 1 } +
             listOf(9, 22, 35, 43, 71, 88, 104, 139, 201, 216, 221, 233, 245, 281, 292).count { answers[it] == 0 }
 
-        // Restructured Clinical
         val rcdScore = listOf(
             5, 21, 29, 47, 61, 73, 88, 116, 129, 143, 157,
             171, 186, 203, 231, 246, 260, 273, 287, 298, 314, 330
@@ -317,49 +596,59 @@ object AssessmentEnrichers {
         val rc2Score = listOf(3, 16, 24, 52, 63, 82, 101, 139, 159, 181, 194, 201, 221, 245, 281, 301, 322).count { answers[it] == 0 }
         val rc4Score = listOf(4, 20, 48, 65, 95, 140, 155, 172, 204, 217, 222, 252, 265, 296, 311, 328).count { answers[it] == 1 }
 
-        val alert = if (hasSuiRisk) {
-            " ⚠️ PERINGATAN KESELAMATAN KLINIS: Terdeteksi respons positif pada $suiScore butir Ide Bunuh Diri (SUI). " +
-                "Wajib dilakukan evaluasi keselamatan dan rujukan klinis segera!"
-        } else {
-            ""
+        val targetCount = totalItems.coerceAtLeast(338)
+        val answeredCount = answers.keys.count { it in 0 until targetCount }
+        val minRequired = (targetCount * 0.9).toInt()
+        val isComplete = answeredCount >= minRequired
+
+        val warnings = buildList {
+            if (hasSuiRisk) {
+                add("PERINGATAN KESELAMATAN KLINIS: Terdeteksi respons positif pada $suiScore butir Ide Bunuh Diri (SUI). Evaluasi keselamatan segera wajib dilakukan.")
+            }
+            if (!isComplete) {
+                add("Protokol tidak lengkap ($answeredCount/$targetCount butir; minimum 90% [$minRequired butir] diperlukan agar valid).")
+            }
+            add("Skor berupa raw count MMPI-2-RF (belum dikonversi ke skor T standar); wajib verifikasi validitas & review psikolog.")
         }
 
         val validityStatus = when {
-            frScore >= 20 -> "Over-Reporting Tinggi (F-r: $frScore)"
-            lrScore >= 10 -> "Defensif / Under-Reporting (L-r: $lrScore)"
-            else -> "Protokol Valid & Dapat Diinterpretasikan"
+            !isComplete -> AssessmentValidityStatus.INVALID
+            frScore >= 20 || lrScore >= 10 -> AssessmentValidityStatus.QUESTIONABLE
+            else -> AssessmentValidityStatus.PENDING
         }
 
         val scores = listOf(
-            AssessmentScore("Validitas Protokol", if (frScore < 20 && lrScore < 10) 1.0 else 0.0, 0.0, 1.0, validityStatus),
-            AssessmentScore(
-                "SUI (Ide Bunuh Diri)",
-                suiScore.toDouble(),
-                0.0,
-                5.0,
-                if (hasSuiRisk) "Elevasi kritis risiko.$alert" else "Tidak ada indikasi."
-            ),
-            AssessmentScore("H-O EID (Disfungsi Emosi)", eidScore.toDouble(), 0.0, 22.0, "Emotional / Internalizing Dysfunction."),
-            AssessmentScore("H-O THD (Disfungsi Pikiran)", thdScore.toDouble(), 0.0, 24.0, "Thought Dysfunction."),
-            AssessmentScore("H-O BXD (Kendala Perilaku)", bxdScore.toDouble(), 0.0, 20.0, "Behavioral / Externalizing Dysfunction."),
-            AssessmentScore("RCd (Demoralisasi)", rcdScore.toDouble(), 0.0, 24.0, "Tingkat ketidakpuasan hidup / demoralisasi."),
-            AssessmentScore("RC1 (Keluhan Somatik)", rc1Score.toDouble(), 0.0, 11.0, "Keluhan fisik dan somatik."),
-            AssessmentScore("RC2 (Emosi Positif Rendah)", rc2Score.toDouble(), 0.0, 17.0, "Anhedonia / kesulitan merasakan kegembiraan."),
-            AssessmentScore("RC4 (Perilaku Antisosial)", rc4Score.toDouble(), 0.0, 16.0, "Kecenderungan pelanggaran norma."),
-            AssessmentScore("F-r (Infrequent Responses)", frScore.toDouble(), 0.0, 32.0, "Skala validitas pelaporan gejala."),
-            AssessmentScore("L-r (Uncommon Virtues)", lrScore.toDouble(), 0.0, 14.0, "Skala validitas pelaporan kebajikan moral."),
-            AssessmentScore("K-r (Adjustment Validity)", krScore.toDouble(), 0.0, 17.0, "Skala validitas defensif penyesuaian.")
+            AssessmentScore("F-r (Infrequent Responses)", frScore.toDouble(), 0.0, 32.0, "Skor mentah validitas pelaporan gejala berlebih."),
+            AssessmentScore("L-r (Uncommon Virtues)", lrScore.toDouble(), 0.0, 14.0, "Skor mentah validitas kebajikan moral."),
+            AssessmentScore("K-r (Adjustment Validity)", krScore.toDouble(), 0.0, 16.0, "Skor mentah validitas penyesuaian defensif."),
+            AssessmentScore("SUI (Ide Bunuh Diri)", suiScore.toDouble(), 0.0, 5.0, if (hasSuiRisk) "Elevasi kritis keselamatan ($suiScore/5)." else "0/5 respons kritis."),
+            AssessmentScore("H-O EID (Disfungsi Emosi)", eidScore.toDouble(), 0.0, 22.0, "Skor mentah Emotional/Internalizing."),
+            AssessmentScore("H-O THD (Disfungsi Pikiran)", thdScore.toDouble(), 0.0, 24.0, "Skor mentah Thought Dysfunction."),
+            AssessmentScore("H-O BXD (Kendala Perilaku)", bxdScore.toDouble(), 0.0, 20.0, "Skor mentah Behavioral/Externalizing."),
+            AssessmentScore("RCd (Demoralisasi)", rcdScore.toDouble(), 0.0, 24.0, "Skor mentah demoralisasi."),
+            AssessmentScore("RC1 (Keluhan Somatik)", rc1Score.toDouble(), 0.0, 11.0, "Skor mentah somatik."),
+            AssessmentScore("RC2 (Emosi Positif Rendah)", rc2Score.toDouble(), 0.0, 17.0, "Skor mentah emosi positif rendah."),
+            AssessmentScore("RC4 (Perilaku Antisosial)", rc4Score.toDouble(), 0.0, 16.0, "Skor mentah perilaku antisosial.")
         )
 
-        val interpretation = "Hasil MMPI-2-RF (338 Butir): $validityStatus. " +
-            "Ringkasan skala utama: Disfungsi Emosi (EID: $eidScore), Disfungsi Pikiran (THD: $thdScore), " +
-            "Kendala Perilaku (BXD: $bxdScore), Demoralisasi (RCd: $rcdScore), Keluhan Somatik (RC1: $rc1Score).$alert " +
-            "Hasil ini merupakan instrumen pendukung klinis komprehensif bagi psikolog/psikiater."
-        return scores to interpretation
+        val alertText = if (hasSuiRisk) " [PERINGATAN KESELAMATAN SUI=$suiScore/5]" else ""
+        val interpretation = "MMPI-2-RF ($answeredCount/$targetCount butir dijawab; skor mentah — bukan T-score MMPI-2 klasik): " +
+            "Validitas F-r=$frScore, L-r=$lrScore, K-r=$krScore; Klinis EID=$eidScore, THD=$thdScore, BXD=$bxdScore, " +
+            "RCd=$rcdScore, RC1=$rc1Score, RC2=$rc2Score, RC4=$rc4Score.$alertText Menunggu verifikasi skala validitas & review psikolog."
+
+        return EnrichedScoringOutcome(
+            scores = scores,
+            interpretation = interpretation,
+            scoringStatus = InstrumentImplementationStatus.EXAMINER_REVIEW_REQUIRED,
+            validityStatus = validityStatus,
+            validityWarnings = warnings,
+            reviewStatus = ExaminerReviewStatus.PENDING,
+            normReference = PsychometricInstrumentRegistry.specFor("mmpi").normStatus
+        )
     }
 
     // =========================================================================
-    // 3. TIU 6 Scoring (40 Spatial 3D Folding Items)
+    // 3. TIU 6 Scoring (40 Spatial 3D Folding Items — Raw Score Only)
     // =========================================================================
     private fun enrichTiu6(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
         val keys = listOf(
@@ -384,25 +673,14 @@ object AssessmentEnrichers {
             }
         }
 
-        val ws = when {
-            correctCount >= 33 -> 5
-            correctCount >= 25 -> 4
-            correctCount >= 17 -> 3
-            correctCount >= 9 -> 2
-            else -> 1
-        }
-
-        val category = when (ws) {
-            5 -> "BAIK SEKALI (Skala 5)"
-            4 -> "BAIK (Skala 4)"
-            3 -> "RATA-RATA (Skala 3)"
-            2 -> "KURANG (Skala 2)"
-            else -> "KURANG SEKALI (Skala 1)"
-        }
-
         val scores = listOf(
-            AssessmentScore("Skor Baku TIU 6", ws.toDouble(), 1.0, 5.0, category),
-            AssessmentScore("Total Jawaban Benar", correctCount.toDouble(), 0.0, 40.0, "Raw Score / 40 butir."),
+            AssessmentScore(
+                "Total Jawaban Benar",
+                correctCount.toDouble(),
+                0.0,
+                40.0,
+                "Skor mentah ($correctCount/40); norma skala memerlukan manual resmi."
+            ),
             AssessmentScore("Baris 1 (Kubus)", familyCorrect[0].toDouble(), 0.0, 5.0, "Jaring bangun kubus."),
             AssessmentScore("Baris 2 (Piramida)", familyCorrect[1].toDouble(), 0.0, 5.0, "Jaring piramida persegi."),
             AssessmentScore("Baris 3 (Prisma)", familyCorrect[2].toDouble(), 0.0, 5.0, "Jaring prisma segitiga."),
@@ -413,15 +691,14 @@ object AssessmentEnrichers {
             AssessmentScore("Baris 8 (Gabungan)", familyCorrect[7].toDouble(), 0.0, 5.0, "Jaring bentuk gabungan.")
         )
 
-        val interpretation = "Hasil Tes Inteligensi Umum 6 (Penalaran Spasial & Bangun Ruang): Kategori $category " +
-            "(Skor Mentah: $correctCount/40). Kemampuan memvisualisasikan rotasi, lipatan 2D ke 3D, " +
-            "dan manipulasi bangun ruang berada pada tingkat yang ${category.lowercase(Locale.ROOT)}. " +
-            "Sangat relevan untuk bidang teknik, arsitektur, IT sistem, dan pemecahan masalah desain struktural."
+        val interpretation = "Hasil Tes Inteligensi Umum 6 (Penalaran Spasial & Bangun Ruang): " +
+            "Skor mentah $correctCount dari 40 butir (${answeredSummary(answers.size, 40)}). " +
+            "Konversi skala baku atau kategori norma tidak dihasilkan otomatis tanpa tabel norma resmi."
         return scores to interpretation
     }
 
     // =========================================================================
-    // 4. SPM Scoring (Raven's Standard Progressive Matrices - 60 Items)
+    // 4. SPM Scoring (Raven's Standard Progressive Matrices — 60 Items Raw)
     // =========================================================================
     private fun enrichSpm(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
         val keys = listOf(
@@ -455,24 +732,22 @@ object AssessmentEnrichers {
         val sE = setE.coerceIn(0, 12)
         val totalCorrect = sA + sB + sC + sD + sE
 
-        val grade = when {
-            totalCorrect >= 55 -> "Grade I (Intelektual Superior / ≥ P95)"
-            totalCorrect >= 48 -> "Grade II (Di Atas Rata-Rata / P75–P94)"
-            totalCorrect >= 35 -> "Grade III (Rata-Rata Intelektual / P25–P74)"
-            totalCorrect >= 20 -> "Grade IV (Di Bawah Rata-Rata / P5–P24)"
-            else -> "Grade V (Hambatan Intelektual / < P5)"
-        }
-
         val hasAtypicalPattern = (sE > sA + 2) || (sE > sB + 3)
         val consistencyNote = if (hasAtypicalPattern) {
-            " Catatan Konsistensi: Terdapat deviasi pola pengerjaan di mana skor set tingkat lanjut (Set E) melampaui set dasar (Set A/B), disarankan pemeriksaan lembar jawaban untuk memverifikasi ada tidaknya tebakan acak."
+            " Catatan Konsistensi: Skor set lanjut (Set E) melampaui set dasar (Set A/B); " +
+                "disarankan pemeriksaan lembar jawaban untuk menilai kemungkinan tebakan acak."
         } else {
             " Konsistensi antar-set menunjukkan progresi wajar dari set dasar ke set lanjutan."
         }
 
         val scores = listOf(
-            AssessmentScore("Klasifikasi Grade SPM", 1.0, 1.0, 5.0, grade),
-            AssessmentScore("Total Skor Mentah", totalCorrect.toDouble(), 0.0, 60.0, "Total jawaban benar / 60 butir."),
+            AssessmentScore(
+                "Total Skor Mentah",
+                totalCorrect.toDouble(),
+                0.0,
+                60.0,
+                "Total jawaban benar ($totalCorrect/60); grade persentil memerlukan norma usia/populasi."
+            ),
             AssessmentScore("Set A (Pola Kontinu)", sA.toDouble(), 0.0, 12.0, "Penyelesaian pola statis."),
             AssessmentScore("Set B (Analogi Figur)", sB.toDouble(), 0.0, 12.0, "Analogi simetri 2x2."),
             AssessmentScore("Set C (Progresi Matriks)", sC.toDouble(), 0.0, 12.0, "Perubahan progresi 3x3."),
@@ -480,9 +755,9 @@ object AssessmentEnrichers {
             AssessmentScore("Set E (Dekomposisi Logika)", sE.toDouble(), 0.0, 12.0, "Dekomposisi aturan logika abstrak.")
         )
 
-        val interpretation = "Hasil Raven Standard Progressive Matrices (SPM): $grade (Skor Total: $totalCorrect/60). " +
+        val interpretation = "Hasil Raven Standard Progressive Matrices (SPM): Skor Mentah $totalCorrect/60. " +
             "Rincian per set: Set A=$sA/12, Set B=$sB/12, Set C=$sC/12, Set D=$sD/12, Set E=$sE/12. " +
-            "Menggambarkan kapasitas eductive ability murni dalam memecahkan masalah logika baru secara non-verbal.$consistencyNote"
+            "Penetapan persentil dan Grade I–V wajib merujuk tabel norma usia dan populasi pada manual SPM.$consistencyNote"
         return scores to interpretation
     }
 
@@ -556,7 +831,7 @@ object AssessmentEnrichers {
     }
 
     // =========================================================================
-    // 6. TIU 5 Scoring (30 Figural Pattern Reasoning Items)
+    // 6. TIU 5 Scoring (30 Figural Pattern Reasoning Items — Raw Score Only)
     // =========================================================================
     private fun enrichTiu5(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
         val keys = listOf(
@@ -566,60 +841,32 @@ object AssessmentEnrichers {
         )
 
         var correctCount = 0
+        var part1Correct = 0
+        var part2Correct = 0
         for (i in 0 until 30) {
             val ans = answers[i]
             // Choice 0..4 corresponds to options 1..5
             if (ans != null && (ans + 1) == keys[i]) {
                 correctCount++
+                if (i < 15) part1Correct++ else part2Correct++
             }
         }
 
-        val ws = when {
-            correctCount >= 29 -> 18
-            correctCount >= 27 -> 16
-            correctCount >= 25 -> 15
-            correctCount >= 23 -> 14
-            correctCount >= 22 -> 13
-            correctCount >= 20 -> 12
-            correctCount >= 18 -> 11
-            correctCount >= 16 -> 10
-            correctCount >= 14 -> 9
-            correctCount >= 12 -> 8
-            correctCount >= 10 -> 7
-            correctCount >= 8 -> 6
-            correctCount >= 6 -> 5
-            correctCount >= 4 -> 4
-            correctCount >= 3 -> 3
-            correctCount >= 1 -> 2
-            else -> 1
-        }
-
-        val category = when {
-            ws >= 17 -> "Baik Sekali (BS)"
-            ws >= 13 -> "Baik (B)"
-            ws >= 9 -> "Sedang / Cukup (S)"
-            ws >= 5 -> "Kurang (K)"
-            else -> "Kurang Sekali (KS)"
-        }
-
-        val operationalMeaning = when {
-            ws >= 17 -> "Daya abstraksi visual, logika pola transformasional, dan kecepatan pemecahan masalah figural sangat unggul. Mampu menarik kesimpulan analogis non-verbal secara cepat dan presisi tinggi."
-            ws >= 13 -> "Cepat memahami aturan perubahan konsep figural dan cermat mengenali konsistensi pola logika non-verbal. Kapasitas nalar visual sangat baik untuk tuntutan analitis profesional."
-            ws >= 9 -> "Kapasitas penalaran logis praktis memadai untuk tuntutan tugas standar operasional. Mampu menyelesaikan persoalan visual rutin dengan akurasi cukup."
-            ws >= 5 -> "Memerlukan instruksi konkret langkah demi langkah serta waktu belajar lebih panjang dalam memahami konsep visual atau logika simbolik yang kompleks."
-            else -> "Mengalami hambatan nyata dalam menarik kesimpulan logis non-verbal di bawah batasan waktu. Memerlukan pendampingan teknis dan tugas dengan panduan visual eksplisit."
-        }
-
         val scores = listOf(
-            AssessmentScore("Kategori TIU 5", ws.toDouble(), 1.0, 20.0, category),
-            AssessmentScore("Weighted Score (WS)", ws.toDouble(), 0.0, 20.0, "Konversi norma resmi UI-10144-96."),
-            AssessmentScore("Raw Score (Benar)", correctCount.toDouble(), 0.0, 30.0, "Jumlah jawaban benar / 30 butir.")
+            AssessmentScore(
+                "Total Skor Mentah (RS)",
+                correctCount.toDouble(),
+                0.0,
+                30.0,
+                "Jumlah jawaban benar ($correctCount/30); konversi Weighted Score memerlukan norma resmi."
+            ),
+            AssessmentScore("Benar butir 1–15", part1Correct.toDouble(), 0.0, 15.0, "Paruh pertama tes figural."),
+            AssessmentScore("Benar butir 16–30", part2Correct.toDouble(), 0.0, 15.0, "Paruh kedua tes figural.")
         )
 
-        val interpretation = "Hasil Tes Inteligensi Umum 5 (TIU 5 Figural): $category " +
-            "(Skor Mentah: $correctCount/30, Weighted Score: $ws/20). " +
-            "Menunjukkan daya nalar logika figural, kecepatan menangkap analogi bentuk, " +
-            "dan kelincahan analitis visual non-verbal praktis."
+        val interpretation = "Hasil Tes Inteligensi Umum 5 (TIU 5 Figural): Skor Mentah $correctCount/30 " +
+            "(Butir 1–15: $part1Correct/15, Butir 16–30: $part2Correct/15; ${answeredSummary(answers.size, 30)}). " +
+            "Konversi norma dan kategorisasi tingkat penalaran non-verbal wajib merujuk tabel norma terstandardisasi."
         return scores to interpretation
     }
 
@@ -645,22 +892,27 @@ object AssessmentEnrichers {
 
         val top3Code = "${list[0].first}${list[1].first}${list[2].first}"
         val diff = list.first().second - list.last().second
+        val hasTies = list[0].second == list[1].second || list[1].second == list[2].second || list[2].second == list[3].second
 
         val scores = listOf(
-            AssessmentScore("Kode 3-Huruf Holland", 1.0, 1.0, 1.0, top3Code),
             AssessmentScore("Realistic (R)", rScore.toDouble(), 0.0, 40.0, "Minat teknik, mesin, alam, dan fisik."),
             AssessmentScore("Investigative (I)", iScore.toDouble(), 0.0, 40.0, "Minat riset ilmiah, data, dan sains."),
             AssessmentScore("Artistic (A)", aScore.toDouble(), 0.0, 40.0, "Minat desain, seni, tulisan, dan ekspresi."),
             AssessmentScore("Social (S)", sScore.toDouble(), 0.0, 40.0, "Minat konseling, mengajar, dan menolong sesama."),
             AssessmentScore("Enterprising (E)", eScore.toDouble(), 0.0, 40.0, "Minat memimpin, bisnis, dan persuasi."),
             AssessmentScore("Conventional (C)", cScore.toDouble(), 0.0, 40.0, "Minat administrasi, akuntansi, dan prosedur."),
-            AssessmentScore("Diferensiasi Minat", diff.toDouble(), 0.0, 40.0, if (diff >= 15) "Minat terfokus tajam." else "Minat merata.")
+            AssessmentScore("Diferensiasi Minat", diff.toDouble(), 0.0, 40.0, "Selisih skor dimensi tertinggi dan terendah.")
         )
 
-        val interpretation = "Kode Minat Karier Holland Anda adalah $top3Code (Diferensiasi: $diff poin). " +
+        val tieNote = if (hasTies) {
+            " Catatan: Terdapat skor sama pada tiga dimensi teratas sehingga urutan kode dapat dipertimbangkan bersama wawancara minat."
+        } else {
+            ""
+        }
+        val interpretation = "Profil Minat Karier Holland (Kode Teratas: $top3Code, Diferensiasi: $diff poin). " +
             "Dimensi tertinggi: 1) ${list[0].first} (${list[0].second}/40), 2) ${list[1].first} (${list[1].second}/40), " +
-            "3) ${list[2].first} (${list[2].second}/40). Rekomendasi karier berfokus pada bidang yang memadukan aktivitas " +
-            "${getHollandTitle(list[0].first)}, ${getHollandTitle(list[1].first)}, dan ${getHollandTitle(list[2].first)}."
+            "3) ${list[2].first} (${list[2].second}/40). Arah eksplorasi memadukan aktivitas " +
+            "${getHollandTitle(list[0].first)}, ${getHollandTitle(list[1].first)}, dan ${getHollandTitle(list[2].first)}.$tieNote"
         return scores to interpretation
     }
 
@@ -674,25 +926,22 @@ object AssessmentEnrichers {
     }
 
     // =========================================================================
-    // 8. WPT Scoring (Wonderlic Personnel Test - 50 Items)
+    // 8. WPT Scoring (Wonderlic Personnel Test — 50 Items Raw & Subscale)
     // =========================================================================
     private fun enrichWpt(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
-        // Kunci jawaban otentik 50 butir Wonderlic Personnel Test (berbasis indeks pilihan 0)
-        // Divalidasi terhadap Software WPT.xlsx (baris 7-56) dan Soal WPT.pdf
         val keys = listOf(
-            3, 1, 2, 1, 2, 0, 2, 0, 0, 3, // Butir 1-10
-            2, 2, 0, 1, 1, 1, 0, 1, 2, 0, // Butir 11-20
-            1, 1, 1, 1, 2, 0, 0, 2, 1, 1, // Butir 21-30
-            1, 0, 2, 1, 0, 2, 0, 1, 1, 1, // Butir 31-40
-            0, 1, 3, 1, 2, 1, 2, 2, 1, 2  // Butir 41-50
+            3, 1, 2, 1, 2, 0, 2, 0, 0, 3,
+            2, 2, 0, 1, 1, 1, 0, 1, 2, 0,
+            1, 1, 1, 1, 2, 0, 0, 2, 1, 1,
+            1, 0, 2, 1, 0, 2, 0, 1, 1, 1,
+            0, 1, 3, 1, 2, 1, 2, 2, 1, 2
         )
 
-        // Subskala butir WPT
-        val verbalItems = setOf(0, 1, 2, 3, 4, 5, 8, 9, 10, 13, 16, 18, 22, 24, 27, 31, 32, 38, 40, 43, 45) // 21 butir
-        val numericItems = setOf(7, 11, 14, 17, 20, 23, 26, 28, 29, 30, 33, 34, 35, 36, 42, 44, 47, 49) // 18 butir
-        val logicItems = setOf(12, 19, 21, 25, 46) // 5 butir
-        val spatialItems = setOf(6, 37, 41, 48) // 4 butir (butir 7, 38, 42, 49)
-        val clericalItems = setOf(15, 39) // 2 butir (butir 16, 40)
+        val verbalItems = setOf(0, 1, 2, 3, 4, 5, 8, 9, 10, 13, 16, 18, 22, 24, 27, 31, 32, 38, 40, 43, 45)
+        val numericItems = setOf(7, 11, 14, 17, 20, 23, 26, 28, 29, 30, 33, 34, 35, 36, 42, 44, 47, 49)
+        val logicItems = setOf(12, 19, 21, 25, 46)
+        val spatialItems = setOf(6, 37, 41, 48)
+        val clericalItems = setOf(15, 39)
 
         var correctCount = 0
         var verbalCorrect = 0
@@ -715,230 +964,91 @@ object AssessmentEnrichers {
             }
         }
 
-        // Tabel Konversi IQ Resmi dari Software WPT.xlsx (H137:I187)
-        val iqTable = intArrayOf(
-            59, 59, 61, 64, 67, 69, 71, 73, 75, 78, // RS 0-9
-            80, 81, 83, 86, 88, 90, 93, 95, 97, 98, // RS 10-19
-            100, 102, 104, 106, 108, 111, 113, 114, 116, 118, // RS 20-29
-            120, 121, 123, 125, 126, 128, 130, 132, 134, 136, // RS 30-39
-            138, 140, 142, 143, 146, 146, 146, 146, 146, 146, 146 // RS 40-50
-        )
-        val iq = iqTable[correctCount.coerceIn(0, 50)]
-
-        // Klasifikasi Baku Kognitif dari Software WPT.xlsx sel F12
-        val classification = when {
-            iq <= 65 -> "Mentally Defective"
-            iq <= 79 -> "Borderline Defective"
-            iq <= 90 -> "Low Average"
-            iq <= 110 -> "Average"
-            iq <= 119 -> "High Average"
-            iq <= 127 -> "Superior"
-            iq <= 139 -> "Very Superior"
-            else -> "Genius"
-        }
-
-        // Benchmark Okupasi Resmi Wonderlic Manual 1983
-        val (benchmarkCategory, benchmarkDesc) = when {
-            correctCount >= 29 -> "Tinggi / Analitis Kompleks (≥29)" to
-                "Kapasitas penalaran tingkat tinggi; cocok untuk posisi riset, rekayasa teknik, sistem analitis, kepemimpinan strategis, dan pengambilan keputusan kompleks."
-            correctCount >= 24 -> "Menengah-Atas (24–28)" to
-                "Kapasitas belajar dan pemecahan masalah cepat; cocok untuk analis investasi, spesialis teknis, supervisor profesional, dan manajemen lini menengah."
-            correctCount >= 20 -> "Rata-Rata Operasional (20–23)" to
-                "Rentang rata-rata populasi pekerja dewasa; sesuai untuk perawat, staf perbankan, kasir, teknisi terampil, dan staf operasional reguler."
-            correctCount >= 15 -> "Keterampilan Teknis Dasar (15–19)" to
-                "Sesuai untuk pekerjaan operasional dengan prosedur tetap, keterampilan teknis langsung (welder, security, staf pergudangan) dengan panduan terstruktur."
-            else -> "Di Bawah Benchmark Umum (<15)" to
-                "Memerlukan arahan tugas yang sangat spesifik, pelatihan berulang, dan supervisi langsung untuk tugas-tugas terstruktur."
-        }
-
-        val percentileEst = when {
-            correctCount >= 40 -> 99.0
-            correctCount >= 35 -> 95.0
-            correctCount >= 30 -> 88.0
-            correctCount >= 25 -> 75.0
-            correctCount >= 21 -> 50.0
-            correctCount >= 17 -> 25.0
-            correctCount >= 13 -> 10.0
-            else -> (correctCount * 0.7).coerceAtLeast(1.0)
-        }
-
         val scores = listOf(
-            AssessmentScore("Total Skor Mentah (RS)", correctCount.toDouble(), 0.0, 50.0, "Jawaban benar dalam batas waktu 12 menit."),
-            AssessmentScore("Estimasi IQ Wonderlic", iq.toDouble(), 59.0, 146.0, "Klasifikasi: $classification."),
+            AssessmentScore(
+                "Total Skor Mentah (RS)",
+                correctCount.toDouble(),
+                0.0,
+                50.0,
+                "Skor mentah dalam batas waktu standar 12 menit."
+            ),
             AssessmentScore("Penalaran Verbal", verbalCorrect.toDouble(), 0.0, 21.0, "Kosakata, analogi, pemahaman makna kalimat."),
             AssessmentScore("Penalaran Numerik", numericCorrect.toDouble(), 0.0, 18.0, "Aritmetika praktis, deret angka, persentase."),
             AssessmentScore("Penalaran Logika Deduktif", logicCorrect.toDouble(), 0.0, 5.0, "Silogisme dan konsistensi inferensi logis."),
             AssessmentScore("Penalaran Spasial & Geometri", spatialCorrect.toDouble(), 0.0, 4.0, "Rekonstruksi bidang dan bangun geometri."),
-            AssessmentScore("Ketelitian Klerikal", clericalCorrect.toDouble(), 0.0, 2.0, "Kecepatan dan ketelitian deteksi duplikasi."),
-            AssessmentScore("Persentil Estimasi", percentileEst, 1.0, 99.0, "Estimasi posisi terhadap norma pekerja dewasa umum."),
-            AssessmentScore("Benchmark Jabatan", 1.0, 1.0, 1.0, benchmarkCategory)
+            AssessmentScore("Ketelitian Klerikal", clericalCorrect.toDouble(), 0.0, 2.0, "Kecepatan dan ketelitian deteksi duplikasi.")
         )
 
         val interpretation = buildString {
-            append("Hasil Wonderlic Personnel Test (WPT): Skor Mentah $correctCount/50 | Estimasi IQ: $iq ($classification).\n\n")
-            append("• Klasifikasi Kognitif: $classification. Menunjukkan kapasitas pemrosesan informasi umum, daya tangkap instruksi baru, dan kelincahan berpikir kritis di bawah batasan waktu 12 menit.\n")
-            append("• Profil Subskala: Verbal ($verbalCorrect/21), Numerik ($numericCorrect/18), Logika Deduktif ($logicCorrect/5), Spasial-Geometri ($spatialCorrect/4), Ketelitian Klerikal ($clericalCorrect/2).\n")
-            append("• Kesesuaian Benchmark Jabatan: $benchmarkCategory. $benchmarkDesc\n\n")
-            append("Catatan Keputusan & Etika: Wonderlic adalah instrumen skrining kecepatan kognitif (speed-power hybrid test). Skor sangat dipengaruhi oleh batas waktu, kecepatan membaca bahasa tes, serta tingkat kecemasan situasional. Hasil ini disarankan dikombinasikan dengan asesmen terstruktur mendalam (seperti IST atau CFIT) dan observasi klinis sebelum perumusan keputusan akhir.")
+            append("Hasil Wonderlic Personnel Test (WPT): Skor Mentah $correctCount/50 (${answeredSummary(answers.size, 50)}).\n\n")
+            append(
+                "• Profil Subskala Mentah: Verbal ($verbalCorrect/21), Numerik ($numericCorrect/18), " +
+                    "Logika Deduktif ($logicCorrect/5), Spasial-Geometri ($spatialCorrect/4), Ketelitian Klerikal ($clericalCorrect/2).\n"
+            )
+            append(
+                "• Catatan Metodologis: WPT adalah instrumen skrining kecepatan kognitif dengan batas waktu 12 menit. " +
+                    "Estimasi IQ, persentil, dan pembandingan jabatan tidak dihitung otomatis tanpa tabel norma resmi " +
+                    "yang mempertimbangkan usia, latar belakang pendidikan, dan kecepatan membaca."
+            )
         }
         return scores to interpretation
     }
 
     fun enrichWptRecap(part1: Int, part2: Int): Pair<List<AssessmentScore>, String> {
-        val correctCount = (part1 + part2).coerceIn(0, 50)
-        val iqTable = intArrayOf(
-            59, 59, 61, 64, 67, 69, 71, 73, 75, 78, // RS 0-9
-            80, 81, 83, 86, 88, 90, 93, 95, 97, 98, // RS 10-19
-            100, 102, 104, 106, 108, 111, 113, 114, 116, 118, // RS 20-29
-            120, 121, 123, 125, 126, 128, 130, 132, 134, 136, // RS 30-39
-            138, 140, 142, 143, 146, 146, 146, 146, 146, 146, 146 // RS 40-50
-        )
-        val iq = iqTable[correctCount]
-
-        val classification = when {
-            iq <= 65 -> "Mentally Defective"
-            iq <= 79 -> "Borderline Defective"
-            iq <= 90 -> "Low Average"
-            iq <= 110 -> "Average"
-            iq <= 119 -> "High Average"
-            iq <= 127 -> "Superior"
-            iq <= 139 -> "Very Superior"
-            else -> "Genius"
-        }
-
-        val (benchmarkCategory, benchmarkDesc) = when {
-            correctCount >= 29 -> "Tinggi / Analitis Kompleks (≥29)" to
-                "Kapasitas penalaran tingkat tinggi; cocok untuk posisi riset, rekayasa teknik, sistem analitis, kepemimpinan strategis, dan pengambilan keputusan kompleks."
-            correctCount >= 24 -> "Menengah-Atas (24–28)" to
-                "Kapasitas belajar dan pemecahan masalah cepat; cocok untuk analis investasi, spesialis teknis, supervisor profesional, dan manajemen lini menengah."
-            correctCount >= 20 -> "Rata-Rata Operasional (20–23)" to
-                "Rentang rata-rata populasi pekerja dewasa; sesuai untuk perawat, staf perbankan, kasir, teknisi terampil, dan staf operasional reguler."
-            correctCount >= 15 -> "Keterampilan Teknis Dasar (15–19)" to
-                "Sesuai untuk pekerjaan operasional dengan prosedur tetap, keterampilan teknis langsung (welder, security, staf pergudangan) dengan panduan terstruktur."
-            else -> "Di Bawah Benchmark Umum (<15)" to
-                "Memerlukan arahan tugas yang sangat spesifik, pelatihan berulang, dan supervisi langsung untuk tugas-tugas terstruktur."
-        }
-
-        val percentileEst = when {
-            correctCount >= 40 -> 99.0
-            correctCount >= 35 -> 95.0
-            correctCount >= 30 -> 88.0
-            correctCount >= 25 -> 75.0
-            correctCount >= 21 -> 50.0
-            correctCount >= 17 -> 25.0
-            correctCount >= 13 -> 10.0
-            else -> (correctCount * 0.7).coerceAtLeast(1.0)
-        }
+        val p1 = part1.coerceIn(0, 25)
+        val p2 = part2.coerceIn(0, 25)
+        val correctCount = (p1 + p2).coerceIn(0, 50)
 
         val scores = listOf(
             AssessmentScore("Total Skor Mentah (RS)", correctCount.toDouble(), 0.0, 50.0, "Jawaban benar pada rekap lembar WPT 50 butir."),
-            AssessmentScore("Estimasi IQ Wonderlic", iq.toDouble(), 59.0, 146.0, "Klasifikasi: $classification."),
-            AssessmentScore("Benar butir 1–25", part1.toDouble(), 0.0, 25.0, "Rekap butir paruh pertama."),
-            AssessmentScore("Benar butir 26–50", part2.toDouble(), 0.0, 25.0, "Rekap butir paruh kedua."),
-            AssessmentScore("Persentil Estimasi", percentileEst, 1.0, 99.0, "Estimasi posisi terhadap norma pekerja dewasa umum."),
-            AssessmentScore("Benchmark Jabatan", 1.0, 1.0, 1.0, benchmarkCategory)
+            AssessmentScore("Benar butir 1–25", p1.toDouble(), 0.0, 25.0, "Rekap butir paruh pertama."),
+            AssessmentScore("Benar butir 26–50", p2.toDouble(), 0.0, 25.0, "Rekap butir paruh kedua.")
         )
 
         val interpretation = buildString {
-            append("Hasil Wonderlic Personnel Test (WPT): Skor Mentah $correctCount/50 | Estimasi IQ: $iq ($classification).\n\n")
-            append("• Klasifikasi Kognitif: $classification. Menunjukkan kapasitas pemrosesan informasi umum, daya tangkap instruksi baru, dan kelincahan berpikir kritis di bawah batasan waktu 12 menit.\n")
-            append("• Rekap Paruh Lembar: Butir 1–25 ($part1/25), Butir 26–50 ($part2/25).\n")
-            append("• Kesesuaian Benchmark Jabatan: $benchmarkCategory. $benchmarkDesc\n\n")
-            append("Catatan Keputusan & Etika: Wonderlic adalah instrumen skrining kecepatan kognitif (speed-power hybrid test). Skor sangat dipengaruhi oleh batas waktu, kecepatan membaca bahasa tes, serta tingkat kecemasan situasional. Hasil ini disarankan dikombinasikan dengan asesmen terstruktur mendalam (seperti IST atau CFIT) dan observasi klinis sebelum perumusan keputusan akhir.")
+            append("Hasil Rekap Wonderlic Personnel Test (WPT): Skor Mentah $correctCount/50.\n")
+            append("• Rekap Paruh Lembar: Butir 1–25 ($p1/25), Butir 26–50 ($p2/25).\n")
+            append("• Konversi persentil/IQ dan pembandingan jabatan memerlukan tabel norma resmi sesuai konteks asesmen.")
         }
         return scores to interpretation
     }
 
     fun enrichTiu5Recap(part1: Int, part2: Int): Pair<List<AssessmentScore>, String> {
-        val correctCount = (part1 + part2).coerceIn(0, 30)
-        val ws = when {
-            correctCount >= 29 -> 18
-            correctCount >= 27 -> 16
-            correctCount >= 25 -> 15
-            correctCount >= 23 -> 14
-            correctCount >= 22 -> 13
-            correctCount >= 20 -> 12
-            correctCount >= 18 -> 11
-            correctCount >= 16 -> 10
-            correctCount >= 14 -> 9
-            correctCount >= 12 -> 8
-            correctCount >= 10 -> 7
-            correctCount >= 8 -> 6
-            correctCount >= 6 -> 5
-            correctCount >= 4 -> 4
-            correctCount >= 3 -> 3
-            correctCount >= 1 -> 2
-            else -> 1
-        }
-
-        val category = when {
-            ws >= 17 -> "Baik Sekali (BS)"
-            ws >= 13 -> "Baik (B)"
-            ws >= 9 -> "Sedang / Cukup (S)"
-            ws >= 5 -> "Kurang (K)"
-            else -> "Kurang Sekali (KS)"
-        }
-
-        val operationalMeaning = when {
-            ws >= 17 -> "Daya abstraksi visual, logika pola transformasional, dan kecepatan pemecahan masalah figural sangat unggul. Mampu menarik kesimpulan analogis non-verbal secara cepat dan presisi tinggi."
-            ws >= 13 -> "Cepat memahami aturan perubahan konsep figural dan cermat mengenali konsistensi pola logika non-verbal. Kapasitas nalar visual sangat baik untuk tuntutan analitis profesional."
-            ws >= 9 -> "Kapasitas penalaran logis praktis memadai untuk tuntutan tugas standar operasional. Mampu menyelesaikan persoalan visual rutin dengan akurasi cukup."
-            ws >= 5 -> "Memerlukan instruksi konkret langkah demi langkah serta waktu belajar lebih panjang dalam memahami konsep visual atau logika simbolik yang kompleks."
-            else -> "Mengalami hambatan nyata dalam menarik kesimpulan logis non-verbal di bawah batasan waktu. Memerlukan pendampingan teknis dan tugas dengan panduan visual eksplisit."
-        }
+        val p1 = part1.coerceIn(0, 15)
+        val p2 = part2.coerceIn(0, 15)
+        val correctCount = (p1 + p2).coerceIn(0, 30)
 
         val scores = listOf(
-            AssessmentScore("Kategori TIU 5", ws.toDouble(), 1.0, 20.0, category),
-            AssessmentScore("Weighted Score (WS)", ws.toDouble(), 0.0, 20.0, "Konversi norma resmi UI-10144-96."),
-            AssessmentScore("Total Skor Mentah (RS)", correctCount.toDouble(), 0.0, 30.0, "Jumlah benar: Part 1 ($part1) + Part 2 ($part2) / 30."),
-            AssessmentScore("Benar butir 1–15", part1.toDouble(), 0.0, 15.0, "Rekap butir paruh pertama."),
-            AssessmentScore("Benar butir 16–30", part2.toDouble(), 0.0, 15.0, "Rekap butir paruh kedua.")
+            AssessmentScore(
+                "Total Skor Mentah (RS)",
+                correctCount.toDouble(),
+                0.0,
+                30.0,
+                "Jumlah benar: Part 1 ($p1) + Part 2 ($p2) / 30."
+            ),
+            AssessmentScore("Benar butir 1–15", p1.toDouble(), 0.0, 15.0, "Rekap butir paruh pertama."),
+            AssessmentScore("Benar butir 16–30", p2.toDouble(), 0.0, 15.0, "Rekap butir paruh kedua.")
         )
 
-        val interpretation = "Hasil Rekap Tes Inteligensi Umum 5 (TIU 5 Figural): $category " +
-            "(Skor Mentah: $correctCount/30, Weighted Score: $ws/20). " +
-            "Menunjukkan daya nalar logika figural, kecepatan menangkap analogi bentuk, " +
-            "dan kelincahan analitis visual non-verbal praktis."
+        val interpretation = "Hasil Rekap Tes Inteligensi Umum 5 (TIU 5 Figural): Skor Mentah $correctCount/30 " +
+            "(Butir 1–15: $p1/15, Butir 16–30: $p2/15). Konversi norma memerlukan manual TIU 5 resmi."
         return scores to interpretation
     }
 
     fun enrichTiu6Recap(part1: Int, part2: Int): Pair<List<AssessmentScore>, String> {
-        val correctCount = (part1 + part2).coerceIn(0, 40)
-        val ws = when {
-            correctCount >= 33 -> 5
-            correctCount >= 25 -> 4
-            correctCount >= 17 -> 3
-            correctCount >= 9 -> 2
-            else -> 1
-        }
-
-        val category = when (ws) {
-            5 -> "BAIK SEKALI (Skala 5)"
-            4 -> "BAIK (Skala 4)"
-            3 -> "RATA-RATA (Skala 3)"
-            2 -> "KURANG (Skala 2)"
-            else -> "KURANG SEKALI (Skala 1)"
-        }
-
-        val operationalMeaning = when (ws) {
-            5 -> "Daya abstraksi spasial 2D–3D sangat unggul; sangat cepat dan presisi tinggi dalam memanipulasi orientasi, konstruksi, dan lipatan bangun ruang kompleks."
-            4 -> "Pemahaman hubungan ruang dan ketelitian orientasi objek visual di atas rata-rata populasi. Mampu memecahkan masalah konstruksi bentuk geometris secara efektif."
-            3 -> "Kemampuan visual-spasial berada pada rentang memadai / rata-rata untuk tuntutan tugas teknis, operasional, dan pemecahan masalah spasial standar."
-            2 -> "Mengalami hambatan dalam memvisualisasikan rotasi atau transformasi lipatan bangun ruang kompleks tanpa bantuan media konkret."
-            else -> "Hambatan nyata pada visualisasi spasial 2D–3D di bawah tekanan waktu. Disarankan evaluasi ulang pemahaman instruksi atau pendampingan latihan manipulasi ruang."
-        }
+        val p1 = part1.coerceIn(0, 20)
+        val p2 = part2.coerceIn(0, 20)
+        val correctCount = (p1 + p2).coerceIn(0, 40)
 
         val scores = listOf(
-            AssessmentScore("Skor Baku TIU 6", ws.toDouble(), 1.0, 5.0, category),
-            AssessmentScore("Total Jawaban Benar", correctCount.toDouble(), 0.0, 40.0, "Raw Score: $correctCount dari 40 butir tes inti."),
-            AssessmentScore("Benar butir 1–20", part1.coerceIn(0, 20).toDouble(), 0.0, 20.0, "Rekap butir 1–20."),
-            AssessmentScore("Benar butir 21–40", part2.coerceIn(0, 20).toDouble(), 0.0, 20.0, "Rekap butir 21–40.")
+            AssessmentScore("Total Jawaban Benar", correctCount.toDouble(), 0.0, 40.0, "Raw Score: $correctCount dari 40 butir."),
+            AssessmentScore("Benar butir 1–20", p1.toDouble(), 0.0, 20.0, "Rekap butir 1–20."),
+            AssessmentScore("Benar butir 21–40", p2.toDouble(), 0.0, 20.0, "Rekap butir 21–40.")
         )
 
-        val interpretation = "Hasil Rekap Tes Inteligensi Umum 6 (Penalaran Spasial & Bangun Ruang): Kategori $category " +
-            "(Skor Mentah: $correctCount/40, Skala Baku: $ws/5). $operationalMeaning " +
-            "Sangat relevan untuk penempatan pada bidang teknik rekayasa, arsitektur, teknologi informasi, dan logistik/operasional presisi."
-
+        val interpretation = "Hasil Rekap Tes Inteligensi Umum 6 (Penalaran Spasial & Bangun Ruang): " +
+            "Skor Mentah $correctCount/40 (Butir 1–20: $p1/20, Butir 21–40: $p2/20). " +
+            "Konversi norma memerlukan tabel norma resmi TIU 6."
         return scores to interpretation
     }
 
@@ -1044,56 +1154,6 @@ object AssessmentEnrichers {
             }
         }
 
-        val stenNorms = mapOf(
-            "A" to intArrayOf(1, 1, 1, 1, 2, 3, 3, 4, 5, 6, 7, 8, 9),
-            "B" to intArrayOf(1, 2, 3, 4, 5, 6, 8, 9, 10, 10, 10, 10, 10),
-            "C" to intArrayOf(1, 1, 2, 2, 3, 4, 4, 5, 6, 7, 8, 9, 10),
-            "E" to intArrayOf(1, 2, 3, 4, 4, 5, 6, 7, 8, 9, 9, 10, 10),
-            "F" to intArrayOf(1, 1, 1, 2, 3, 4, 5, 6, 6, 7, 8, 9, 10),
-            "G" to intArrayOf(1, 1, 2, 2, 3, 4, 4, 5, 6, 7, 8, 9, 10),
-            "H" to intArrayOf(1, 1, 2, 3, 3, 4, 5, 5, 6, 7, 8, 9, 10),
-            "I" to intArrayOf(1, 1, 2, 3, 4, 4, 5, 6, 7, 7, 8, 9, 10),
-            "L" to intArrayOf(1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10),
-            "M" to intArrayOf(1, 1, 2, 3, 4, 5, 6, 7, 7, 8, 9, 10, 10),
-            "N" to intArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 8, 9, 10, 10, 10),
-            "O" to intArrayOf(1, 2, 3, 3, 4, 5, 5, 6, 7, 7, 8, 9, 10),
-            "Q1" to intArrayOf(1, 1, 1, 2, 3, 4, 5, 6, 7, 7, 8, 9, 10),
-            "Q2" to intArrayOf(2, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 10, 10),
-            "Q3" to intArrayOf(1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
-            "Q4" to intArrayOf(1, 2, 2, 3, 4, 5, 6, 7, 7, 8, 9, 10, 10),
-            "MD" to intArrayOf(1, 1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 8, 9, 10, 10)
-        )
-
-        val stenScores = rawScores.mapValues { (factor, raw) ->
-            val table = stenNorms[factor] ?: return@mapValues 5
-            table[raw.coerceIn(0, table.size - 1)]
-        }
-
-        val stenA = stenScores["A"] ?: 5
-        val stenB = stenScores["B"] ?: 5
-        val stenC = stenScores["C"] ?: 5
-        val stenE = stenScores["E"] ?: 5
-        val stenF = stenScores["F"] ?: 5
-        val stenG = stenScores["G"] ?: 5
-        val stenH = stenScores["H"] ?: 5
-        val stenI = stenScores["I"] ?: 5
-        val stenL = stenScores["L"] ?: 5
-        val stenM = stenScores["M"] ?: 5
-        val stenN = stenScores["N"] ?: 5
-        val stenO = stenScores["O"] ?: 5
-        val stenQ1 = stenScores["Q1"] ?: 5
-        val stenQ2 = stenScores["Q2"] ?: 5
-        val stenQ3 = stenScores["Q3"] ?: 5
-        val stenQ4 = stenScores["Q4"] ?: 5
-        val mdSten = stenScores["MD"] ?: 5
-        val mdRaw = rawScores["MD"] ?: 0
-
-        val exGlobal = (stenA + stenF + stenH + (11 - stenN) + (11 - stenQ2)) / 5.0
-        val axGlobal = ((11 - stenC) + stenL + stenO + stenQ4) / 4.0
-        val tmGlobal = ((11 - stenA) + (11 - stenI) + (11 - stenM) + (11 - stenQ1)) / 4.0
-        val inGlobal = (stenE + stenH + stenL + stenQ1) / 4.0
-        val scGlobal = ((11 - stenF) + stenG + (11 - stenM) + stenQ3) / 4.0
-
         val factorNamesIndo = mapOf(
             "A" to "Warmth (Kehangatan Interpersonal)",
             "B" to "Reasoning (Penalaran Abstrak)",
@@ -1114,97 +1174,97 @@ object AssessmentEnrichers {
         )
 
         val factorLowPole = mapOf(
-            "A" to "Berhati-hati, pendiam, menjaga jarak",
-            "B" to "Berpikir konkret, pemecahan masalah sederhana",
-            "C" to "Reaktif, emosi mudah berubah, rentan frustrasi",
-            "E" to "Rendah hati, patuh, mengalah, pasrah",
-            "F" to "Serius, tenang, berhati-hati, pendiam",
-            "G" to "Fleksibel terhadap aturan, superego bebas",
-            "H" to "Pemalu, peka ancaman sosial, menjaga jarak",
-            "I" to "Realistis, objektif, praktis, rasional",
-            "L" to "Mudah percaya, menerima keadaan orang lain",
-            "M" to "Praktis, fokus pada fakta nyata kini",
-            "N" to "Lugas, berterus terang, apa adanya",
-            "O" to "Percaya diri, tenang, tenteram, bebas cemas",
-            "Q1" to "Konservatif, tradisional, setia cara mapan",
-            "Q2" to "Berorientasi kelompok, komunal, bergantung tim",
-            "Q3" to "Fleksibel, toleran terhadap ketidakteraturan",
-            "Q4" to "Santai, tenang, sabar, lamban terpicu"
+            "A" to "Berhati-hati, menjaga jarak",
+            "B" to "Pemecahan masalah konkret",
+            "C" to "Reaktif secara emosional",
+            "E" to "Akomodatif, cenderung mengalah",
+            "F" to "Serius, tenang, berhati-hati",
+            "G" to "Fleksibel terhadap aturan",
+            "H" to "Berhati-hati dalam situasi sosial",
+            "I" to "Objektif, praktis, rasional",
+            "L" to "Mudah percaya, menerima",
+            "M" to "Praktis, fokus pada fakta kini",
+            "N" to "Lugas, berterus terang",
+            "O" to "Tenang, tidak mudah cemas",
+            "Q1" to "Tradisional, menyukai cara mapan",
+            "Q2" to "Berorientasi kelompok/tim",
+            "Q3" to "Fleksibel terhadap keteraturan",
+            "Q4" to "Santai, sabar, tenang"
         )
 
         val factorHighPole = mapOf(
-            "A" to "Ramah tamah, hangat, mudah berpartisipasi",
-            "B" to "Cepat menangkap ide abstrak, inteligensi skolastik tinggi",
-            "C" to "Emosi mantap, matang menghadapi realitas, tenang",
-            "E" to "Asertif, dominan, kompetitif, teguh pendirian",
-            "F" to "Spontan, antusias, ekspresif, ceria",
-            "G" to "Tekun, bermoral, patuh aturan, superego kuat",
-            "H" to "Berani secara sosial, tahan tekanan, percaya diri",
-            "I" to "Peka rasa, empatik, estetis, lembut hati",
-            "L" to "Waspada, skeptis terhadap motif orang lain",
-            "M" to "Imajinatif, teoretis, kreatif, tenggelam ide",
-            "N" to "Lihai, cermat sosial, diplomatis, menjaga privasi",
-            "O" to "Mudah cemas, menyalahkan diri, peka tekanan",
-            "Q1" to "Terbuka pada hal baru, eksperimental, analitis",
-            "Q2" to "Mandiri, banyak akal, mengambil keputusan sendiri",
-            "Q3" to "Disiplin diri tinggi, teratur, terencana, kompulsif",
-            "Q4" to "Tegang, tidak sabaran, terdorong kuat, energi tinggi"
+            "A" to "Hangat, ramah, partisipatif",
+            "B" to "Penangkapan konsep abstrak",
+            "C" to "Stabil, tenang menghadapi realitas",
+            "E" to "Asertif, dominan, teguh pendirian",
+            "F" to "Spontan, antusias, ekspresif",
+            "G" to "Tekun, patuh pada aturan",
+            "H" to "Berani tampil sosial, tahan tekanan",
+            "I" to "Peka rasa, empatik, estetis",
+            "L" to "Waspada, kritis terhadap motif",
+            "M" to "Imajinatif, berfokus ide",
+            "N" to "Diplomatis, menjaga privasi",
+            "O" to "Mudah khawatir, peka tekanan",
+            "Q1" to "Terbuka pada perubahan/eksperimen",
+            "Q2" to "Mandiri mengambil keputusan",
+            "Q3" to "Teratur, terencana, disiplin diri",
+            "Q4" to "Tegang, dorongan energi tinggi"
         )
 
         val scores = mutableListOf<AssessmentScore>()
+        val factorKeys = listOf("A", "B", "C", "E", "F", "G", "H", "I", "L", "M", "N", "O", "Q1", "Q2", "Q3", "Q4")
 
-        for (fKey in listOf("A", "B", "C", "E", "F", "G", "H", "I", "L", "M", "N", "O", "Q1", "Q2", "Q3", "Q4")) {
-            val sten = stenScores[fKey] ?: 5
+        for (fKey in factorKeys) {
             val raw = rawScores[fKey] ?: 0
-            val desc = when {
-                sten <= 3 -> "Rendah (Sten $sten): ${factorLowPole[fKey]} (Raw: $raw)"
-                sten >= 8 -> "Tinggi (Sten $sten): ${factorHighPole[fKey]} (Raw: $raw)"
-                else -> "Rata-rata (Sten $sten): Keseimbangan situasional (Raw: $raw)"
-            }
-            scores.add(AssessmentScore("Faktor $fKey: ${factorNamesIndo[fKey]}", sten.toDouble(), 1.0, 10.0, desc))
+            val maxRaw = if (fKey == "B") 8 else 12
+            val desc = "Skor mentah $raw/$maxRaw (${factorLowPole[fKey]} <-> ${factorHighPole[fKey]}). " +
+                "Konversi sten memerlukan norma usia dan jenis kelamin."
+            scores.add(AssessmentScore("Faktor $fKey: ${factorNamesIndo[fKey]}", raw.toDouble(), 0.0, maxRaw.toDouble(), desc))
         }
 
-        val mdAlert = if (mdSten >= 6 || mdRaw >= 8) {
-            " ⚠️ PERINGATAN: Skor MD tinggi (Sten $mdSten, Raw $mdRaw/14) mengindikasikan kemungkinan faking good."
+        val mdRaw = rawScores["MD"] ?: 0
+        val mdAlert = if (mdRaw >= 8) {
+            " Catatan validitas: Skor mentah MD ($mdRaw/14) relatif tinggi; tinjau kemungkinan faking good dalam wawancara."
         } else {
             ""
         }
         scores.add(
             AssessmentScore(
-                "Skala Validitas MD (Motivational Distortion)",
-                mdSten.toDouble(),
-                1.0,
-                10.0,
-                "Sten $mdSten/10 (Raw: $mdRaw/14).$mdAlert"
+                "Skala Validitas MD (Raw)",
+                mdRaw.toDouble(),
+                0.0,
+                14.0,
+                "Skor mentah $mdRaw/14.$mdAlert"
             )
         )
 
-        scores.add(AssessmentScore("Faktor Global: Extraversion (EX)", exGlobal, 1.0, 10.0, "Orientasi sosial & kehangatan."))
-        scores.add(AssessmentScore("Faktor Global: Anxiety (AX)", axGlobal, 1.0, 10.0, "Tingkat ketegangan & kecemasan."))
-        scores.add(AssessmentScore("Faktor Global: Tough-Mindedness (TM)", tmGlobal, 1.0, 10.0, "Ketegasan rasional vs kepekaan."))
-        scores.add(AssessmentScore("Faktor Global: Independence (IN)", inGlobal, 1.0, 10.0, "Kemandirian berpikir & bertindak."))
-        scores.add(AssessmentScore("Faktor Global: Self-Control (SC)", scGlobal, 1.0, 10.0, "Pengendalian diri & kepatuhan aturan."))
-
-        val exSummary = if (exGlobal >= 6.5) "ekstrover dan sosial" else if (exGlobal <= 4.5) "introver dan mandiri" else "seimbang"
-        val axSummary = if (axGlobal >= 6.5) "tinggi (waspada stres)" else if (axGlobal <= 4.5) "tenang dan rileks" else "dalam batas wajar"
-
-        val interpretation = "Profil 16PF Form C Cattell menghasilkan gambaran 16 faktor kepribadian primer dan 5 faktor global. " +
-            "Gaya hubungan interpersonal cenderung $exSummary (EX: ${String.format(Locale.US, "%.1f", exGlobal)}), " +
-            "dengan tingkat kecemasan $axSummary (AX: ${String.format(Locale.US, "%.1f", axGlobal)}). " +
-            "Faktor Penalaran (B) berada pada Sten $stenB. Keteraturan diri (SC) mencapai ${String.format(Locale.US, "%.1f", scGlobal)}.$mdAlert " +
-            "Hasil ini merupakan alat bantu keputusan konseling dan asesmen potensi kerja/pribadi normal."
+        val interpretation = "Profil mentah 16PF Form C (16 faktor primer + skala MD; ${answeredSummary(answers.size, 105)}). " +
+            "Raw score faktor penalaran (B): ${rawScores["B"] ?: 0}/8, kestabilan (C): ${rawScores["C"] ?: 0}/12, " +
+            "kecemasan/apprehension (O): ${rawScores["O"] ?: 0}/12, ketegangan (Q4): ${rawScores["Q4"] ?: 0}/12, MD: $mdRaw/14.$mdAlert " +
+            "Konversi ke skor Sten (1–10) dan lima faktor global wajib merujuk tabel norma terstratifikasi (usia & jenis kelamin)."
 
         return scores to interpretation
     }
 
     fun enrichArmyAlphaRecap(part1: Int, part2: Int): Pair<List<AssessmentScore>, String> {
-        val p1Clamped = part1.coerceIn(0, 6)
-        val p2Clamped = part2.coerceIn(0, 6)
-        val totalCorrect = p1Clamped + p2Clamped
-        // In 12-item LPSP3 UI sheet: Items 1-6 has 5 directions & 1 speed; Items 7-12 has 2 directions & 4 speed
-        val estimatedDir = (p1Clamped * 5 / 6) + (p2Clamped * 2 / 6)
-        val estimatedSpeed = totalCorrect - estimatedDir
-        return buildArmyAlphaScores(totalCorrect, estimatedDir, estimatedSpeed)
+        val p1 = part1.coerceIn(0, 6)
+        val p2 = part2.coerceIn(0, 6)
+        val totalCorrect = p1 + p2
+        val scores = listOf(
+            AssessmentScore(
+                "Total Benar Army Alpha",
+                totalCorrect.toDouble(),
+                0.0,
+                12.0,
+                "Skor mentah ($totalCorrect/12); penetapan kategori skala memerlukan norma manual."
+            ),
+            AssessmentScore("Bagian 1 (Butir 1–6)", p1.toDouble(), 0.0, 6.0, "Rekap jawaban benar butir 1–6."),
+            AssessmentScore("Bagian 2 (Butir 7–12)", p2.toDouble(), 0.0, 6.0, "Rekap jawaban benar butir 7–12.")
+        )
+        val interpretation = "Hasil Rekap Army Alpha (12 Butir): Total Skor Mentah $totalCorrect/12 " +
+            "(Bagian 1: $p1/6, Bagian 2: $p2/6). Pemisahan subtes per kompetensi tidak diperkirakan dari rekap paruh lembar; " +
+            "konversi skala dan interpretasi merujuk manual resmi serta catatan pemeriksa."
+        return scores to interpretation
     }
 
     private fun enrichArmyAlpha(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
@@ -1215,72 +1275,41 @@ object AssessmentEnrichers {
         val speedCorrect = speedAccuracyItems.count { answers[it] == 0 }
         val totalCorrect = dirCorrect + speedCorrect
 
-        return buildArmyAlphaScores(totalCorrect, dirCorrect, speedCorrect)
-    }
-
-    private fun buildArmyAlphaScores(
-        totalCorrect: Int,
-        dirCorrect: Int,
-        speedCorrect: Int
-    ): Pair<List<AssessmentScore>, String> {
-        val scale = when {
-            totalCorrect >= 10 -> 5
-            totalCorrect >= 8 -> 4
-            totalCorrect >= 6 -> 3
-            totalCorrect >= 4 -> 2
-            else -> 1
-        }
-        val scaleLabel = when (scale) {
-            5 -> "Baik Sekali (Skala 5)"
-            4 -> "Baik (Skala 4)"
-            3 -> "Rata-Rata (Skala 3)"
-            2 -> "Kurang (Skala 2)"
-            else -> "Kurang Sekali (Skala 1)"
-        }
-        val meaning = when (scale) {
-            5 -> "Daya tangkap instruksi lisan sangat tajam, tanggap, dan akurat di bawah batasan waktu ketat."
-            4 -> "Mampu memahami dan mengeksekusi instruksi kompleks dengan ketelitian di atas rata-rata."
-            3 -> "Daya tangkap instruksi lisan memadai pada kondisi standar, cukup cermat dengan sedikit kendala waktu."
-            2 -> "Memerlukan waktu adaptasi lebih lama untuk instruksi lisan terarah dan rawan keliru saat terburu-buru."
-            else -> "Kesulitan memahami instruksi bertingkat secara cepat; membutuhkan panduan tertulis atau bertahap."
-        }
-
         val scores = listOf(
             AssessmentScore(
                 "Total Benar Army Alpha",
                 totalCorrect.toDouble(),
                 0.0,
                 12.0,
-                "Norma LPSP3 UI: $scaleLabel. $meaning"
-            ),
-            AssessmentScore(
-                "Skala Army Alpha (Weighted)",
-                scale.toDouble(),
-                1.0,
-                5.0,
-                "Skala 1–5: $scaleLabel"
+                "Skor mentah ($totalCorrect/12); konversi skala memerlukan tabel norma resmi."
             ),
             AssessmentScore(
                 "Subtes Following Commands",
                 dirCorrect.toDouble(),
                 0.0,
                 7.0,
-                "Ketelitian eksekusi perintah lisan visual (butir 1–3, 5–7, 11)"
+                "Ketelitian eksekusi perintah lisan visual (butir 1–3, 5–7, 11)."
             ),
             AssessmentScore(
                 "Subtes Speed & Accuracy",
                 speedCorrect.toDouble(),
                 0.0,
                 5.0,
-                "Kecepatan pemrosesan logika & angka (butir 4, 8–10, 12)"
+                "Kecepatan pemrosesan logika & angka (butir 4, 8–10, 12)."
             )
         )
 
-        val interpretation = "Hasil Tes Army Alpha (UI-10013-96) menunjukkan total skor benar $totalCorrect/12 " +
-            "yang berada pada klasifikasi $scaleLabel. $meaning Rincian: Subtes Perintah Lisan $dirCorrect/7 benar, " +
-            "Subtes Kecepatan & Ketelitian $speedCorrect/5 benar. Digunakan sebagai data pendukung daya tangkap konseling."
-
-        return scores to interpretation
+        val itemSummaries = (0 until 12).joinToString("\n") { idx ->
+            val isCorrect = answers[idx] == 0
+            val target = ArmyAlphaRecognitionEngine.TARGET_DESCRIPTIONS.getOrElse(idx) { "Target butir ${idx + 1}" }
+            if (isCorrect) "• Butir ${idx + 1}: Benar (1) — $target" else "• Butir ${idx + 1}: Belum Tepat (0) — $target"
+        }
+        val fullInterpretation = "Hasil Tes Army Alpha: Total Skor Mentah $totalCorrect/12 " +
+            "(Perintah Lisan $dirCorrect/7, Kecepatan & Ketelitian $speedCorrect/5). " +
+            "Konversi skala memerlukan manual resmi.\n" +
+            "Catatan: Evaluasi coretan digital merupakan alat bantu heuristik dan wajib ditinjau ulang oleh pemeriksa.\n\n" +
+            "Ringkasan Deteksi per Butir:\n$itemSummaries"
+        return scores to fullInterpretation
     }
 
     private fun enrichFrt(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
@@ -1299,21 +1328,13 @@ object AssessmentEnrichers {
         val sintesisCorrect = (15..29).count { answers[it] == frtKeys[it] }
         val analisisCorrect = (30..44).count { answers[it] == frtKeys[it] }
 
-        val classification = when {
-            rawScore >= 38.0 -> "Very Superior (Sangat Superior)"
-            rawScore >= 32.0 -> "Superior (Tinggi)"
-            rawScore >= 26.0 -> "High Average (Di Atas Rata-Rata)"
-            rawScore >= 18.0 -> "Average (Rata-Rata)"
-            else -> "Below Average (Di Bawah Rata-Rata)"
-        }
-
         val scores = listOf(
             AssessmentScore(
                 label = "Skor Terkoreksi FRT",
                 value = rawScore,
                 minimum = 0.0,
                 maximum = 45.0,
-                meaning = "Rumus baku R - 0.25W: $classification."
+                meaning = "Rumus R - 0.25W (tanpa kategorisasi persentil otomatis)."
             ),
             AssessmentScore(
                 label = "Jumlah Benar (R)",
@@ -1327,21 +1348,21 @@ object AssessmentEnrichers {
                 value = w.toDouble(),
                 minimum = 0.0,
                 maximum = 45.0,
-                meaning = "Jumlah jawaban keliru (dikenakan penalti 0.25)."
+                meaning = "Jumlah jawaban keliru (penalti 0.25 per butir)."
             ),
             AssessmentScore(
                 label = "Jumlah Kosong (O)",
                 value = o.toDouble(),
                 minimum = 0.0,
                 maximum = 45.0,
-                meaning = "Jumlah butir yang tidak dijawab (tanpa penalti)."
+                meaning = "Jumlah butir tidak dijawab (tanpa penalti)."
             ),
             AssessmentScore(
                 label = "Tahap Asosiatif",
                 value = asosiatifCorrect.toDouble(),
                 minimum = 0.0,
                 maximum = 15.0,
-                meaning = "Daya tangkap relasi dasar figur geometris (butir 1–15)."
+                meaning = "Relasi dasar figur geometris (butir 1–15)."
             ),
             AssessmentScore(
                 label = "Tahap Sintesis",
@@ -1355,21 +1376,25 @@ object AssessmentEnrichers {
                 value = analisisCorrect.toDouble(),
                 minimum = 0.0,
                 maximum = 15.0,
-                meaning = "Penalaran deduktif & pemecahan matriks kompleks (butir 31–45)."
+                meaning = "Penalaran matriks kompleks (butir 31–45)."
             )
         )
 
-        val interpretation = "Hasil Figure Reasoning Test (FRT Form A / 9B) menunjukkan Skor Terkoreksi " +
-            "${String.format(Locale.US, "%.2f", rawScore)}/45 yang berada pada klasifikasi $classification. " +
-            "Rincian: Benar (R) $r, Salah (W) $w, Kosong (O) $o. Capaian per tahap kognitif: " +
-            "Tahap Asosiatif $asosiatifCorrect/15, Tahap Sintesis $sintesisCorrect/15, dan Tahap Analisis $analisisCorrect/15. " +
-            "Menggambarkan kapasitas penalaran logis figural tanpa pengaruh bias verbal atau budaya."
+        val interpretation = "Hasil Figure Reasoning Test (FRT Form A): Skor Terkoreksi " +
+            "${String.format(Locale.US, "%.2f", rawScore)}/45 (Benar=$r, Salah=$w, Kosong=$o). " +
+            "Capaian tahap: Asosiatif $asosiatifCorrect/15, Sintesis $sintesisCorrect/15, Analisis $analisisCorrect/15. " +
+            "Kategorisasi norma memerlukan tabel persentil FRT sesuai usia dan latar belakang pendidikan."
 
         return scores to interpretation
     }
 
     fun enrichCfit2aRecap(r1: Int, r2: Int, r3: Int, r4: Int): Pair<List<AssessmentScore>, String> {
-        return buildCfit2aScores(r1, r2, r3, r4)
+        return buildCfit2aScores(
+            r1 = r1.coerceIn(0, 12),
+            r2 = r2.coerceIn(0, 14),
+            r3 = r3.coerceIn(0, 12),
+            r4 = r4.coerceIn(0, 8)
+        )
     }
 
     private fun enrichCfit2a(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
@@ -1388,46 +1413,13 @@ object AssessmentEnrichers {
     private fun buildCfit2aScores(r1: Int, r2: Int, r3: Int, r4: Int): Pair<List<AssessmentScore>, String> {
         val totalRaw = r1 + r2 + r3 + r4
 
-        val iqMap = mapOf(
-            48 to 183, 47 to 179, 46 to 176, 45 to 173, 44 to 169, 43 to 168, 42 to 165,
-            41 to 160, 40 to 159, 39 to 155, 38 to 152, 37 to 149, 36 to 145, 35 to 144,
-            34 to 140, 33 to 136, 32 to 133, 31 to 131, 30 to 128, 29 to 124, 28 to 123,
-            27 to 119, 26 to 116, 25 to 113, 24 to 109, 23 to 106, 22 to 103, 21 to 100,
-            20 to 98, 19 to 94, 18 to 91, 17 to 88, 16 to 85, 15 to 81, 14 to 78,
-            13 to 75, 12 to 73, 11 to 70, 10 to 68, 9 to 63, 8 to 62,
-            7 to 57, 6 to 55, 5 to 53, 4 to 51, 3 to 48, 2 to 47, 1 to 46, 0 to 45
-        )
-
-        val iq = when {
-            totalRaw >= 48 -> 183
-            totalRaw <= 0 -> 45
-            else -> iqMap[totalRaw] ?: (45 + totalRaw * 2)
-        }
-
-        val iqCategory = when {
-            iq >= 140 -> "Very Superior (Sangat Superior)"
-            iq >= 120 -> "Superior (Tinggi)"
-            iq >= 110 -> "High Average (Rata-Rata Tinggi)"
-            iq >= 90 -> "Average (Rata-Rata)"
-            iq >= 80 -> "Low Average (Rata-Rata Rendah)"
-            iq >= 70 -> "Borderline (Garis Batas)"
-            else -> "Below Average (Perlu Dukungan Khusus)"
-        }
-
         val scores = listOf(
             AssessmentScore(
                 label = "Total Skor Mentah CFIT 2A",
                 value = totalRaw.toDouble(),
                 minimum = 0.0,
                 maximum = 46.0,
-                meaning = "Jumlah benar 4 subtes: $totalRaw/46."
-            ),
-            AssessmentScore(
-                label = "Estimasi IQ Cattell (Scale 2)",
-                value = iq.toDouble(),
-                minimum = 45.0,
-                maximum = 183.0,
-                meaning = "Klasifikasi norma: $iqCategory."
+                meaning = "Jumlah benar 4 subtes: $totalRaw/46 (konversi IQ memerlukan tabel norma usia resmi)."
             ),
             AssessmentScore(
                 label = "Subtes 1: Seriasi",
@@ -1459,10 +1451,9 @@ object AssessmentEnrichers {
             )
         )
 
-        val interpretation = "Profil CFIT Skala 2 Bentuk A menghasilkan Total Skor Mentah $totalRaw/46 " +
-            "dengan estimasi Standard IQ Cattell $iq ($iqCategory). Capaian subtes: " +
-            "Seriasi $r1/12, Klasifikasi $r2/14, Matriks $r3/12, dan Persyaratan Titik $r4/8. " +
-            "Asesmen ini mengukur kemampuan inteligensi umum bebas pengaruh budaya (fluid intelligence)."
+        val interpretation = "Profil CFIT Skala 2 Bentuk A menghasilkan Total Skor Mentah $totalRaw/46. " +
+            "Capaian subtes: Seriasi $r1/12, Klasifikasi $r2/14, Matriks $r3/12, Persyaratan Titik $r4/8. " +
+            "Konversi ke IQ standar dan kategorisasi kognitif wajib merujuk tabel norma usia resmi CFIT Scale 2."
 
         return scores to interpretation
     }
@@ -1492,40 +1483,13 @@ object AssessmentEnrichers {
     private fun buildCfit3aScores(r1: Int, r2: Int, r3: Int, r4: Int): Pair<List<AssessmentScore>, String> {
         val totalRaw = r1 + r2 + r3 + r4
 
-        val cfit3aIqTable = mapOf(
-            0 to 38, 1 to 40, 2 to 43, 3 to 45, 4 to 47, 5 to 48, 6 to 52, 7 to 55, 8 to 57, 9 to 60,
-            10 to 63, 11 to 67, 12 to 70, 13 to 72, 14 to 75, 15 to 78, 16 to 81, 17 to 85, 18 to 88, 19 to 91,
-            20 to 94, 21 to 96, 22 to 100, 23 to 103, 24 to 106, 25 to 109, 26 to 113, 27 to 116, 28 to 119, 29 to 121,
-            30 to 124, 31 to 128, 32 to 131, 33 to 133, 34 to 137, 35 to 140, 36 to 142, 37 to 145, 38 to 149, 39 to 152,
-            40 to 155, 41 to 157, 42 to 161, 43 to 165, 44 to 167, 45 to 169, 46 to 173, 47 to 176, 48 to 179, 49 to 183, 50 to 183
-        )
-
-        val iq = cfit3aIqTable[totalRaw.coerceIn(0, 50)] ?: 100
-
-        val iqCategory = when {
-            iq >= 140 -> "Genius / Very Superior (Sangat Superior)"
-            iq >= 120 -> "Superior (Tinggi)"
-            iq >= 110 -> "High Average (Rata-Rata Tinggi)"
-            iq >= 90 -> "Average (Rata-Rata)"
-            iq >= 80 -> "Low Average (Rata-Rata Rendah)"
-            iq >= 70 -> "Borderline (Garis Batas)"
-            else -> "Mentally Retardation (Keterbelakangan Mental)"
-        }
-
         val scores = listOf(
             AssessmentScore(
                 label = "Total Skor Mentah CFIT 3A",
                 value = totalRaw.toDouble(),
                 minimum = 0.0,
                 maximum = 50.0,
-                meaning = "Jumlah benar 4 subtes: $totalRaw/50."
-            ),
-            AssessmentScore(
-                label = "Standard IQ Cattell (Scale 3)",
-                value = iq.toDouble(),
-                minimum = 38.0,
-                maximum = 183.0,
-                meaning = "Norma Dewasa/Mahasiswa: $iqCategory."
+                meaning = "Jumlah benar 4 subtes: $totalRaw/50 (konversi IQ memerlukan tabel norma resmi)."
             ),
             AssessmentScore(
                 label = "Subtes 1: Deret",
@@ -1558,156 +1522,69 @@ object AssessmentEnrichers {
         )
 
         val interpretation = "Profil CFIT Skala 3 Bentuk A (Dewasa & Pendidikan Tinggi) menunjukkan Total Skor Mentah " +
-            "$totalRaw/50 dengan Standard IQ Cattell $iq ($iqCategory). Rincian subtes: " +
-            "Subtes 1 Deret $r1/13, Subtes 2 Klasifikasi $r2/14 (2 pilihan tepat per butir), Subtes 3 Matriks $r3/13, " +
-            "dan Subtes 4 Topologi Titik $r4/10. Mengukur kapasitas penalaran induktif-deduktif nonverbal tingkat lanjut."
+            "$totalRaw/50. Rincian subtes: Subtes 1 Deret $r1/13, Subtes 2 Klasifikasi $r2/14, Subtes 3 Matriks $r3/13, " +
+            "Subtes 4 Topologi Titik $r4/10. Konversi skor standar IQ wajib merujuk tabel norma usia dan pendidikan resmi."
 
         return scores to interpretation
     }
 
     private fun enrichEnneagram(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
-        val type1Indices = listOf(26, 38, 44, 46, 54, 65, 84, 87, 91, 102, 109, 117, 119, 124, 136, 137, 149, 155, 164, 169)
-        val type2Indices = listOf(10, 11, 18, 25, 33, 37, 43, 59, 60, 73, 75, 80, 83, 88, 93, 96, 98, 133, 160, 167)
-        val type3Indices = listOf(0, 5, 12, 20, 50, 55, 66, 72, 74, 85, 89, 111, 113, 134, 138, 142, 150, 162, 168, 173)
-        val type4Indices = listOf(2, 7, 16, 21, 29, 40, 41, 42, 68, 79, 82, 92, 101, 110, 115, 141, 148, 156, 158, 177)
-        val type5Indices = listOf(4, 30, 39, 51, 100, 105, 106, 114, 116, 125, 126, 129, 132, 135, 144, 153, 157, 159, 166, 174)
-        val type6Indices = listOf(6, 15, 31, 35, 36, 48, 49, 53, 56, 58, 67, 70, 78, 95, 120, 128, 143, 152, 165, 172)
-        val type7Indices = listOf(3, 17, 19, 52, 57, 69, 77, 90, 94, 97, 103, 112, 140, 146, 147, 151, 154, 171, 175, 179)
-        val type8Indices = listOf(8, 9, 23, 24, 28, 61, 64, 81, 86, 104, 107, 121, 123, 130, 131, 139, 145, 161, 163, 178)
-        val type9Indices = listOf(1, 13, 14, 22, 27, 32, 34, 45, 47, 62, 63, 71, 76, 99, 108, 118, 122, 127, 170, 176)
-
-        val s1 = type1Indices.sumOf { answers[it] ?: 0 }
-        val s2 = type2Indices.sumOf { answers[it] ?: 0 }
-        val s3 = type3Indices.sumOf { answers[it] ?: 0 }
-        val s4 = type4Indices.sumOf { answers[it] ?: 0 }
-        val s5 = type5Indices.sumOf { answers[it] ?: 0 }
-        val s6 = type6Indices.sumOf { answers[it] ?: 0 }
-        val s7 = type7Indices.sumOf { answers[it] ?: 0 }
-        val s8 = type8Indices.sumOf { answers[it] ?: 0 }
-        val s9 = type9Indices.sumOf { answers[it] ?: 0 }
-
-        val typeScores = listOf(
-            1 to s1, 2 to s2, 3 to s3, 4 to s4, 5 to s5, 6 to s6, 7 to s7, 8 to s8, 9 to s9
+        val typeIndices = mapOf(
+            1 to listOf(26, 38, 44, 46, 54, 65, 84, 87, 91, 102, 109, 117, 119, 124, 136, 137, 149, 155, 164, 169),
+            2 to listOf(10, 11, 18, 25, 33, 37, 43, 59, 60, 73, 75, 80, 83, 88, 93, 96, 98, 133, 160, 167),
+            3 to listOf(0, 5, 12, 20, 50, 55, 66, 72, 74, 85, 89, 111, 113, 134, 138, 142, 150, 162, 168, 173),
+            4 to listOf(2, 7, 16, 21, 29, 40, 41, 42, 68, 79, 82, 92, 101, 110, 115, 141, 148, 156, 158, 177),
+            5 to listOf(4, 30, 39, 51, 100, 105, 106, 114, 116, 125, 126, 129, 132, 135, 144, 153, 157, 159, 166, 174),
+            6 to listOf(6, 15, 31, 35, 36, 48, 49, 53, 56, 58, 67, 70, 78, 95, 120, 128, 143, 152, 165, 172),
+            7 to listOf(3, 17, 19, 52, 57, 69, 77, 90, 94, 97, 103, 112, 140, 146, 147, 151, 154, 171, 175, 179),
+            8 to listOf(8, 9, 23, 24, 28, 61, 64, 81, 86, 104, 107, 121, 123, 130, 131, 139, 145, 161, 163, 178),
+            9 to listOf(1, 13, 14, 22, 27, 32, 34, 45, 47, 62, 63, 71, 76, 99, 108, 118, 122, 127, 170, 176)
         )
-        val sorted = typeScores.sortedByDescending { it.second }
-        val dominantType = sorted.first().first
-        val dominantScore = sorted.first().second
-
-        val (leftWing, rightWing) = when (dominantType) {
-            1 -> 9 to 2
-            9 -> 8 to 1
-            else -> (dominantType - 1) to (dominantType + 1)
-        }
-        val leftScore = typeScores.first { it.first == leftWing }.second
-        val rightScore = typeScores.first { it.first == rightWing }.second
-        val wing = if (leftScore >= rightScore) leftWing else rightWing
-        val wingTag = "${dominantType}w$wing"
 
         val typeNames = mapOf(
-            1 to "The Reformer / Perfeksionis",
-            2 to "The Helper / Penolong",
-            3 to "The Achiever / Pengejar Prestasi",
-            4 to "The Individualist / Romantis",
-            5 to "The Investigator / Pengamat",
-            6 to "The Loyalist / Pencemas",
-            7 to "The Enthusiast / Petualang",
-            8 to "The Challenger / Pejuang",
-            9 to "The Peacemaker / Pendamai"
+            1 to "The Reformer",
+            2 to "The Helper",
+            3 to "The Achiever",
+            4 to "The Individualist",
+            5 to "The Investigator",
+            6 to "The Loyalist",
+            7 to "The Enthusiast",
+            8 to "The Challenger",
+            9 to "The Peacemaker"
         )
-
-        val dominantTitle = typeNames[dominantType] ?: "Tipe $dominantType"
-        val wingTitle = typeNames[wing] ?: "Tipe $wing"
 
         val typeMeanings = mapOf(
-            1 to "Memiliki standar tinggi, idealis, bijaksana, produktif, minim membuat kesalahan.",
-            2 to "Murah hati, suka menolong sesama, peka perasaan orang lain, hangat dan sosial.",
-            3 to "Produktif, ambisius, optimis, kompetitif, fokus pencapaian target dan efisiensi.",
-            4 to "Perasaan halus, ekspresif, menghargai estetika seni, mendalam, mencari autentisitas.",
-            5 to "Rasa ingin tahu tinggi, analitis, objektif, pemecah masalah, pemikir mandiri.",
-            6 to "Komitmen kuat, setia, bertanggung jawab, waspada, mengutamakan kepastian dan keamanan.",
-            7 to "Spontan, antusias, enerjik, imajinatif, menyukai variasi dan pengalaman baru.",
-            8 to "Semangat baja, tidak mudah menyerah, mandiri, percaya diri, jiwa kepemimpinan tegas.",
-            9 to "Diplomatis, cinta damai, sabar, pendengar yang baik, menyatukan lingkungan harmonis."
+            1 to "Standar tinggi, teliti, berorientasi perbaikan.",
+            2 to "Hangat, empatik, dorongan membantu orang lain.",
+            3 to "Berorientasi pencapaian, adaptif, produktif.",
+            4 to "Peka perasaan, ekspresif, menghargai autentisitas.",
+            5 to "Analitis, ingin tahu, menjaga kemandirian berpikir.",
+            6 to "Waspada, berkomitmen, mengutamakan kepastian dan keamanan.",
+            7 to "Antusias, spontan, menyukai eksplorasi kemungkinan.",
+            8 to "Tegas, mandiri, protektif, tahan menghadapi tantangan.",
+            9 to "Tenang, diplomatis, menjaga keharmonisan."
         )
 
-        val scores = listOf(
+        val typeScores = typeIndices.entries.map { (typeNum, indices) ->
+            typeNum to indices.sumOf { answers[it] ?: 0 }
+        }.sortedByDescending { it.second }
+
+        val scores = typeScores.map { (typeNum, score) ->
             AssessmentScore(
-                label = "Tipe Dominan: $wingTag",
-                value = dominantType.toDouble(),
-                minimum = 1.0,
-                maximum = 9.0,
-                meaning = "$dominantTitle dengan sayap $wingTag ($wingTitle) (Skor: $dominantScore/60)."
-            ),
-            AssessmentScore(
-                label = "Tipe 1: The Reformer",
-                value = s1.toDouble(),
+                label = "Tipe $typeNum: ${typeNames[typeNum]}",
+                value = score.toDouble(),
                 minimum = 0.0,
                 maximum = 60.0,
-                meaning = typeMeanings[1].orEmpty()
-            ),
-            AssessmentScore(
-                label = "Tipe 2: The Helper",
-                value = s2.toDouble(),
-                minimum = 0.0,
-                maximum = 60.0,
-                meaning = typeMeanings[2].orEmpty()
-            ),
-            AssessmentScore(
-                label = "Tipe 3: The Achiever",
-                value = s3.toDouble(),
-                minimum = 0.0,
-                maximum = 60.0,
-                meaning = typeMeanings[3].orEmpty()
-            ),
-            AssessmentScore(
-                label = "Tipe 4: The Individualist",
-                value = s4.toDouble(),
-                minimum = 0.0,
-                maximum = 60.0,
-                meaning = typeMeanings[4].orEmpty()
-            ),
-            AssessmentScore(
-                label = "Tipe 5: The Investigator",
-                value = s5.toDouble(),
-                minimum = 0.0,
-                maximum = 60.0,
-                meaning = typeMeanings[5].orEmpty()
-            ),
-            AssessmentScore(
-                label = "Tipe 6: The Loyalist",
-                value = s6.toDouble(),
-                minimum = 0.0,
-                maximum = 60.0,
-                meaning = typeMeanings[6].orEmpty()
-            ),
-            AssessmentScore(
-                label = "Tipe 7: The Enthusiast",
-                value = s7.toDouble(),
-                minimum = 0.0,
-                maximum = 60.0,
-                meaning = typeMeanings[7].orEmpty()
-            ),
-            AssessmentScore(
-                label = "Tipe 8: The Challenger",
-                value = s8.toDouble(),
-                minimum = 0.0,
-                maximum = 60.0,
-                meaning = typeMeanings[8].orEmpty()
-            ),
-            AssessmentScore(
-                label = "Tipe 9: The Peacemaker",
-                value = s9.toDouble(),
-                minimum = 0.0,
-                maximum = 60.0,
-                meaning = typeMeanings[9].orEmpty()
+                meaning = typeMeanings[typeNum].orEmpty()
             )
-        )
+        }
 
-        val top3Text = sorted.take(3).joinToString(", ") { "Tipe ${it.first} (${it.second}/60)" }
-        val interpretation = "Profil Enneagram 180 butir menunjukkan tipe dominan Tipe $dominantType ($dominantTitle) " +
-            "dengan sayap $wingTag ($wingTitle). Tiga orientasi skor tertinggi: $top3Text. " +
-            "Karakteristik utama: ${typeMeanings[dominantType]}. Tipe dominan ini mencerminkan dorongan motivasional dasar, " +
-            "mekanisme pertahanan diri, dan arah pertumbuhan reflektif pribadi dalam konseling."
+        val top3Text = typeScores.take(3).joinToString(", ") { "Tipe ${it.first} (${it.second}/60)" }
+        val hasTopTie = typeScores.size > 1 && typeScores[0].second == typeScores[1].second
+        val tieNote = if (hasTopTie) " Terdapat skor sama pada posisi puncak sehingga perlu eksplorasi wawancara." else ""
+        val interpretation = "Profil mentah Enneagram (180 butir; ${answeredSummary(answers.size, 180)}). " +
+            "Tiga kecenderungan skor tertinggi: $top3Text.$tieNote " +
+            "Hasil ini merupakan bahan refleksi kecenderungan motivasional dan bukan penetapan tipe klinis maupun sayap mutlak."
 
         return scores to interpretation
     }
@@ -1727,6 +1604,7 @@ object AssessmentEnrichers {
         val rwWa = waKeys.indices.count { answers[20 + it] == waKeys[it] }
         val rwAn = anKeys.indices.count { answers[40 + it] == anKeys[it] }
 
+        val geAnswered = (0 until 16).any { answers.containsKey(60 + it) }
         val gePoints = (0 until 16).sumOf { i ->
             when (answers[60 + i]) {
                 0 -> 2
@@ -1734,27 +1612,31 @@ object AssessmentEnrichers {
                 else -> 0
             }
         }
-        val rwGe = when {
-            gePoints >= 31 -> 20
-            gePoints == 30 -> 19
-            gePoints == 29 -> 18
-            gePoints == 28 -> 17
-            gePoints == 27 -> 16
-            gePoints in 25..26 -> 15
-            gePoints in 23..24 -> 14
-            gePoints in 21..22 -> 13
-            gePoints in 19..20 -> 12
-            gePoints in 17..18 -> 11
-            gePoints in 15..16 -> 10
-            gePoints in 13..14 -> 9
-            gePoints in 11..12 -> 8
-            gePoints in 9..10 -> 7
-            gePoints in 7..8 -> 6
-            gePoints in 5..6 -> 5
-            gePoints == 4 -> 4
-            gePoints == 3 -> 3
-            gePoints == 2 -> 2
-            else -> 1
+        val rwGe = if (!geAnswered) {
+            0
+        } else {
+            when {
+                gePoints >= 31 -> 20
+                gePoints == 30 -> 19
+                gePoints == 29 -> 18
+                gePoints == 28 -> 17
+                gePoints == 27 -> 16
+                gePoints in 25..26 -> 15
+                gePoints in 23..24 -> 14
+                gePoints in 21..22 -> 13
+                gePoints in 19..20 -> 12
+                gePoints in 17..18 -> 11
+                gePoints in 15..16 -> 10
+                gePoints in 13..14 -> 9
+                gePoints in 11..12 -> 8
+                gePoints in 9..10 -> 7
+                gePoints in 7..8 -> 6
+                gePoints in 5..6 -> 5
+                gePoints == 4 -> 4
+                gePoints == 3 -> 3
+                gePoints == 2 -> 2
+                else -> 1
+            }
         }
 
         val rwRa = raKeys.indices.count { answers[76 + it] == raKeys[it] }
@@ -1763,172 +1645,39 @@ object AssessmentEnrichers {
         val rwWu = wuKeys.indices.count { answers[136 + it] == wuKeys[it] }
         val rwMe = meKeys.indices.count { answers[156 + it] == meKeys[it] }
 
-        val seSwTable = intArrayOf(68, 71, 74, 76, 79, 82, 85, 88, 91, 94, 97, 100, 103, 106, 109, 112, 115, 118, 121, 124, 126)
-        val waSwTable = intArrayOf(63, 66, 70, 74, 77, 81, 84, 88, 91, 95, 99, 102, 106, 109, 113, 116, 120, 124, 127, 131, 134)
-        val anSwTable = intArrayOf(76, 78, 81, 83, 86, 88, 91, 93, 96, 98, 101, 103, 106, 108, 111, 113, 116, 118, 121, 123, 126)
-        val geSwTable = intArrayOf(69, 72, 75, 78, 81, 83, 86, 89, 92, 94, 97, 100, 103, 106, 108, 111, 114, 117, 119, 122, 125)
-        val raSwTable = intArrayOf(74, 77, 79, 82, 85, 88, 91, 94, 97, 99, 102, 105, 108, 111, 114, 117, 119, 122, 125, 128, 131)
-        val zrSwTable = intArrayOf(77, 80, 82, 84, 87, 89, 91, 94, 96, 99, 101, 103, 106, 108, 110, 113, 115, 118, 120, 122, 125)
-        val faSwTable = intArrayOf(70, 73, 76, 79, 81, 84, 87, 90, 93, 96, 99, 101, 104, 107, 110, 113, 116, 119, 121, 124, 127)
-        val wuSwTable = intArrayOf(72, 75, 77, 80, 83, 86, 89, 92, 95, 97, 100, 103, 106, 109, 112, 115, 117, 120, 123, 126, 129)
-        val meSwTable = intArrayOf(75, 77, 80, 82, 84, 87, 89, 91, 94, 96, 98, 101, 102, 105, 108, 110, 112, 115, 117, 119, 122)
-
-        val swSe = seSwTable[rwSe.coerceIn(0, 20)]
-        val swWa = waSwTable[rwWa.coerceIn(0, 20)]
-        val swAn = anSwTable[rwAn.coerceIn(0, 20)]
-        val swGe = geSwTable[rwGe.coerceIn(0, 20)]
-        val swRa = raSwTable[rwRa.coerceIn(0, 20)]
-        val swZr = zrSwTable[rwZr.coerceIn(0, 20)]
-        val swFa = faSwTable[rwFa.coerceIn(0, 20)]
-        val swWu = wuSwTable[rwWu.coerceIn(0, 20)]
-        val swMe = meSwTable[rwMe.coerceIn(0, 20)]
-
-        val totalSw = swSe + swWa + swAn + swGe + swRa + swZr + swFa + swWu + swMe
-        val meanSw = totalSw / 9.0
-        val iq = kotlin.math.round(100.0 + 1.5 * (meanSw - 100.0)).toInt()
-
-        val iqCategory = when {
-            iq >= 130 -> "Very Superior (Sangat Superior)"
-            iq >= 120 -> "Superior (Tinggi)"
-            iq >= 110 -> "High Average (Di Atas Rata-rata)"
-            iq >= 90 -> "Average (Rata-rata)"
-            iq >= 80 -> "Low Average (Di Bawah Rata-rata)"
-            iq >= 70 -> "Borderline (Garis Batas)"
-            else -> "Defective / Rendah"
-        }
-
-        val verbalSw = (swSe + swWa + swAn + swGe) / 4.0
-        val numericSw = (swRa + swZr) / 2.0
-        val spatialSw = (swFa + swWu) / 2.0
-
-        val practicalScore = swSe + swAn
-        val theoreticalScore = swWa + swGe
-        val thinkingStyle = when {
-            practicalScore > theoreticalScore -> "Pola W (Berpikir Praktis-Konkret)"
-            theoreticalScore > practicalScore -> "Pola M (Berpikir Teoretis-Abstrak)"
-            else -> "Pola Seimbang (Fleksibel)"
-        }
-
-        val flexibility = when {
-            swGe - swZr >= 5 -> "Fleksibilitas kognitif sangat dominan"
-            swZr - swGe >= 5 -> "Penalaran terstruktur dan disiplin logis dominan"
-            else -> "Fleksibilitas dan disiplin logika seimbang"
-        }
+        val totalRaw = rwSe + rwWa + rwAn + rwGe + rwRa + rwZr + rwFa + rwWu + rwMe
+        val answeredCount = answers.keys.count { it in 0 until 176 }
 
         val scores = listOf(
             AssessmentScore(
-                label = "Skor IQ Amthauer (IST)",
-                value = iq.toDouble(),
-                minimum = 40.0,
-                maximum = 160.0,
-                meaning = "Klasifikasi: $iqCategory (Mean SW: ${String.format(Locale.US, "%.1f", meanSw)})."
+                label = "Total Skor Mentah IST",
+                value = totalRaw.toDouble(),
+                minimum = 0.0,
+                maximum = 180.0,
+                meaning = "Jumlah raw score 9 subtes ($totalRaw/180); konversi SW & IQ memerlukan tabel norma usia resmi."
             ),
-            AssessmentScore(
-                label = "Total Standard Score (SW)",
-                value = totalSw.toDouble(),
-                minimum = 540.0,
-                maximum = 1170.0,
-                meaning = "Jumlah skor terstandarisasi 9 subtes (Norma Usia 21–25)."
-            ),
-            AssessmentScore(
-                label = "Klaster Verbal (SE, WA, AN, GE)",
-                value = verbalSw,
-                minimum = 63.0,
-                maximum = 134.0,
-                meaning = "Pemahaman bahasa, penalaran analogi, dan abstraksi konsep."
-            ),
-            AssessmentScore(
-                label = "Klaster Numerik (RA, ZR)",
-                value = numericSw,
-                minimum = 74.0,
-                maximum = 131.0,
-                meaning = "Penalaran matematika praktis dan keteraturan logika deret."
-            ),
-            AssessmentScore(
-                label = "Klaster Figural-Spasial (FA, WU)",
-                value = spatialSw,
-                minimum = 70.0,
-                maximum = 129.0,
-                meaning = "Sintesis visual 2D dan rotasi balok kubus spasial 3D."
-            ),
-            AssessmentScore(
-                label = "Daya Ingat Kata (ME)",
-                value = swMe.toDouble(),
-                minimum = 75.0,
-                maximum = 122.0,
-                meaning = "Retensi memori jangka pendek materi verbal terstruktur (RW: $rwMe/20)."
-            ),
-            AssessmentScore(
-                label = "Subtes 1: SE (Melengkapi Kalimat)",
-                value = swSe.toDouble(),
-                minimum = 68.0,
-                maximum = 126.0,
-                meaning = "RW: $rwSe/20. Pembentukan keputusan dan akal sehat logis."
-            ),
-            AssessmentScore(
-                label = "Subtes 2: WA (Mencari Kata Berbeda)",
-                value = swWa.toDouble(),
-                minimum = 63.0,
-                maximum = 134.0,
-                meaning = "RW: $rwWa/20. Rasa bahasa dan diferensiasi konsep verbal."
-            ),
-            AssessmentScore(
-                label = "Subtes 3: AN (Analogi Kata)",
-                value = swAn.toDouble(),
-                minimum = 76.0,
-                maximum = 126.0,
-                meaning = "RW: $rwAn/20. Daya kombinasi dan relasi analogis verbal."
-            ),
+            AssessmentScore("Subtes 1: SE (Melengkapi Kalimat)", rwSe.toDouble(), 0.0, 20.0, "Skor mentah: $rwSe/20."),
+            AssessmentScore("Subtes 2: WA (Mencari Kata Berbeda)", rwWa.toDouble(), 0.0, 20.0, "Skor mentah: $rwWa/20."),
+            AssessmentScore("Subtes 3: AN (Analogi Kata)", rwAn.toDouble(), 0.0, 20.0, "Skor mentah: $rwAn/20."),
             AssessmentScore(
                 label = "Subtes 4: GE (Kesamaan Konsep)",
-                value = swGe.toDouble(),
-                minimum = 69.0,
-                maximum = 125.0,
-                meaning = "Poin: $gePoints/32 (RW: $rwGe/20). Daya abstraksi dan generalisasi."
+                value = rwGe.toDouble(),
+                minimum = 0.0,
+                maximum = 20.0,
+                meaning = "Poin pilihan: $gePoints/32 (RW: $rwGe/20); adaptasi pilihan ganda (berbeda dari isian terbuka manual)."
             ),
-            AssessmentScore(
-                label = "Subtes 5: RA (Hitungan Praktis)",
-                value = swRa.toDouble(),
-                minimum = 74.0,
-                maximum = 131.0,
-                meaning = "RW: $rwRa/20. Pemecahan masalah matematis praktis sehari-hari."
-            ),
-            AssessmentScore(
-                label = "Subtes 6: ZR (Deret Angka)",
-                value = swZr.toDouble(),
-                minimum = 77.0,
-                maximum = 125.0,
-                meaning = "RW: $rwZr/20. Penalaran induktif kuantitatif dan keteraturan deret."
-            ),
-            AssessmentScore(
-                label = "Subtes 7: FA (Bentuk Potongan 2D)",
-                value = swFa.toDouble(),
-                minimum = 70.0,
-                maximum = 127.0,
-                meaning = "RW: $rwFa/20. Visualisasi ruang bidang dan rekonstruksi bentuk."
-            ),
-            AssessmentScore(
-                label = "Subtes 8: WU (Kubus Balok 3D)",
-                value = swWu.toDouble(),
-                minimum = 72.0,
-                maximum = 129.0,
-                meaning = "RW: $rwWu/20. Orientasi ruang tiga dimensi dan rotasi mental kubus."
-            ),
-            AssessmentScore(
-                label = "Subtes 9: ME (Daya Ingat Kata)",
-                value = swMe.toDouble(),
-                minimum = 75.0,
-                maximum = 122.0,
-                meaning = "RW: $rwMe/20. Konsentrasi retensi dan rekoleksi informasi hafalan."
-            )
+            AssessmentScore("Subtes 5: RA (Hitungan Praktis)", rwRa.toDouble(), 0.0, 20.0, "Skor mentah: $rwRa/20."),
+            AssessmentScore("Subtes 6: ZR (Deret Angka)", rwZr.toDouble(), 0.0, 20.0, "Skor mentah: $rwZr/20."),
+            AssessmentScore("Subtes 7: FA (Bentuk Potongan 2D)", rwFa.toDouble(), 0.0, 20.0, "Skor mentah: $rwFa/20."),
+            AssessmentScore("Subtes 8: WU (Kubus Balok 3D)", rwWu.toDouble(), 0.0, 20.0, "Skor mentah: $rwWu/20."),
+            AssessmentScore("Subtes 9: ME (Daya Ingat Kata)", rwMe.toDouble(), 0.0, 20.0, "Skor mentah: $rwMe/20.")
         )
 
-        val interpretation = "Profil Intelligenz-Struktur-Test (IST) 176 butir menunjukkan Skor IQ Amthauer $iq ($iqCategory) " +
-            "dengan Total Standard Score $totalSw (Rerata SW: ${String.format(Locale.US, "%.1f", meanSw)}). " +
-            "Gaya berpikir teridentifikasi sebagai $thinkingStyle, dengan capaian klaster: Verbal " +
-            "${String.format(Locale.US, "%.1f", verbalSw)}, Numerik ${String.format(Locale.US, "%.1f", numericSw)}, " +
-            "Spasial ${String.format(Locale.US, "%.1f", spatialSw)}, dan Memori $swMe. Dinamika kognitif: $flexibility. " +
-            "Hasil ini mengukur struktur inteligensi multidimensi terstandarisasi untuk panduan konseling karir dan kognitif."
+        val interpretation = "Profil Skor Mentah Intelligenz-Struktur-Test (IST; ${answeredSummary(answeredCount, 176)}): " +
+            "Total RW = $totalRaw/180 (SE=$rwSe, WA=$rwWa, AN=$rwAn, GE=$rwGe [poin pilihan $gePoints/32], " +
+            "RA=$rwRa, ZR=$rwZr, FA=$rwFa, WU=$rwWu, ME=$rwMe). " +
+            "Catatan Metodologis: Subtes GE menggunakan pilihan ganda adaptasi (bukan skoring jawaban terbuka oleh pemeriksa), " +
+            "dan konversi skor standar (SW) serta estimasi IQ Amthauer memerlukan tabel norma usia resmi IST."
 
         return scores to interpretation
     }
@@ -1939,27 +1688,20 @@ object AssessmentEnrichers {
             if (AssessmentKuderData.checkRule(rule, answers)) rawV++
         }
         val validityMeaning = when {
-            rawV <= 37 -> "Kurang valid (testee kurang bersungguh-sungguh atau kurang konsisten, skor <= 37)."
-            rawV <= 44 -> "Valid (skor verifikasi berada pada rentang akurat 38–44)."
-            else -> "Kurang valid (indikasi ketidakpahaman instruksi atau bias pola, skor > 44)."
+            rawV <= 37 -> "Kurang konsisten / perlu verifikasi (V = $rawV <= 37)."
+            rawV <= 44 -> "Dalam rentang verifikasi standar (V = $rawV; 38–44)."
+            else -> "Perlu verifikasi instruksi/pola respons (V = $rawV > 44)."
         }
 
-        val scaleScores = AssessmentKuderData.VOCATIONAL_SCALES.mapIndexed { idx, (_, name, rules) ->
+        val scaleScores = AssessmentKuderData.VOCATIONAL_SCALES.map { (_, name, rules) ->
             var raw = 0
             for (rule in rules) {
                 if (AssessmentKuderData.checkRule(rule, answers)) raw++
             }
-            val clampedRaw = raw.coerceIn(0, 99)
-            val pMale = AssessmentKuderData.NORMS_MALE[idx].getOrElse(clampedRaw) { 50 }
-            val category = when {
-                pMale <= 24 -> "Rendah"
-                pMale <= 74 -> "Cukup"
-                else -> "Tinggi"
-            }
-            Triple(name, raw, pMale to category)
+            Triple(name, raw, rules.size.coerceAtLeast(1))
         }
 
-        val top3 = scaleScores.sortedByDescending { it.third.first }.take(3)
+        val top3 = scaleScores.sortedByDescending { it.second }.take(3)
         val scores = mutableListOf<AssessmentScore>()
         scores.add(
             AssessmentScore(
@@ -1970,37 +1712,37 @@ object AssessmentEnrichers {
                 meaning = validityMeaning
             )
         )
-        for ((name, raw, pCat) in scaleScores) {
-            val (p, cat) = pCat
+        for ((name, raw, maxRules) in scaleScores) {
             scores.add(
                 AssessmentScore(
                     label = name,
-                    value = p.toDouble(),
+                    value = raw.toDouble(),
                     minimum = 0.0,
-                    maximum = 100.0,
-                    meaning = "Skor Mentah: $raw, Persentil: $p% (Kategori: $cat)"
+                    maximum = maxRules.toDouble(),
+                    meaning = "Skor mentah: $raw/$maxRules pilihan; persentil memerlukan tabel norma sesuai jenis kelamin."
                 )
             )
         }
 
-        val topDesc = top3.joinToString(", ") { "${it.first} (${it.third.first}%)" }
-        val interpretation = "Hasil inventori minat Kuder (KPR-V Form C) menunjukkan status verifikasi: $validityMeaning. " +
-            "Tiga area minat vokasional paling dominan adalah: $topDesc. " +
-            "Area dengan persentil >= 75% merefleksikan kecenderungan intrinsik yang kuat terhadap aktivitas kerja terkait " +
-            "dan menjadi rekomendasi utama untuk eksplorasi karier serta penjurusan studi."
+        val topDesc = top3.joinToString(", ") { "${it.first} (${it.second})" }
+        val interpretation = "Hasil inventori minat Kuder (KPR-V Form C): $validityMeaning. " +
+            "Tiga area dengan jumlah pilihan mentah tertinggi: $topDesc. " +
+            "Persentil dan kategori tinggi/rendah tidak disimpulkan otomatis karena norma KPR-V mensyaratkan pemilihan kelompok jenis kelamin."
 
         return scores to interpretation
     }
 
-    private fun enrichKraepelin(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
+    private fun enrichKraepelinDetailed(answers: Map<Int, Int>): EnrichedScoringOutcome {
         val cols = answers.keys.filter { it in 0..49 }.sorted()
         if (cols.isEmpty()) {
-            return listOf(
-                AssessmentScore("PANKER (Kecepatan)", 0.0, 0.0, 30.0, "Belum ada lajur yang diselesaikan."),
-                AssessmentScore("TIANKER (Ketelitian)", 0.0, 0.0, 100.0, "Tidak ada data kesalahan."),
-                AssessmentScore("JANKER (Keajegan)", 0.0, 0.0, 20.0, "Tidak ada data deviasi."),
-                AssessmentScore("HANKER (Ketahanan)", 0.0, -10.0, 10.0, "Tidak ada data tren.")
-            ) to "Tes Kraepelin belum selesai dikerjakan."
+            return EnrichedScoringOutcome(
+                scores = emptyList(),
+                interpretation = "Tes Kraepelin belum memiliki data lajur yang selesai dikerjakan.",
+                scoringStatus = InstrumentImplementationStatus.RAW_SCORE_ONLY,
+                validityStatus = AssessmentValidityStatus.INVALID,
+                validityWarnings = listOf("Belum ada lajur Kraepelin yang diselesaikan."),
+                normReference = PsychometricInstrumentRegistry.specFor("kraepelin").normStatus
+            )
         }
 
         val n = cols.size
@@ -2031,75 +1773,68 @@ object AssessmentEnrichers {
         val bSlope = if (den > 0.0) num / den else 0.0
         val deltaY = bSlope * (n - 1)
 
-        val pankerCat = when {
-            meanY >= 14.6 -> "Baik Sekali (Tempo Cepat)"
-            meanY >= 12.5 -> "Baik (Cepat & Cekatan)"
-            meanY >= 10.4 -> "Sedang (Rerata Normal)"
-            meanY >= 8.3 -> "Kurang (Tempo Lambat)"
-            else -> "Kurang Sekali (Sangat Lambat)"
-        }
-
-        val tiankerCat = when {
-            tianker <= 2 -> "Baik Sekali (Sangat Teliti & Presisi)"
-            tianker <= 6 -> "Baik (Teliti, Kesalahan Minimal)"
-            tianker <= 12 -> "Sedang (Akurasi Cukup)"
-            tianker <= 20 -> "Kurang (Rentan Ceroboh / Lewatan)"
-            else -> "Kurang Sekali (Banyak Salah & Terlewati)"
-        }
-
-        val jankerCat = when {
-            avDev < 1.5 -> "Baik Sekali (Sangat Ajeg & Konsisten)"
-            avDev <= 2.5 -> "Baik (Ritme Kerja Stabil)"
-            avDev <= 3.8 -> "Sedang (Fluktuasi Wajar)"
-            avDev <= 5.2 -> "Kurang (Mudah Terdistraksi)"
-            else -> "Kurang Sekali (Sangat Tidak Stabil)"
-        }
-
-        val hankerCat = when {
-            bSlope > 0.05 -> "Positif (Daya Tahan Meningkat / Stamina Prima)"
-            bSlope >= -0.05 -> "Konstan (Stamina Terjaga Stabil)"
-            else -> "Negatif (Penurunan Daya Tahan / Cepat Lelah)"
+        val observations = cols.mapIndexed { idx, colIdx ->
+            AssessmentObservation(
+                key = "kraepelin_col_${colIdx + 1}",
+                label = "Lajur ${colIdx + 1}",
+                value = yValues[idx].toString(),
+                orderIndex = colIdx + 1,
+                tags = listOf("err=${errors[idx]}", "skip=${skips[idx]}")
+            )
         }
 
         val scores = listOf(
             AssessmentScore(
-                label = "PANKER (Kecepatan Kerja)",
+                label = "PANKER (Rerata Kecepatan)",
                 value = meanY,
                 minimum = 0.0,
                 maximum = 30.0,
-                meaning = "Rerata: ${String.format(Locale.US, "%.2f", meanY)} benar/lajur (Total: $sumY benar dalam $n lajur). Kategori: $pankerCat."
+                meaning = "Rerata: ${String.format(Locale.US, "%.2f", meanY)} penjumlahan/lajur (Total: $sumY dalam $n lajur)."
             ),
             AssessmentScore(
-                label = "TIANKER (Ketelitian Kerja)",
+                label = "TIANKER (Salah + Lewat)",
                 value = tianker.toDouble(),
                 minimum = 0.0,
-                maximum = 50.0,
-                meaning = "Total Kesalahan: $totalErrors, Terlewati: $totalSkips (Tianker: $tianker). Kategori: $tiankerCat."
+                maximum = 100.0,
+                meaning = "Salah: $totalErrors, Terlewati: $totalSkips (Total Tianker: $tianker)."
             ),
             AssessmentScore(
-                label = "JANKER (Keajegan Ritme)",
+                label = "JANKER (Deviasi Rerata)",
                 value = avDev,
                 minimum = 0.0,
-                maximum = 10.0,
-                meaning = "Average Deviation: ${String.format(Locale.US, "%.2f", avDev)}, Range: $range ($yMin–$yMax). Kategori: $jankerCat."
+                maximum = 15.0,
+                meaning = "Average Deviation: ${String.format(Locale.US, "%.2f", avDev)}, Rentang: $range ($yMin–$yMax)."
             ),
             AssessmentScore(
-                label = "HANKER (Ketahanan Kerja)",
+                label = "HANKER (Gradien Regresi)",
                 value = bSlope,
                 minimum = -2.0,
                 maximum = 2.0,
-                meaning = "Kemiringan Regresi b: ${String.format(Locale.US, "%.3f", bSlope)}, Tren Δy: ${String.format(Locale.US, "%.1f", deltaY)}. Kategori: $hankerCat."
+                meaning = "Kemiringan b: ${String.format(Locale.US, "%.3f", bSlope)}, Perubahan tren Δy: ${String.format(Locale.US, "%.1f", deltaY)}."
             )
         )
 
-        val interpretation = "Hasil evaluasi tes sikap kerja Kraepelin ($n lajur) menunjukkan: " +
-            "Kecepatan kerja (Panker) berada pada tingkat $pankerCat dengan rata-rata ${String.format(Locale.US, "%.1f", meanY)} " +
-            "penjumlahan per 15 detik. Ketelitian (Tianker) menunjukkan tingkat $tiankerCat dengan akumulasi $tianker kesalahan/lompatan. " +
-            "Kestabilan ritme kerja (Janker) terkategori $jankerCat (deviasi rata-rata ${String.format(Locale.US, "%.2f", avDev)}). " +
-            "Ketahanan kerja mental (Hanker) teridentifikasi $hankerCat dengan gradien tren ${String.format(Locale.US, "%.3f", bSlope)}. " +
-            "Profil ini mencerminkan dinamika energi kerja, ketahanan di bawah tekanan waktu berulang, dan fokus eksekutif."
+        val warnings = if (n < 50) {
+            listOf("Baru $n dari 50 lajur Kraepelin tercatat; interpretasi kurva utuh memerlukan kelengkapan penuh.")
+        } else {
+            emptyList()
+        }
+        val validity = if (n >= 40) AssessmentValidityStatus.VALID else AssessmentValidityStatus.QUESTIONABLE
 
-        return scores to interpretation
+        val interpretation = "Rekap kuantitatif Kraepelin ($n lajur tercatat): " +
+            "PANKER rerata ${String.format(Locale.US, "%.2f", meanY)}/lajur (total $sumY), " +
+            "TIANKER $tianker (salah=$totalErrors, lewat=$totalSkips), " +
+            "JANKER deviasi rerata ${String.format(Locale.US, "%.2f", avDev)} (rentang $yMin–$yMax), " +
+            "HANKER gradien tren b=${String.format(Locale.US, "%.3f", bSlope)}. " +
+            "Kategorisasi norma sikap kerja merujuk norma populasi pembanding."
+
+        return outcomeRaw(
+            id = "kraepelin",
+            pair = scores to interpretation,
+            warnings = warnings,
+            validity = validity,
+            observations = observations
+        )
     }
 
     private fun enrichMit(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
@@ -2115,41 +1850,33 @@ object AssessmentEnrichers {
         )
 
         val dimResults = dims.map { (_, name, range) ->
-            val raw = range.sumOf { idx ->
-                val ans = answers[idx] ?: 0
-                (ans.coerceIn(0, 3)) + 1
-            }
+            val answered = range.mapNotNull { idx -> answers[idx]?.let { it.coerceIn(0, 3) + 1 } }
+            val raw = answered.sum()
             val percentage = (raw.toDouble() / 28.0) * 100.0
-            val cat = when {
-                raw >= 22 -> "Tinggi (Kecerdasan Menonjol)"
-                raw >= 15 -> "Sedang (Berkembang Baik)"
-                else -> "Perlu Stimulasi"
-            }
-            Triple(name, raw, percentage to cat)
+            Triple(name, raw, percentage to answered.size)
         }
 
         val top3 = dimResults.sortedByDescending { it.second }.take(3)
-        val scores = dimResults.map { (name, raw, pctCat) ->
-            val (pct, cat) = pctCat
+        val scores = dimResults.map { (name, raw, pctAnswered) ->
+            val (pct, answeredCount) = pctAnswered
             AssessmentScore(
                 label = name,
                 value = raw.toDouble(),
-                minimum = 7.0,
+                minimum = 0.0,
                 maximum = 28.0,
-                meaning = "Skor: $raw/28 (${String.format(Locale.US, "%.1f", pct)}%). Kategori: $cat."
+                meaning = "Skor mentah: $raw/28 (${String.format(Locale.US, "%.1f", pct)}%; $answeredCount/7 butir dijawab). Refleksi laporan diri."
             )
         }
 
         val topNames = top3.joinToString(", ") { "${it.first} (${it.second}/28)" }
-        val interpretation = "Profil Multiple Intelligences (Model Howard Gardner 56 butir) mengidentifikasi " +
-            "tiga kecerdasan paling menonjol pada diri Anda: $topNames. " +
-            "Dimensi-dimensi dengan kategori Tinggi (skor >= 22) merupakan modalitas belajar dan pemecahan masalah alami yang paling efektif, " +
-            "serta menjadi referensi relevan dalam pengembangan karier, kolaborasi tim, dan pengoptimalan potensi diri."
+        val interpretation = "Profil Reflektif Multiple Intelligences (56 butir; ${answeredSummary(answers.size, 56)}): " +
+            "Tiga kecenderungan skor mentah tertinggi: $topNames. " +
+            "Hasil ini bersifat refleksi diri deskriptif mengenai preferensi modalitas aktivitas dan bukan skor IQ tervalidasi."
 
         return scores to interpretation
     }
 
-    private fun enrichMsai(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
+    private fun enrichMsaiDetailed(answers: Map<Int, Int>): EnrichedScoringOutcome {
         val skills = listOf(
             Triple("Managing Development of Others", listOf(5, 20, 24, 25, 47), "Clan"),
             Triple("Managing Interpersonal Relationships", listOf(1, 13, 23, 48, 50), "Clan"),
@@ -2165,104 +1892,90 @@ object AssessmentEnrichers {
             Triple("Managing Acculturation", listOf(10, 34, 40, 56, 58), "Hierarchy")
         )
 
-        val skillScores = skills.map { (name, itemNums, quad) ->
-            val vals = itemNums.mapNotNull { num ->
-                answers[num - 1]?.let { ans ->
-                    (ans.coerceIn(0, 4)) + 1
-                }
-            }
-            val avg = if (vals.isNotEmpty()) vals.average() else 3.0
+        val answeredCount = answers.keys.count { it in 0 until 60 }
+        val skillScores: List<Triple<String, Double?, String>> = skills.map { (name, itemNums, quad) ->
+            val vals = itemNums.mapNotNull { num -> answers[num - 1]?.let { it.coerceIn(0, 4) + 1 } }
+            val avg: Double? = if (vals.isNotEmpty()) vals.average() else null
             Triple(name, avg, quad)
         }
 
-        val clanAvg = skillScores.filter { it.third == "Clan" }.map { it.second }.average()
-        val adhocAvg = skillScores.filter { it.third == "Adhocracy" }.map { it.second }.average()
-        val marketAvg = skillScores.filter { it.third == "Market" }.map { it.second }.average()
-        val hierAvg = skillScores.filter { it.third == "Hierarchy" }.map { it.second }.average()
+        fun quadAvg(quadKey: String): Double? {
+            val nonNull = skillScores.filter { it.third == quadKey && it.second != null }.mapNotNull { it.second }
+            return if (nonNull.isNotEmpty()) nonNull.average() else null
+        }
 
-        val quadrants = listOf(
-            "Clan (Collaborate)" to clanAvg,
-            "Adhocracy (Create)" to adhocAvg,
-            "Market (Compete)" to marketAvg,
-            "Hierarchy (Control)" to hierAvg
-        ).sortedByDescending { it.second }
-
-        val dominantQuad = quadrants.first()
-        val topSkill = skillScores.maxByOrNull { it.second } ?: skillScores.first()
-        val lowestSkill = skillScores.minByOrNull { it.second } ?: skillScores.last()
+        val quadPairs = listOf(
+            "Kuadran Clan (Collaborate)" to quadAvg("Clan"),
+            "Kuadran Adhocracy (Create)" to quadAvg("Adhocracy"),
+            "Kuadran Market (Compete)" to quadAvg("Market"),
+            "Kuadran Hierarchy (Control)" to quadAvg("Hierarchy")
+        )
 
         val scores = mutableListOf<AssessmentScore>()
-        scores.add(
-            AssessmentScore(
-                label = "Kuadran Dominan: ${dominantQuad.first}",
-                value = dominantQuad.second,
-                minimum = 1.0,
-                maximum = 5.0,
-                meaning = "Rerata kuadran: ${String.format(Locale.US, "%.2f", dominantQuad.second)}/5.00. Orientasi nilai manajerial utama."
-            )
-        )
-        scores.add(
-            AssessmentScore(
-                label = "Kuadran Clan (Collaborate)",
-                value = clanAvg,
-                minimum = 1.0,
-                maximum = 5.0,
-                meaning = "Pengembangan SDM, empati interpersonal, dan pembinaan tim."
-            )
-        )
-        scores.add(
-            AssessmentScore(
-                label = "Kuadran Adhocracy (Create)",
-                value = adhocAvg,
-                minimum = 1.0,
-                maximum = 5.0,
-                meaning = "Inovasi, visi perubahan masa depan, dan perbaikan berkelanjutan."
-            )
-        )
-        scores.add(
-            AssessmentScore(
-                label = "Kuadran Market (Compete)",
-                value = marketAvg,
-                minimum = 1.0,
-                maximum = 5.0,
-                meaning = "Daya saing eksternal, dorongan produktivitas kerja, dan fokus kepuasan pelanggan."
-            )
-        )
-        scores.add(
-            AssessmentScore(
-                label = "Kuadran Hierarchy (Control)",
-                value = hierAvg,
-                minimum = 1.0,
-                maximum = 5.0,
-                meaning = "Koordinasi operasional, sistem pengawasan terukur, dan kepatuhan prosedur."
-            )
-        )
-
+        quadPairs.forEach { (label, avg) ->
+            if (avg != null) {
+                scores += AssessmentScore(
+                    label = label,
+                    value = avg,
+                    minimum = 1.0,
+                    maximum = 5.0,
+                    meaning = "Rerata kompetensi terjawab pada kuadran: ${String.format(Locale.US, "%.2f", avg)}/5.00."
+                )
+            }
+        }
         skillScores.forEach { (name, avg, quad) ->
-            scores.add(
-                AssessmentScore(
+            if (avg != null) {
+                scores += AssessmentScore(
                     label = "$name ($quad)",
                     value = avg,
                     minimum = 1.0,
                     maximum = 5.0,
-                    meaning = "Skor kompetensi: ${String.format(Locale.US, "%.2f", avg)}/5.00."
+                    meaning = "Rerata kompetensi ($quad): ${String.format(Locale.US, "%.2f", avg)}/5.00."
                 )
-            )
+            }
         }
 
-        val interpretation = "Berdasarkan Competing Values Framework (CVF) Cameron & Quinn, profil manajerial Anda menunjukkan " +
-            "orientasi paling dominan pada ${dominantQuad.first} (rerata ${String.format(Locale.US, "%.2f", dominantQuad.second)}/5.00). " +
-            "Kekuatan manajerial utama teridentifikasi pada ${topSkill.first} (${String.format(Locale.US, "%.2f", topSkill.second)}/5.00). " +
-            "Area prioritas pengembangan kepemimpinan adalah ${lowestSkill.first} (${String.format(Locale.US, "%.2f", lowestSkill.second)}/5.00). " +
-            "Rekomendasi: Tingkatkan keseimbangan antara fleksibilitas inovatif dan ketertiban sistem operasional sesuai dinamika unit Anda."
+        val validQuads = quadPairs.mapNotNull { (name, avg) -> avg?.let { name to it } }.sortedByDescending { it.second }
+        val validSkills = skillScores.mapNotNull { (name, avg, quad) -> avg?.let { Triple(name, it, quad) } }
+        val dominantText = validQuads.firstOrNull()?.let {
+            "${it.first} (${String.format(Locale.US, "%.2f", it.second)}/5.00)"
+        } ?: "Belum ada kuadran terisi"
+        val topSkillText = validSkills.maxByOrNull { it.second }?.let {
+            "${it.first} (${String.format(Locale.US, "%.2f", it.second)}/5.00)"
+        } ?: "-"
+        val lowSkillText = validSkills.minByOrNull { it.second }?.let {
+            "${it.first} (${String.format(Locale.US, "%.2f", it.second)}/5.00)"
+        } ?: "-"
 
-        return scores to interpretation
+        val warnings = if (answeredCount < 60) {
+            listOf(
+                "Protokol MSAI belum lengkap ($answeredCount/60 butir); " +
+                    "kompetensi tanpa jawaban tidak diimputasi dengan nilai default 3.0."
+            )
+        } else {
+            emptyList()
+        }
+        val validity = when {
+            answeredCount == 0 -> AssessmentValidityStatus.INVALID
+            answeredCount < 60 -> AssessmentValidityStatus.QUESTIONABLE
+            else -> AssessmentValidityStatus.VALID
+        }
+
+        val interpretation = "Profil Competing Values Framework MSAI ($answeredCount/60 butir terjawab): " +
+            "Kuadran tertinggi berdasarkan data terjawab adalah $dominantText. " +
+            "Skor kompetensi tertinggi: $topSkillText; terendah: $lowSkillText. " +
+            "Laporan dihitung hanya dari butir yang benar-benar dijawab."
+
+        return outcomeRaw("msai", scores to interpretation, warnings = warnings, validity = validity)
     }
 
-    private fun enrichMsdt(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
+    private fun enrichMsdtDetailed(answers: Map<Int, Int>): EnrichedScoringOutcome {
+        val answeredCount = (0 until 64).count { answers.containsKey(it) }
+        val isComplete = answeredCount == 64
+
         val koreksi = listOf(1, 2, 1, 0, 3, -1, 0, -4)
-        val rowA = IntArray(8) { 0 }
-        val colB = IntArray(8) { 0 }
+        val rowA = IntArray(8)
+        val colB = IntArray(8)
 
         for (r in 0 until 8) {
             for (c in 0 until 8) {
@@ -2277,30 +1990,20 @@ object AssessmentEnrichers {
         }
 
         val jumlah = IntArray(8) { k -> rowA[k] + colB[k] + koreksi[k] }
-
         val styleNames = listOf(
-            "Deserter (Ds - Pelari / Pasif)" to "Separated, rendah tugas & relasi, menarik diri.",
-            "Missionary (Mi - Pencinta Damai)" to "Related, orientasi relasi tinggi namun mengabaikan tugas.",
-            "Autocrat (Au - Otokratis Murni)" to "Dedicated, orientasi tugas tinggi tanpa peduli relasi.",
-            "Compromiser (Co - Kompromis Lemah)" to "Integrated, ingin menyenangkan semua pihak namun ragu-ragu.",
-            "Bureaucrat (Bu - Birokrat Prosedural)" to "Separated + Efektif, taat aturan, objektif dan teliti.",
-            "Developer (Dv - Pembina / Pengembang)" to "Related + Efektif, percaya penuh pada bawahan, mendelegasikan wewenang.",
-            "Benevolent Autocrat (Ba - Otokrat Bijak)" to "Dedicated + Efektif, tegas mencapai target tanpa merusak hubungan kerja.",
-            "Executive (E - Eksekutif Terintegrasi)" to "Integrated + Efektif, standar tinggi, motivasi tinggi, dan komunikasi dua arah."
+            "Deserter (Ds - Pasif)" to "Separated; berorientasi rendah pada tugas maupun relasi.",
+            "Missionary (Mi - Berorientasi Relasi)" to "Related; berfokus tinggi pada keharmonisan relasi.",
+            "Autocrat (Au - Berorientasi Tugas)" to "Dedicated; berfokus tinggi pada arahan tugas.",
+            "Compromiser (Co - Kompromis)" to "Integrated; cenderung mencari jalan tengah antara tugas dan relasi.",
+            "Bureaucrat (Bu - Prosedural)" to "Separated + Efektif; menekankan aturan dan ketertiban prosedur.",
+            "Developer (Dv - Pembina)" to "Related + Efektif; menekankan pengembangan dan pendelegasian tim.",
+            "Benevolent Autocrat (Ba - Tegas Terstruktur)" to "Dedicated + Efektif; menjaga target secara terarah.",
+            "Executive (E - Terintegrasi)" to "Integrated + Efektif; memadukan standar tugas dan kolaborasi."
         )
 
-        val ds = jumlah[0]
-        val mi = jumlah[1]
-        val au = jumlah[2]
-        val co = jumlah[3]
-        val bu = jumlah[4]
-        val dv = jumlah[5]
-        val ba = jumlah[6]
-        val e = jumlah[7]
-
-        val to = au + co + ba + e
-        val ro = mi + co + dv + e
-        val ef = bu + dv + ba + e
+        val to = jumlah[2] + jumlah[3] + jumlah[6] + jumlah[7]
+        val ro = jumlah[1] + jumlah[3] + jumlah[5] + jumlah[7]
+        val ef = jumlah[4] + jumlah[5] + jumlah[6] + jumlah[7]
 
         val rankedStyles = styleNames.indices.map { idx ->
             Triple(styleNames[idx].first, jumlah[idx], styleNames[idx].second)
@@ -2312,29 +2015,11 @@ object AssessmentEnrichers {
         val scores = mutableListOf<AssessmentScore>()
         scores.add(
             AssessmentScore(
-                label = "Gaya Dominan: ${dominantStyle.first.split(" (")[0]}",
-                value = dominantStyle.second.toDouble(),
-                minimum = -10.0,
-                maximum = 30.0,
-                meaning = "Skor: ${dominantStyle.second}. ${dominantStyle.third}"
-            )
-        )
-        scores.add(
-            AssessmentScore(
-                label = "Gaya Pendukung: ${secondaryStyle.first.split(" (")[0]}",
-                value = secondaryStyle.second.toDouble(),
-                minimum = -10.0,
-                maximum = 30.0,
-                meaning = "Skor: ${secondaryStyle.second}. ${secondaryStyle.third}"
-            )
-        )
-        scores.add(
-            AssessmentScore(
                 label = "Task Orientation (TO)",
                 value = to.toDouble(),
                 minimum = -10.0,
                 maximum = 50.0,
-                meaning = "Orientasi terhadap pencapaian target tugas dan instruksi (Au+Co+Ba+E = $to)."
+                meaning = "Orientasi tugas (Au+Co+Ba+E = $to)."
             )
         )
         scores.add(
@@ -2343,7 +2028,7 @@ object AssessmentEnrichers {
                 value = ro.toDouble(),
                 minimum = -10.0,
                 maximum = 50.0,
-                meaning = "Orientasi terhadap relasi antarmanusia dan keharmonisan (Mi+Co+Dv+E = $ro)."
+                meaning = "Orientasi relasi (Mi+Co+Dv+E = $ro)."
             )
         )
         scores.add(
@@ -2352,10 +2037,9 @@ object AssessmentEnrichers {
                 value = ef.toDouble(),
                 minimum = -10.0,
                 maximum = 50.0,
-                meaning = "Tingkat efektivitas situasional dan adaptabilitas kepemimpinan (Bu+Dv+Ba+E = $ef)."
+                meaning = "Efektivitas situasional (Bu+Dv+Ba+E = $ef)."
             )
         )
-
         rankedStyles.forEach { (name, scoreVal, desc) ->
             scores.add(
                 AssessmentScore(
@@ -2363,17 +2047,31 @@ object AssessmentEnrichers {
                     value = scoreVal.toDouble(),
                     minimum = -10.0,
                     maximum = 30.0,
-                    meaning = "Skor matrik: $scoreVal. $desc"
+                    meaning = "Skor matriks: $scoreVal. $desc"
                 )
             )
         }
 
-        val interpretation = "Diagnosis Gaya Manajemen Reddin (MSDT) menunjukkan gaya dominan Anda adalah ${dominantStyle.first} " +
-            "(Skor: ${dominantStyle.second}) dengan gaya pendukung ${secondaryStyle.first} (Skor: ${secondaryStyle.second}). " +
-            "Dimensi kepemimpinan: Task Orientation (TO) = $to, Relationship Orientation (RO) = $ro, Efektivitas Situasional (E) = $ef. " +
-            "Profil ini mencerminkan fleksibilitas dalam memilih pendekatan manajerial yang tepat antara ketegasan tugas dan pembinaan relasi sesuai dinamika tim."
+        val warnings = if (!isComplete) {
+            listOf(
+                "Protokol MSDT tidak lengkap ($answeredCount/64); " +
+                    "matriks 8 kuadran dan konstanta koreksi memerlukan kelengkapan penuh."
+            )
+        } else {
+            emptyList()
+        }
+        val validity = if (isComplete) AssessmentValidityStatus.VALID else AssessmentValidityStatus.INVALID
+        val incompleteNote = if (!isComplete) {
+            " PERINGATAN VALIDITAS: Baru $answeredCount/64 butir terjawab sehingga konstanta koreksi tidak representatif."
+        } else {
+            ""
+        }
 
-        return scores to interpretation
+        val interpretation = "Profil MSDT Reddin ($answeredCount/64 butir): gaya matriks tertinggi sementara adalah ${dominantStyle.first} " +
+            "(Skor ${dominantStyle.second}), diikuti ${secondaryStyle.first} (Skor ${secondaryStyle.second}). " +
+            "Dimensi: TO=$to, RO=$ro, Effectiveness=$ef.$incompleteNote"
+
+        return outcomeRaw("msdt", scores to interpretation, warnings = warnings, validity = validity)
     }
 
     private val papiItemScales = listOf(
@@ -2405,12 +2103,14 @@ object AssessmentEnrichers {
         )
         scaleCodes.forEach { scaleCounts[it] = 0 }
 
+        var answeredCount = 0
         answers.forEach { (qIdx, ans) ->
-            if (qIdx in papiItemScales.indices) {
+            if (qIdx in papiItemScales.indices && (ans == 0 || ans == 1)) {
+                answeredCount++
                 val pair = papiItemScales[qIdx]
                 if (ans == 0) {
                     scaleCounts[pair.first] = (scaleCounts[pair.first] ?: 0) + 1
-                } else if (ans == 1) {
+                } else {
                     scaleCounts[pair.second] = (scaleCounts[pair.second] ?: 0) + 1
                 }
             }
@@ -2441,112 +2141,121 @@ object AssessmentEnrichers {
 
         val scores = scaleCodes.map { code ->
             val count = scaleCounts[code] ?: 0
-            val cat = when {
-                count >= 7 -> "Tinggi"
-                count >= 4 -> "Sedang"
-                else -> "Rendah"
-            }
             AssessmentScore(
                 label = "${scaleLabels[code]} [$code]",
                 value = count.toDouble(),
                 minimum = 0.0,
                 maximum = 9.0,
-                meaning = "Skor: $count/9. Kategori: $cat."
+                meaning = "Skor mentah: $count/9."
             )
         }
 
-        val highScores = scaleCodes.filter { (scaleCounts[it] ?: 0) >= 7 }.map { "${scaleLabels[it]?.split(" (")?.get(0)} ($it)" }
-        val lowScores = scaleCodes.filter { (scaleCounts[it] ?: 0) <= 2 }.map { "${scaleLabels[it]?.split(" (")?.get(0)} ($it)" }
+        val sorted = scaleCodes.sortedByDescending { scaleCounts[it] ?: 0 }
+        val top3 = sorted.take(3).joinToString(", ") { "$it (${scaleCounts[it] ?: 0}/9)" }
+        val bottom3 = sorted.takeLast(3).joinToString(", ") { "$it (${scaleCounts[it] ?: 0}/9)" }
 
-        val highStr = if (highScores.isNotEmpty()) highScores.joinToString(", ") else "Tidak ada dimensi dominan ekstrem"
-        val lowStr = if (lowScores.isNotEmpty()) lowScores.joinToString(", ") else "Tidak ada kebutuhan minimal ekstrem"
-
-        val interpretation = "Profil PAPI Kostick (Perception and Preference Inventory 90 butir) memetakan 20 aspek peran dan kebutuhan kerja: " +
-            "Dimensi menonjol (Skor Tinggi >= 7): $highStr. " +
-            "Dimensi dengan intensitas rendah (Skor <= 2): $lowStr. " +
-            "Kombinasi ini menggambarkan preferensi lingkungan kerja, gaya komunikasi profesional, serta dorongan motivasional utama Anda di tempat kerja."
+        val interpretation = "Profil Skor Mentah PAPI Kostick ($answeredCount/90 pasang butir terjawab): " +
+            "Skor relatif tertinggi pada $top3; skor relatif terendah pada $bottom3. " +
+            "PAPI Kostick bersifat ipsatif (forced-choice 90 pasang) sehingga interpretasi mempertimbangkan keseluruhan 20 aspek peran dan kebutuhan kerja."
 
         return scores to interpretation
     }
 
-    private fun enrichPauli(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
-        val n = answers.size.coerceAtLeast(1)
-        val sortedVals = answers.entries.sortedBy { it.key }.map { it.value }
-        val sumAdditions = sortedVals.sum()
-        val meanPerf = sumAdditions.toDouble() / n
-        val maxInterval = sortedVals.maxOrNull() ?: 0
-        val minInterval = sortedVals.minOrNull() ?: 0
-        val maxIdx = sortedVals.indexOf(maxInterval) + 1
-        val minIdx = sortedVals.indexOf(minInterval) + 1
+    private fun enrichPauliDetailed(answers: Map<Int, Int>): EnrichedScoringOutcome {
+        val cols = answers.keys.filter { it in 0..99 }.sorted()
+        if (cols.isEmpty()) {
+            return EnrichedScoringOutcome(
+                scores = emptyList(),
+                interpretation = "Tes Pauli belum memiliki data interval yang tersimpan.",
+                scoringStatus = InstrumentImplementationStatus.RAW_SCORE_ONLY,
+                validityStatus = AssessmentValidityStatus.INVALID,
+                validityWarnings = listOf("Belum ada interval Pauli yang tersimpan."),
+                normReference = PsychometricInstrumentRegistry.specFor("pauli").normStatus
+            )
+        }
 
-        val avDev = sortedVals.map { kotlin.math.abs(it - meanPerf) }.average()
+        val intervalVals = cols.map { answers[it] ?: 0 }
+        val errors = cols.sumOf { answers[100 + it] ?: 0 }
+        val skips = cols.sumOf { answers[200 + it] ?: 0 }
+        val n = cols.size
+        val sumAdditions = intervalVals.sum()
+        val meanPerf = sumAdditions.toDouble() / n
+        val maxInterval = intervalVals.maxOrNull() ?: 0
+        val minInterval = intervalVals.minOrNull() ?: 0
+        val maxIdx = intervalVals.indexOf(maxInterval) + 1
+        val minIdx = intervalVals.indexOf(minInterval) + 1
+        val avDev = intervalVals.map { kotlin.math.abs(it - meanPerf) }.average()
 
         val third = (n / 3).coerceAtLeast(1)
-        val earlyMean = sortedVals.take(third).average()
-        val lateMean = sortedVals.takeLast(third).average()
-        val curveTrend = when {
-            lateMean > earlyMean + 1.0 -> "Meningkat (Warm-up positif, daya tahan prima)"
-            lateMean < earlyMean - 1.0 -> "Menurun (Terindikasi kelelahan kerja / fatigue)"
-            else -> "Stabil / Konsisten (Ritme kerja terpelihara dengan baik)"
+        val earlyMean = intervalVals.take(third).average()
+        val lateMean = intervalVals.takeLast(third).average()
+
+        val observations = cols.mapIndexed { idx, col ->
+            val err = answers[100 + col] ?: 0
+            val skip = answers[200 + col] ?: 0
+            AssessmentObservation(
+                key = "pauli_interval_${idx + 1}",
+                label = "Interval ${col + 1}",
+                value = intervalVals[idx].toString(),
+                orderIndex = col + 1,
+                tags = listOf("err=$err", "skip=$skip")
+            )
         }
 
         val scores = listOf(
             AssessmentScore(
-                label = "Hasil Kerja Total (Jumlah)",
+                label = "Total Penjumlahan",
                 value = sumAdditions.toDouble(),
                 minimum = 0.0,
-                maximum = 2000.0,
-                meaning = "Total penjumlahan yang diselesaikan: $sumAdditions dalam $n interval."
+                maximum = 2500.0,
+                meaning = "Total penjumlahan valid dalam $n interval."
             ),
             AssessmentScore(
-                label = "Kecepatan Rata-rata per Interval",
+                label = "Rerata per Interval",
                 value = meanPerf,
                 minimum = 0.0,
-                maximum = 50.0,
-                meaning = "Rerata: ${String.format(Locale.US, "%.1f", meanPerf)} penjumlahan per interval waktu."
+                maximum = 100.0,
+                meaning = "Rerata: ${String.format(Locale.US, "%.2f", meanPerf)} penjumlahan per interval."
             ),
             AssessmentScore(
-                label = "Puncak Prestasi Kerja (Peak)",
+                label = "Puncak Interval",
                 value = maxInterval.toDouble(),
                 minimum = 0.0,
-                maximum = 60.0,
-                meaning = "Puncak output $maxInterval penjumlahan dicapai pada interval ke-$maxIdx (Palung: $minInterval pada interval ke-$minIdx)."
+                maximum = 100.0,
+                meaning = "Puncak $maxInterval pada interval ke-$maxIdx (terendah $minInterval pada interval ke-$minIdx)."
             ),
             AssessmentScore(
-                label = "Keajegan Kerja (Deviasi Rata-rata)",
+                label = "Simpangan Deviasi",
                 value = avDev,
                 minimum = 0.0,
-                maximum = 15.0,
-                meaning = "Deviasi rerata: ${String.format(Locale.US, "%.2f", avDev)}. Nilai lebih kecil menunjukkan kestabilan emosi dan ritme."
+                maximum = 20.0,
+                meaning = "Deviasi rerata antarinterval: ${String.format(Locale.US, "%.2f", avDev)}."
             ),
             AssessmentScore(
-                label = "Tren Kurva Kerja",
-                value = if (lateMean >= earlyMean) 1.0 else 0.0,
+                label = "Total Salah & Lewatan",
+                value = (errors + skips).toDouble(),
                 minimum = 0.0,
-                maximum = 1.0,
-                meaning = "$curveTrend (Fase awal: ${String.format(Locale.US, "%.1f", earlyMean)} vs Fase akhir: ${String.format(Locale.US, "%.1f", lateMean)})."
+                maximum = 200.0,
+                meaning = "Salah: $errors, Terlewati: $skips (tidak dihitung sebagai interval kerja)."
             )
         )
 
-        val interpretation = "Evaluasi tes sikap kerja Pauli ($n interval kerja dari atas ke bawah) menunjukkan: " +
-            "Total produktivitas kerja sebanyak $sumAdditions penjumlahan dengan rerata kecepatan ${String.format(Locale.US, "%.1f", meanPerf)} per interval. " +
-            "Puncak performa ($maxInterval penjumlahan) dicapai pada interval ke-$maxIdx. " +
-            "Indeks keajegan kerja (deviasi rerata ${String.format(Locale.US, "%.2f", avDev)}) mencerminkan konsistensi kemauan (willpower). " +
-            "Dinamika kurva kerja menunjukkan pola $curveTrend. " +
-            "Profil ini mengindikasikan kapasitas energi kerja, ketahanan terhadap kelelahan monotonik, dan pengendalian diri di bawah tekanan berkelanjutan."
+        val interpretation = "Rekap kuantitatif Tes Pauli ($n interval kerja murni): " +
+            "Total Penjumlahan = $sumAdditions, Rerata/interval = ${String.format(Locale.US, "%.2f", meanPerf)}, " +
+            "Puncak = $maxInterval (interval ke-$maxIdx), Terendah = $minInterval (interval ke-$minIdx), " +
+            "Deviasi rerata = ${String.format(Locale.US, "%.2f", avDev)}, Salah = $errors, Lewatan = $skips. " +
+            "Perbandingan rerata sepertiga awal (${String.format(Locale.US, "%.1f", earlyMean)}) ke sepertiga akhir " +
+            "(${String.format(Locale.US, "%.1f", lateMean)}) ditampilkan sebagai tren deskriptif."
 
-        return scores to interpretation
+        return outcomeRaw("pauli", scores to interpretation, observations = observations)
     }
 
     private fun enrichPersonalityTest(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
         val pYes = setOf(10, 14, 22, 31, 39)
         val pNo = setOf(2, 6, 18, 26, 28, 35, 43)
-
         val eYes = setOf(3, 7, 11, 15, 19, 23, 32, 36, 44, 48)
         val eNo = setOf(27, 41)
-
         val nYes = setOf(1, 5, 9, 13, 17, 21, 25, 30, 34, 38, 42, 46)
-
         val lYes = setOf(4, 16, 45)
         val lNo = setOf(8, 12, 20, 24, 29, 33, 37, 40, 47)
 
@@ -2556,8 +2265,7 @@ object AssessmentEnrichers {
         var lScore = 0
 
         for (itemNum in 1..48) {
-            val idx = itemNum - 1
-            val ans = answers[idx] ?: continue
+            val ans = answers[itemNum - 1] ?: continue
             val isYes = (ans == 0)
             val isNo = (ans == 1)
 
@@ -2567,175 +2275,82 @@ object AssessmentEnrichers {
             if ((itemNum in lYes && isYes) || (itemNum in lNo && isNo)) lScore++
         }
 
-        val lieWarning = if (lScore >= 7) {
-            " ⚠️ PERINGATAN VALIDITAS: Skor Lie Scale tinggi ($lScore/12) mengindikasikan kecenderungan defensif / faking good (menampilkan citra diri sosial ideal)."
+        val lieNote = if (lScore >= 7) {
+            " Catatan validitas: Skor L ($lScore/12) tinggi; tinjau kemungkinan respons defensif."
         } else {
             ""
         }
 
-        val temperament = when {
-            eScore >= 6 && nScore < 6 -> "Sanguinis (Stabil Ekstrovert: Ramah, terbuka, optimis, mudah beradaptasi)"
-            eScore >= 6 && nScore >= 6 -> "Koleris (Labil Ekstrovert: Berenergi tinggi, asertif, reaktif terhadap stres)"
-            eScore < 6 && nScore >= 6 -> "Melankolis (Labil Introvert: Sensitif, mendalam, cemas, penuh kehati-hatian)"
-            else -> "Plegmatis (Stabil Introvert: Tenang, terkontrol, damai, konsisten)"
-        }
-
         val scores = listOf(
-            AssessmentScore(
-                label = "Tipe Temperamen: ${temperament.split(" (")[0]}",
-                value = eScore.toDouble(),
-                minimum = 0.0,
-                maximum = 12.0,
-                meaning = temperament
-            ),
             AssessmentScore(
                 label = "Extraversion (E)",
                 value = eScore.toDouble(),
                 minimum = 0.0,
                 maximum = 12.0,
-                meaning = "Skor: $eScore/12. " + if (eScore >= 6) "Tinggi (Sosiabel, aktif, mencari stimulasi sosial)" else "Rendah (Introver, reflektif, menyendiri)"
+                meaning = "Skor mentah E: $eScore/12 (EPQ-RS 48-butir; memerlukan validasi norma lokal)."
             ),
             AssessmentScore(
                 label = "Neuroticism (N)",
                 value = nScore.toDouble(),
                 minimum = 0.0,
                 maximum = 12.0,
-                meaning = "Skor: $nScore/12. " + if (nScore >= 6) "Tinggi (Reaktivitas emosional tinggi, mudah cemas)" else "Rendah (Stabilitas emosi baik, tenang menghadapi tekanan)"
+                meaning = "Skor mentah N: $nScore/12."
             ),
             AssessmentScore(
                 label = "Psychoticism (P)",
                 value = pScore.toDouble(),
                 minimum = 0.0,
                 maximum = 12.0,
-                meaning = "Skor: $pScore/12. " + if (pScore >= 4) "Tinggi (Tough-mindedness, mandiri, non-konformis)" else "Rendah (Konformis sosial, hangat, berempati)"
+                meaning = "Skor mentah P: $pScore/12."
             ),
             AssessmentScore(
-                label = "Lie Scale / Kejujuran (L)",
+                label = "Lie Scale (L)",
                 value = lScore.toDouble(),
                 minimum = 0.0,
                 maximum = 12.0,
-                meaning = "Skor: $lScore/12. Skala konformitas sosial & kejujuran respons.$lieWarning"
+                meaning = "Skor mentah L: $lScore/12.$lieNote"
             )
         )
 
-        val interpretation = "Berdasarkan inventori kepribadian EPQ-R (Eysenck Personality Questionnaire – Revised 48 butir), " +
-            "profil kepribadian Anda terpetakan pada tipe temperamen $temperament. " +
-            "Dimensi Extraversion (E) bernilai $eScore/12, Neuroticism (N) bernilai $nScore/12, dan Psychoticism (P) bernilai $pScore/12. " +
-            "Tingkat kejujuran/desirabilitas sosial (L) adalah $lScore/12.$lieWarning " +
-            "Hasil ini membantu memahami pola regulasi emosi dasar, respons terhadap stresor lingkungan, dan dinamika interaksi sosial."
+        val interpretation = "Skor mentah kandidat EPQ-RS 48-butir (${answeredSummary(answers.size, 48)}): " +
+            "E=$eScore/12, N=$nScore/12, P=$pScore/12, L=$lScore/12.$lieNote " +
+            "Klasifikasi temperamen dan perbandingan normatif memerlukan tabel norma tervalidasi serta verifikasi item lokal."
 
         return scores to interpretation
     }
 
-
-    @Suppress("LongMethod", "CyclomaticComplexMethod")
-    private fun enrichWartegg(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
-        val completedBoxes = (0 until 8).count { answers.containsKey(it) }
-        val orderList = mutableListOf<Pair<Int, Int>>() // box to order
-        val evalMap = mutableMapOf<Int, Int>() // box to eval (0: +, 1: -, 2: M, 3: S)
-
-        for (b in 0 until 8) {
-            val v = answers[b] ?: 0
-            val order = if (v >= 10) v / 10 else (b + 1)
-            val eval = if (v >= 10) v % 10 else v
-            orderList.add(b to order)
-            evalMap[b] = eval
+    private fun enrichWarteggDetailed(answers: Map<Int, Int>): EnrichedScoringOutcome {
+        val drafts = (0 until 8).map { boxIdx ->
+            val raw = answers[boxIdx]
+            if (raw == null) {
+                WarteggBoxDraft(boxNumber = boxIdx + 1)
+            } else {
+                val drawOrder = if (raw >= 10) (raw / 10).takeIf { it in 1..8 } else null
+                val evalCode = if (raw >= 10) raw % 10 else raw
+                val valence = when (evalCode) {
+                    0 -> "+"
+                    1 -> "-"
+                    else -> null
+                }
+                val difficulty = when (evalCode) {
+                    2 -> "M"
+                    3 -> "S"
+                    else -> null
+                }
+                WarteggBoxDraft(
+                    boxNumber = boxIdx + 1,
+                    title = if (valence == null && difficulty == null) "Input Kotak ${boxIdx + 1}" else "",
+                    drawOrder = drawOrder,
+                    valence = valence,
+                    difficulty = difficulty
+                )
+            }
         }
-
-        val sortedByOrder = orderList.sortedBy { it.second }
-        val isSequential = sortedByOrder.map { it.first } == (0 until 8).toList()
-
-        // 4 Fungsi Kinget:
-        // Emosi: Kotak 2 (kehangatan sosial) & Kotak 7 (sensitivitas perasaan)
-        // Imajinasi: Kotak 1 (ego/pemusatan diri) & Kotak 8 (perlindungan/rasa aman)
-        // Intelektual: Kotak 3 (ambisi berprestasi) & Kotak 6 (sintesis logis)
-        // Aktivitas: Kotak 4 (pengendalian kecemasan/beban) & Kotak 5 (dinamisme bertindak)
-        fun calculateFunctionScore(boxA: Int, boxB: Int): Double {
-            var score = 5.0
-            val orderA = orderList.firstOrNull { it.first == boxA }?.second ?: 4
-            val orderB = orderList.firstOrNull { it.first == boxB }?.second ?: 5
-            val avgOrder = (orderA + orderB) / 2.0
-            if (avgOrder <= 3.5) score += 2.0 else if (avgOrder >= 5.5) score -= 1.0
-            val evalA = evalMap[boxA] ?: -1
-            val evalB = evalMap[boxB] ?: -1
-            if (evalA == 0 || evalB == 0) score += 2.0 // Disukai (+)
-            if (evalA == 1 || evalB == 1) score -= 2.0 // Kurang disukai (-)
-            if (evalA == 2 || evalB == 2) score += 1.0 // Mudah (M)
-            if (evalA == 3 || evalB == 3) score -= 1.0 // Sukar (S)
-            return score.coerceIn(1.0, 10.0)
-        }
-
-        val emosiScore = calculateFunctionScore(1, 6)
-        val imajinasiScore = calculateFunctionScore(0, 7)
-        val intelektualScore = calculateFunctionScore(2, 5)
-        val aktivitasScore = calculateFunctionScore(3, 4)
-        val orderRegularity = if (isSequential) 10.0 else 7.5
-
-        val likedBox = evalMap.entries.firstOrNull { it.value == 0 }?.key?.plus(1) ?: 1
-        val dislikedBox = evalMap.entries.firstOrNull { it.value == 1 }?.key?.plus(1) ?: 4
-        val easiestBox = evalMap.entries.firstOrNull { it.value == 2 }?.key?.plus(1) ?: 2
-        val hardestBox = evalMap.entries.firstOrNull { it.value == 3 }?.key?.plus(1) ?: 5
-
-        val scores = listOf(
-            AssessmentScore(
-                label = "Fungsi Emosi (Kotak 2 & 7)",
-                value = emosiScore,
-                minimum = 1.0,
-                maximum = 10.0,
-                meaning = "Skor: ${emosiScore.toInt()}/10. Sensitivitas afektif, kehangatan hubungan antarpribadi, dan empati."
-            ),
-            AssessmentScore(
-                label = "Fungsi Imajinasi (Kotak 1 & 8)",
-                value = imajinasiScore,
-                minimum = 1.0,
-                maximum = 10.0,
-                meaning = "Skor: ${imajinasiScore.toInt()}/10. Kekuatan ego, integrasi diri, kreativitas, dan rasa aman."
-            ),
-            AssessmentScore(
-                label = "Fungsi Intelektual (Kotak 3 & 6)",
-                value = intelektualScore,
-                minimum = 1.0,
-                maximum = 10.0,
-                meaning = "Skor: ${intelektualScore.toInt()}/10. Ambisi pencapaian, keteraturan berpikir, dan kemampuan analisis-sintesis logis."
-            ),
-            AssessmentScore(
-                label = "Fungsi Aktivitas (Kotak 4 & 5)",
-                value = aktivitasScore,
-                minimum = 1.0,
-                maximum = 10.0,
-                meaning = "Skor: ${aktivitasScore.toInt()}/10. Dinamisme tindakan, penyelesaian rintangan, dan regulasi ketahanan stres."
-            ),
-            AssessmentScore(
-                label = "Keteraturan Urutan Kerja",
-                value = orderRegularity,
-                minimum = 1.0,
-                maximum = 10.0,
-                meaning = if (isSequential) "Urutan pengerjaan sistematis dan teratur (1 s.d. 8)." else "Urutan pengerjaan dinamis dan fleksibel (kombinatif)."
-            ),
-            AssessmentScore(
-                label = "Kotak Diselesaikan",
-                value = completedBoxes.toDouble(),
-                minimum = 1.0,
-                maximum = 8.0,
-                meaning = "$completedBoxes dari 8 kotak stimulus telah digambar."
-            )
-        )
-
-        val orderStr = sortedByOrder.joinToString(" → ") { "K${it.first + 1}" }
-        val interpretation = "Berdasarkan evaluasi tes proyektif Wartegg (Marian Kinget & Ehrig Wartegg), " +
-            "urutan pengerjaan kotak adalah $orderStr (${if (isSequential) "terstruktur & metodis" else "fleksibel & intuitif"}). " +
-            "Gambar yang paling disukai (+) adalah Kotak $likedBox, sedangkan yang paling dihindari (-) adalah Kotak $dislikedBox. " +
-            "Kotak termudah (M) adalah Kotak $easiestBox, dan yang paling menantang (S) adalah Kotak $hardestBox. " +
-            "Profil 4 fungsi kepribadian menunjukkan skor Emosi: ${emosiScore.toInt()}/10, Imajinasi: ${imajinasiScore.toInt()}/10, " +
-            "Intelektual: ${intelektualScore.toInt()}/10, dan Aktivitas: ${aktivitasScore.toInt()}/10. " +
-            "Kombinasi ini mengindikasikan integrasi diri yang adaptif dalam menghadapi dinamika tugas dan relasi sosial."
-
-        return scores to interpretation
+        return scoreWarteggFromDrafts(drafts)
     }
 
     @Suppress("LongMethod", "CyclomaticComplexMethod")
-    private fun enrichRmib(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
-        val catCodes = listOf("OUT", "ME", "COMP", "SCI", "PRS", "AESTH", "LIT", "MUS", "S.S", "CLER", "PRAC", "MED")
+    private fun enrichRmibDetailed(answers: Map<Int, Int>): EnrichedScoringOutcome {
         val catNames = listOf(
             "Outdoor (OUT)", "Mechanical (ME)", "Computational (COMP)", "Scientific (SCI)",
             "Personal Contact (PRS)", "Aesthetic (AESTH)", "Literary (LIT)", "Musical (MUS)",
@@ -2743,26 +2358,33 @@ object AssessmentEnrichers {
         )
         val catMeanings = listOf(
             "Minat aktivitas lapangan, alam terbuka, pertanian, dan lingkungan.",
-            "Minat pada permesinan, keteknikan, instalasi alat mekanis, dan rancang bangun.",
-            "Minat pada perhitungan angka, akuntansi, perpajakan, dan analisis finansial.",
+            "Minat pada permesinan, keteknikan, dan rancang bangun.",
+            "Minat pada perhitungan angka, akuntansi, dan analisis finansial.",
             "Minat pada riset sains, eksperimen laboratorium, biologi, dan kimia.",
             "Minat pada relasi interpersonal, persuasi, komunikasi, dan pemasaran.",
             "Minat pada seni rupa, arsitektur, desain grafis, dan estetika visual.",
-            "Minat pada sastra, membaca, menulis artikel, dan dunia kepustakaan.",
-            "Minat pada musik, alat instrumen, vokal, dan komposisi nada.",
+            "Minat pada sastra, membaca, menulis artikel, dan kepustakaan.",
+            "Minat pada musik, instrumen, vokal, dan komposisi nada.",
             "Minat pada bimbingan kemanusiaan, pendidikan, dan pelayanan sosial.",
-            "Minat pada ketatausahaan, pengarsipan rutin, dan administrasi kantor.",
-            "Minat pada keterampilan tangan praktis, mebel, perkayuan, dan reparasi.",
-            "Minat pada kedokteran, pengobatan medis, farmasi, dan perawatan kesehatan."
+            "Minat pada ketatausahaan, pengarsipan, dan administrasi kantor.",
+            "Minat pada keterampilan tangan praktis dan reparasi.",
+            "Minat pada kedokteran, farmasi, dan perawatan kesehatan."
         )
 
-        val catScores = IntArray(12) { 0 }
+        val completeGroups = (0 until 9).count { g ->
+            val groupRanks = (0 until 12).mapNotNull { pos -> answers[g * 12 + pos] }.filter { it in 1..12 }
+            groupRanks.toSet().size == 12
+        }
+
+        val catScores = IntArray(12)
         for (k in 0 until 12) {
             var sum = 0
             for (g in 0 until 9) {
                 val p = (k - g).mod(12)
-                val rank = answers[g * 12 + p] ?: (p + 1)
-                sum += rank
+                val rank = answers[g * 12 + p]?.takeIf { it in 1..12 }
+                if (rank != null) {
+                    sum += rank
+                }
             }
             catScores[k] = sum
         }
@@ -2779,40 +2401,49 @@ object AssessmentEnrichers {
                 AssessmentScore(
                     label = "${catNames[k]} [Rank $r]",
                     value = catScores[k].toDouble(),
-                    minimum = 9.0,
+                    minimum = 0.0,
                     maximum = 108.0,
-                    meaning = "Skor mentah: ${catScores[k]} (Peringkat $r dari 12). ${catMeanings[k]}"
+                    meaning = "Skor mentah: ${catScores[k]} (peringkat relatif #$r; skor lebih kecil = minat lebih tinggi). ${catMeanings[k]}"
                 )
             )
         }
         scores.add(
             AssessmentScore(
-                label = "Total Invarian RMIB",
+                label = "Total Skor RMIB",
                 value = totalSum.toDouble(),
-                minimum = 702.0,
+                minimum = 0.0,
                 maximum = 702.0,
-                meaning = "Total invarian skor seluruh matriks 9 kelompok x 12 profesi = $totalSum (Invarian baku 702)."
+                meaning = "Total matriks: $totalSum (invarian lengkap 9 kelompok = 702; kelompok lengkap: $completeGroups/9)."
             )
         )
+
+        val warnings = if (completeGroups < 9) {
+            listOf("Baru $completeGroups/9 kelompok RMIB terisi lengkap (peringkat unik 1–12 tidak diisi otomatis).")
+        } else {
+            emptyList()
+        }
+        val validity = if (completeGroups == 9) AssessmentValidityStatus.VALID else AssessmentValidityStatus.INVALID
 
         val top1 = sortedIndices[0]
         val top2 = sortedIndices[1]
         val top3 = sortedIndices[2]
         val bot1 = sortedIndices[11]
+        val incompleteNote = if (completeGroups < 9) {
+            " Peringatan: baru $completeGroups/9 kelompok lengkap sehingga peringkat belum mencerminkan matriks utuh."
+        } else {
+            ""
+        }
 
-        val interpretation = "Berdasarkan inventori minat pekerjaan Rothwell–Miller Interest Blank (RMIB) matriks tangga 9 kelompok pekerjaan (total invarian: $totalSum/702), " +
-            "tiga kategori minat vokasi paling dominan Anda adalah: " +
-            "1. ${catNames[top1]} (Skor: ${catScores[top1]}) — ${catMeanings[top1]} " +
-            "2. ${catNames[top2]} (Skor: ${catScores[top2]}) — ${catMeanings[top2]} " +
-            "3. ${catNames[top3]} (Skor: ${catScores[top3]}) — ${catMeanings[top3]} " +
-            "Kategori yang paling tidak diminati adalah ${catNames[bot1]} (Skor: ${catScores[bot1]}). " +
-            "Profil minat ini sangat relevan untuk dieksplorasi lebih mendalam bersama AI Counselor guna perencanaan karier dan studi lanjutan."
+        val interpretation = "Profil Rothwell–Miller Interest Blank (RMIB; $completeGroups/9 kelompok lengkap, total=$totalSum/702): " +
+            "Minat teratas (skor terendah): 1) ${catNames[top1]} (${catScores[top1]}), " +
+            "2) ${catNames[top2]} (${catScores[top2]}), 3) ${catNames[top3]} (${catScores[top3]}). " +
+            "Paling kurang diminati: ${catNames[bot1]} (${catScores[bot1]}).$incompleteNote"
 
-        return scores to interpretation
+        return outcomeRaw("rmib", scores to interpretation, warnings = warnings, validity = validity)
     }
 
-    @Suppress("LongMethod", "CyclomaticComplexMethod")
-    private fun enrichVrt(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
+    @Suppress("LongMethod")
+    private fun enrichVrtDetailed(answers: Map<Int, Int>): EnrichedScoringOutcome {
         val subtestNames = listOf(
             "Subtes 1: Absurdities",
             "Subtes 2: Intruders",
@@ -2823,36 +2454,26 @@ object AssessmentEnrichers {
             "Subtes 7: Classifications"
         )
         val subtestMeanings = listOf(
-            "Penalaran kritis menemukan keganjilan atau ketidaklogisan dalam pernyataan verbal.",
-            "Kemampuan diskriminasi semantik dan menemukan elemen yang tidak selaras.",
-            "Penalaran analogi verbal dan pembentukan relasi fungsional antar konsep.",
-            "Daya analisis membedakan dua konsep yang tampak serupa secara esensial.",
-            "Pemahaman makna kiasan, metafora, dan interpretasi bahasa non-literal.",
-            "Logika deduktif dalam menganalisis hubungan silsilah kekerabatan.",
-            "Kemampuan kategorisasi abstrak dan pengelompokan konsep superordinat."
+            "Penalaran kritis menemukan ketidaksesuaian logis verbal.",
+            "Diskriminasi semantik elemen yang tidak selaras.",
+            "Analogi verbal dan relasi fungsional konsep.",
+            "Pembedaan esensial dua konsep verbal.",
+            "Pemahaman kiasan dan makna non-literal.",
+            "Logika deduktif hubungan kekerabatan.",
+            "Kategorisasi abstrak dan konsep superordinat."
         )
 
-        val subtestScores = mutableListOf<Int>()
-        for (s in 0 until 7) {
-            val sScore = (s * 7 until (s + 1) * 7).sumOf { i ->
-                val choice = answers[i] ?: 2
-                when (choice) {
-                    0 -> 2 // Tepat & Lengkap
-                    1 -> 1 // Sebagian / Konkret
-                    else -> 0 // Kurang Tepat
+        val answeredCount = answers.keys.count { it in 0 until 49 }
+        val subtestScores = (0 until 7).map { s ->
+            (s * 7 until (s + 1) * 7).sumOf { i ->
+                when (answers[i]) {
+                    0 -> 2
+                    1 -> 1
+                    else -> 0
                 }
             }
-            subtestScores.add(sScore)
         }
-
         val totalScore = subtestScores.sum()
-        val level = when {
-            totalScore >= 85 -> "Sangat Tinggi (Superior Verbal Reasoning)"
-            totalScore >= 70 -> "Tinggi (Good Analytical Verbal Reasoning)"
-            totalScore >= 50 -> "Cukup / Rata-rata (Average Verbal Reasoning)"
-            totalScore >= 30 -> "Rendah (Below Average Verbal Reasoning)"
-            else -> "Sangat Rendah (Borderline Verbal Reasoning)"
-        }
 
         val scores = mutableListOf<AssessmentScore>()
         for (s in 0 until 7) {
@@ -2862,7 +2483,7 @@ object AssessmentEnrichers {
                     value = subtestScores[s].toDouble(),
                     minimum = 0.0,
                     maximum = 14.0,
-                    meaning = "Skor: ${subtestScores[s]}/14. ${subtestMeanings[s]}"
+                    meaning = "Skor mentah: ${subtestScores[s]}/14. ${subtestMeanings[s]}"
                 )
             )
         }
@@ -2872,88 +2493,55 @@ object AssessmentEnrichers {
                 value = totalScore.toDouble(),
                 minimum = 0.0,
                 maximum = 98.0,
-                meaning = "Skor total: $totalScore/98. Kategori: $level."
+                meaning = "Total skor mentah: $totalScore/98 ($answeredCount/49 butir dijawab)."
             )
         )
 
-        val interpretation = "Berdasarkan Verbal Reasoning Test (VRT 49 butir; Basagni et al., 2017), " +
-            "kemampuan penalaran verbal Anda berada pada tingkat $level dengan skor total $totalScore/98. " +
-            "Rincian per subtes: Absurdities ${subtestScores[0]}/14, Intruders ${subtestScores[1]}/14, " +
-            "Relationships ${subtestScores[2]}/14, Differences ${subtestScores[3]}/14, " +
-            "Idioms ${subtestScores[4]}/14, Family ${subtestScores[5]}/14, dan Classifications ${subtestScores[6]}/14. " +
-            "Hasil ini menunjukkan kapasitas pemahaman konseptual, fleksibilitas semantik, dan penalaran logis berbasis bahasa."
-
-        return scores to interpretation
-    }
-
-    @Suppress("LongMethod", "CyclomaticComplexMethod")
-    private fun enrichMseai(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
-        val domainNames = listOf(
-            "Kesadaran Diri (Self-Awareness)",
-            "Pengendalian Emosi (Emotional Regulation)",
-            "Empati Sosial (Social Empathy)",
-            "Relasi Interpersonal (Interpersonal Relations)"
-        )
-        val domainMeanings = listOf(
-            "Kemampuan mengenali emosi, kelebihan, keterbatasan, dan motif pribadi secara objektif.",
-            "Kemampuan mengelola stres, impulsivitas, dan ketenangan saat menghadapi tekanan.",
-            "Kepekaan terhadap perasaan, kebutuhan, dan sudut pandang orang lain di lingkungan sosial.",
-            "Keterampilan membangun komunikasi terbuka, kerja sama tim, dan resolusi konflik secara sehat."
-        )
-
-        val domainScores = mutableListOf<Int>()
-        for (d in 0 until 4) {
-            val dScore = (d * 6 until (d + 1) * 6).sumOf { i ->
-                val choice = answers[i] ?: 2
-                choice + 1 // choices 0..4 map to values 1..5
+        val warnings = buildList {
+            add("Sumber protokol & norma VRT masih berstatus SOURCE_INCOMPLETE dan belum terverifikasi norma pembanding lokal.")
+            if (answeredCount < 49) {
+                add("Baru $answeredCount dari 49 butir VRT dijawab.")
             }
-            domainScores.add(dScore)
         }
+        val validity = if (answeredCount < 49) AssessmentValidityStatus.INVALID else AssessmentValidityStatus.QUESTIONABLE
+        val interpretation = "Skor Mentah Verbal Reasoning Test (VRT; $answeredCount/49 butir dijawab): Total = $totalScore/98 " +
+            "(Subtes 1–7: ${subtestScores.joinToString("/")}). Kategori normatif tidak diterapkan tanpa verifikasi manual VRT lengkap."
 
-        val totalScore = domainScores.sum()
-        val level = when {
-            totalScore >= 100 -> "Sangat Baik (Tingkat Adaptasi & Kematangan Emosional Unggul)"
-            totalScore >= 80 -> "Baik (Adaptasi Emosional & Sosial Stabil)"
-            totalScore >= 60 -> "Cukup (Adaptasi Moderat, Terdapat Area yang Perlu Penguatan)"
-            else -> "Kurang (Memerlukan Dukungan Konseling & Penguatan Keterampilan Regulasi Emosi)"
-        }
-
-        val scores = mutableListOf<AssessmentScore>()
-        for (d in 0 until 4) {
-            scores.add(
-                AssessmentScore(
-                    label = domainNames[d],
-                    value = domainScores[d].toDouble(),
-                    minimum = 6.0,
-                    maximum = 30.0,
-                    meaning = "Skor: ${domainScores[d]}/30. ${domainMeanings[d]}"
-                )
-            )
-        }
-        scores.add(
-            AssessmentScore(
-                label = "Total Skor Adaptasi MSEAI",
-                value = totalScore.toDouble(),
-                minimum = 24.0,
-                maximum = 120.0,
-                meaning = "Skor total: $totalScore/120. Status: $level."
-            )
+        return EnrichedScoringOutcome(
+            scores = scores,
+            interpretation = interpretation,
+            scoringStatus = InstrumentImplementationStatus.SOURCE_INCOMPLETE,
+            validityStatus = validity,
+            validityWarnings = warnings,
+            normReference = PsychometricInstrumentRegistry.specFor("vrt").normStatus
         )
-
-        val interpretation = "Berdasarkan Multidimensional Social & Emotional Adjustment Inventory (MSEAI 24 butir), " +
-            "profil kematangan adaptasi sosial dan emosional Anda berada pada tingkat $level dengan skor total $totalScore/120. " +
-            "Rincian dimensi: Kesadaran Diri ${domainScores[0]}/30, Pengendalian Emosi ${domainScores[1]}/30, " +
-            "Empati Sosial ${domainScores[2]}/30, dan Relasi Interpersonal ${domainScores[3]}/30. " +
-            "Skor ini mencerminkan stabilitas emosi, keterampilan berinteraksi, dan kapasitas penyesuaian sosial yang konstruktif."
-
-        return scores to interpretation
     }
 
-
+    private fun enrichMseaiDetailed(answers: Map<Int, Int>, rawScores: List<AssessmentScore>): EnrichedScoringOutcome {
+        val total = rawScores.sumOf { it.value }
+        val maxTotal = rawScores.sumOf { it.maximum }.coerceAtLeast(24.0)
+        val totalScore = AssessmentScore(
+            label = "Total Skor Eksploratif MSEAI",
+            value = total,
+            minimum = rawScores.sumOf { it.minimum },
+            maximum = maxTotal,
+            meaning = "Akumulasi 4 domain (${answers.size}/24 butir dijawab); status eksploratif purwarupa."
+        )
+        val allScores = listOf(totalScore) + rawScores
+        val scaleSummary = rawScores.joinToString("; ") { "${it.label}=${it.displayValue()}/${it.maximum.toInt()}" }
+        return EnrichedScoringOutcome(
+            scores = allScores,
+            interpretation = "Skor Eksploratif MSEAI (${answers.size}/24 butir; Total=${totalScore.displayValue()}/${maxTotal.toInt()}): " +
+                "$scaleSummary. Hasil dihitung deterministik untuk simulasi & refleksi purwarupa penelitian; manual resmi & norma eksternal belum tersedia.",
+            scoringStatus = InstrumentImplementationStatus.EXPLORATORY,
+            validityStatus = if (answers.size >= 24) AssessmentValidityStatus.VALID else AssessmentValidityStatus.QUESTIONABLE,
+            validityWarnings = if (answers.size < 24) listOf("Baru ${answers.size}/24 butir MSEAI dijawab.") else emptyList(),
+            normReference = PsychometricInstrumentRegistry.specFor("mseai").normStatus
+        )
+    }
 
     @Suppress("LongMethod", "CyclomaticComplexMethod")
-    private fun enrichEpps(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
-        val needCodes = listOf("ach", "def", "ord", "exh", "aut", "aff", "int", "suc", "dom", "aba", "nur", "chg", "end", "het", "agg")
+    private fun enrichEppsDetailed(answers: Map<Int, Int>): EnrichedScoringOutcome {
         val needLabels = listOf(
             "Achievement (ach) · Dorongan Berprestasi",
             "Deference (def) · Kepatuhan Otoritas & Aturan",
@@ -2972,32 +2560,34 @@ object AssessmentEnrichers {
             "Aggression (agg) · Asertivitas & Kritik Terbuka"
         )
         val needDescriptions = listOf(
-            "Dorongan menyelesaikan tugas menantang dan mencapai keunggulan.",
-            "Kesediaan mengikuti arahan, menghormati tradisi, dan menerima saran figur otoritas.",
-            "Kecenderungan bekerja secara terorganisir, sistematis, dan terencana.",
-            "Keinginan menjadi pusat perhatian dan menceritakan pencapaian pribadi.",
-            "Kebutuhan bertindak mandiri, bebas mengambil keputusan tanpa keterikatan berlebih.",
-            "Keinginan menjalin ikatan persahabatan erat, hangat, dan setia kawan.",
-            "Kapasitas menyelami motif, perasaan, dan dinamika emosional diri maupun orang lain.",
-            "Kebutuhan memperoleh penerimaan afektif, dorongan, dan dukungan orang lain saat sulit.",
-            "Dorongan memimpin, mengarahkan kelompok, dan mengambil kendali situasi.",
-            "Kecenderungan intropeksi, mengalah demi keharmonisan, dan mengakui kesalahan.",
-            "Keinginan tulus menolong, merawat, dan berempati pada sesama yang kesusahan.",
-            "Kebutuhan akan pembaharuan, mencoba hal baru, dan menghindari rutinitas monoton.",
-            "Kegigihan menuntaskan pekerjaan hingga selesai tanpa mudah menyerah di tengah jalan.",
-            "Ketertarikan berinteraksi sosial, bekerja sama, dan membangun relasi dengan lawan jenis.",
-            "Keberanian mengemukakan kritik secara terbuka, asertif, atau menyerang pandangan yang berlawanan."
+            "Dorongan menyelesaikan tugas menantang.",
+            "Kesediaan mengikuti arahan dan aturan.",
+            "Kecenderungan bekerja secara sistematis dan terencana.",
+            "Keinginan menjadi pusat perhatian.",
+            "Kebutuhan bertindak mandiri dalam keputusan.",
+            "Keinginan menjalin persahabatan erat.",
+            "Minat memahami motif dan dinamika diri maupun orang lain.",
+            "Kebutuhan memperoleh dorongan dan dukungan sosial.",
+            "Dorongan mengarahkan dan memimpin kelompok.",
+            "Kecenderungan mengalah dan introspektif.",
+            "Keinginan menolong dan merawat sesama.",
+            "Kebutuhan variasi dan pengalaman baru.",
+            "Kegigihan menuntaskan tugas hingga selesai.",
+            "Ketertarikan interaksi sosial dengan lawan jenis.",
+            "Keberanian mengemukakan kritik atau sikap asertif terbuka."
         )
 
         val rScores = IntArray(15)
         val cScores = IntArray(15)
         val rawScores = IntArray(15)
+        var answeredPairs = 0
 
         for (r in 0 until 15) {
             for (c in 0 until 15) {
-                if (r == c) continue // Skip diagonal garis merah
+                if (r == c) continue
                 val qIndex = (r / 5) * 75 + c * 5 + (r % 5)
-                val ans = answers[qIndex] ?: 0
+                val ans = answers[qIndex] ?: continue
+                answeredPairs++
                 if (ans == 0) {
                     rScores[r]++
                 } else {
@@ -3010,7 +2600,6 @@ object AssessmentEnrichers {
             rawScores[k] = rScores[k] + cScores[k]
         }
 
-        // Konsistensi (CONS) - 15 pasangan item identik
         val consPairs = listOf(
             0 to 150, 6 to 156, 12 to 162, 18 to 168, 24 to 174,
             25 to 100, 31 to 106, 37 to 112, 43 to 118, 49 to 124,
@@ -3022,388 +2611,121 @@ object AssessmentEnrichers {
             a1 != null && a2 != null && a1 == a2
         }
 
-        val consValidity = when {
-            consScore >= 10 -> "Tinggi (Profil Sangat Valid & Konsisten)"
-            consScore in 7..9 -> "Sedang (Konsistensi Cukup / Ragu-ragu)"
-            else -> "Rendah (Pilihan Kurang Konsisten, Perlu Tinjauan)"
-        }
-
-        // Tabel Persentil Norma Dewasa/Mahasiswa Indonesia (Edwards EPPS)
-        val percentilesTable = arrayOf(
-            intArrayOf(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1),
-            intArrayOf(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1),
-            intArrayOf(1, 1, 3, 1, 1, 1, 1, 2, 1, 2, 1, 1, 1, 1, 1),
-            intArrayOf(1, 1, 6, 1, 1, 1, 1, 5, 1, 3, 1, 1, 3, 1, 2),
-            intArrayOf(1, 3, 9, 1, 1, 1, 1, 9, 1, 5, 2, 1, 6, 1, 3),
-            intArrayOf(1, 6, 14, 1, 2, 2, 1, 13, 2, 9, 3, 2, 10, 2, 6),
-            intArrayOf(1, 10, 19, 1, 3, 3, 4, 20, 3, 12, 6, 3, 13, 3, 9),
-            intArrayOf(2, 16, 27, 3, 6, 4, 5, 27, 4, 18, 10, 5, 18, 5, 13),
-            intArrayOf(4, 23, 36, 6, 11, 7, 9, 34, 5, 24, 13, 7, 24, 6, 17),
-            intArrayOf(7, 34, 46, 9, 15, 11, 13, 42, 8, 31, 18, 10, 29, 9, 24),
-            intArrayOf(10, 43, 54, 15, 22, 16, 17, 50, 9, 38, 24, 15, 37, 12, 32),
-            intArrayOf(16, 52, 63, 21, 38, 21, 19, 58, 13, 45, 31, 20, 44, 14, 40),
-            intArrayOf(22, 63, 71, 28, 34, 28, 25, 65, 17, 53, 7, 28, 51, 19, 47),
-            intArrayOf(30, 73, 78, 37, 43, 36, 32, 72, 21, 61, 46, 33, 57, 3, 57),
-            intArrayOf(40, 81, 84, 49, 52, 45, 39, 78, 27, 67, 55, 41, 64, 27, 65),
-            intArrayOf(50, 88, 88, 62, 61, 54, 45, 83, 32, 75, 63, 50, 69, 32, 72),
-            intArrayOf(58, 93, 92, 72, 68, 64, 51, 87, 38, 79, 70, 57, 75, 39, 77),
-            intArrayOf(66, 96, 95, 81, 76, 72, 57, 90, 45, 84, 75, 64, 79, 45, 84),
-            intArrayOf(74, 98, 96, 89, 82, 79, 64, 93, 54, 88, 82, 71, 85, 53, 88),
-            intArrayOf(83, 99, 97, 93, 86, 84, 72, 95, 63, 92, 86, 78, 89, 59, 92),
-            intArrayOf(86, 99, 99, 97, 91, 89, 78, 97, 73, 94, 90, 84, 92, 67, 95),
-            intArrayOf(91, 99, 99, 98, 94, 93, 84, 98, 79, 97, 94, 89, 94, 73, 97),
-            intArrayOf(95, 99, 99, 99, 96, 96, 89, 98, 85, 99, 96, 93, 96, 81, 98),
-            intArrayOf(98, 99, 99, 99, 98, 98, 93, 98, 91, 99, 98, 97, 98, 89, 99),
-            intArrayOf(99, 99, 99, 99, 99, 99, 95, 98, 94, 99, 99, 98, 99, 90, 99),
-            intArrayOf(99, 99, 99, 99, 99, 99, 97, 98, 98, 99, 99, 99, 99, 93, 99),
-            intArrayOf(99, 99, 99, 99, 99, 99, 99, 98, 99, 99, 99, 99, 99, 96, 99),
-            intArrayOf(99, 99, 99, 99, 99, 99, 99, 98, 99, 99, 99, 99, 99, 99, 99),
-            intArrayOf(99, 99, 99, 99, 99, 99, 99, 98, 99, 99, 99, 99, 99, 99, 99),
-        )
-
         val scores = mutableListOf<AssessmentScore>()
-        val topNeeds = mutableListOf<String>()
-        val lowNeeds = mutableListOf<String>()
-
         for (k in 0 until 15) {
             val rs = rawScores[k].coerceIn(0, 28)
-            val pct = percentilesTable[rs][k]
-            val category = when {
-                pct >= 85 -> "Sangat Tinggi"
-                pct >= 60 -> "Tinggi"
-                pct >= 40 -> "Rata-rata"
-                pct >= 16 -> "Rendah"
-                else -> "Sangat Rendah"
-            }
-            if (pct >= 85 || rs >= 18) topNeeds.add(needCodes[k].uppercase(Locale.ROOT))
-            if (pct <= 15 || rs <= 8) lowNeeds.add(needCodes[k].uppercase(Locale.ROOT))
-
             scores.add(
                 AssessmentScore(
                     label = needLabels[k],
                     value = rs.toDouble(),
                     minimum = 0.0,
                     maximum = 28.0,
-                    meaning = "Skor Mentah: $rs/28 (r=${rScores[k]}, c=${cScores[k]}). Persentil: $pct% ($category). ${needDescriptions[k]}"
+                    meaning = "Skor mentah: $rs/28 (r=${rScores[k]}, c=${cScores[k]}). ${needDescriptions[k]}"
                 )
             )
         }
-
         scores.add(
             AssessmentScore(
                 label = "Konsistensi Respons (CONS)",
                 value = consScore.toDouble(),
                 minimum = 0.0,
                 maximum = 15.0,
-                meaning = "Skor: $consScore/15. $consValidity."
+                meaning = "Skor konsistensi pasangan identik: $consScore/15 (referensi kelayakan umum >= 10)."
             )
         )
-
         val totalRaw = rawScores.sum()
         scores.add(
             AssessmentScore(
-                label = "Total Raw Score EPPS (Invarian 210)",
+                label = "Total Raw Score EPPS",
                 value = totalRaw.toDouble(),
-                minimum = 210.0,
+                minimum = 0.0,
                 maximum = 210.0,
-                meaning = "Total seluruh 15 need = $totalRaw/210 (Invarian matematis terpenuhi: ${totalRaw == 210})."
+                meaning = "Total seluruh 15 kebutuhan = $totalRaw/210 (pasangan utama terjawab: $answeredPairs/210)."
             )
         )
 
-        val topSummary = if (topNeeds.isNotEmpty()) topNeeds.joinToString(", ") else "Seimbang (Profil Rata-rata)"
-        val lowSummary = if (lowNeeds.isNotEmpty()) lowNeeds.joinToString(", ") else "Tidak ada yang ekstrem rendah"
-
-        val workEthic = "Orientasi Kerja: " + when {
-            rawScores[0] + rawScores[12] + rawScores[2] >= 48 -> "Tekun, berorientasi target tinggi, dan sangat terorganisir (ACH + END + ORD tinggi)."
-            rawScores[4] >= 18 -> "Sangat mandiri dan menyukai otonomi tinggi dalam menyelesaikan pekerjaan (AUT menonjol)."
-            else -> "Fleksibel dan mampu menyesuaikan ritme kerja dengan kebutuhan kelompok."
+        val warnings = buildList {
+            if (answeredPairs < 210) {
+                add("Protokol EPPS tidak lengkap ($answeredPairs/210 pasangan utama terjawab); total invarian 210 memerlukan kelengkapan penuh.")
+            }
+            if (consScore < 10) {
+                add("Skor Konsistensi (CONS) = $consScore/15 berada di bawah ambang >= 10; disarankan tinjauan kesungguhan pengerjaan.")
+            }
+        }
+        val validity = when {
+            answeredPairs < 210 -> AssessmentValidityStatus.INVALID
+            consScore < 10 -> AssessmentValidityStatus.QUESTIONABLE
+            else -> AssessmentValidityStatus.VALID
         }
 
-        val socialStyle = "Dinamika Interpersonal: " + when {
-            rawScores[8] >= 18 && rawScores[4] >= 16 -> "Memiliki kepemimpinan kuat dan dominan dalam mengarahkan kelompok (DOM & AUT tinggi)."
-            rawScores[5] + rawScores[10] >= 34 -> "Hangat, loyal, penuh empati, dan suka menolong rekan kerja (AFF & NUR dominan)."
-            rawScores[9] >= 18 -> "Cenderung mengalah, menghargai harmoni sosial, dan menghindari gesekan (ABA tinggi)."
-            else -> "Adaptif dan seimbang dalam interaksi sosial kerja."
+        val topRawText = (0 until 15).sortedByDescending { rawScores[it] }
+            .take(3)
+            .joinToString(", ") { "${needLabels[it].substringBefore(" ·")} (${rawScores[it]}/28)" }
+        val interpretation = "Profil Skor Mentah Edwards Personal Preference Schedule (EPPS; $answeredPairs/210 pasangan utama terjawab): " +
+            "CONS = $consScore/15, Total Raw = $totalRaw/210. Kebutuhan skor mentah tertinggi: $topRawText. " +
+            "Konversi persentil norma terpisah per jenis kelamin/populasi memerlukan tabel norma resmi EPPS."
+
+        return outcomeRaw("epps", scores to interpretation, warnings = warnings, validity = validity)
+    }
+
+    private fun enrichRorschachDetailed(answers: Map<Int, Int>): EnrichedScoringOutcome {
+        if (answers.isEmpty()) {
+            return scoreRorschachFromDrafts(emptyList())
         }
 
-        val interpretation = "Berdasarkan inventori kepribadian Edwards Personal Preference Schedule (EPPS 225 butir), " +
-            "intensitas 15 kebutuhan psikologis Murray terpetakan dengan Skor Konsistensi (CONS) sebesar $consScore/15 ($consValidity). " +
-            "Kebutuhan yang paling dominan/kuat adalah: $topSummary, sedangkan kebutuhan dengan intensitas relatif rendah adalah: $lowSummary. " +
-            "$workEthic $socialStyle " +
-            "Total skor mentah = $totalRaw/210 sesuai invarian baku. Hasil ini bermanfaat untuk pemetaan potensi kerja, penempatan peran, dan refleksi pengembangan diri."
+        fun mapLocation(code: Int): String? = when (code) {
+            0 -> "W"
+            1 -> "D"
+            2 -> "Dd"
+            3 -> "S"
+            else -> null
+        }
 
-        return scores to interpretation
-    }
+        fun mapDeterminant(code: Int): String? = when (code) {
+            0 -> "F"
+            1 -> "M"
+            2 -> "FM"
+            3 -> "m"
+            4 -> "FC"
+            5 -> "CF"
+            6 -> "C"
+            7 -> "C'"
+            8 -> "T"
+            9 -> "V"
+            10 -> "Y"
+            else -> null
+        }
 
+        fun mapFormQuality(code: Int): String? = when (code) {
+            0 -> "FQ+"
+            1 -> "FQo"
+            2 -> "FQu"
+            3 -> "FQ-"
+            else -> null
+        }
 
-    private data class RorschachCardResponse(
-        val loc: Int,
-        val det: Int,
-        val fq: Int,
-        val pop: Int,
-        val contentCode: Int
-    )
-
-    private fun defaultRorschachDet(cardIndex: Int): Int = when (cardIndex) {
-        0 -> 0 // Card I: F
-        1 -> 4 // Card II: FC
-        2 -> 1 // Card III: M
-        3 -> 0 // Card IV: F
-        4 -> 0 // Card V: F
-        5 -> 8 // Card VI: T (Texture)
-        6 -> 1 // Card VII: M
-        7 -> 4 // Card VIII: FC
-        8 -> 5 // Card IX: CF
-        9 -> 4 // Card X: FC
-        else -> 0
-    }
-
-    private fun enrichRorschach(answers: Map<Int, Int>): Pair<List<AssessmentScore>, String> {
-        val totalR = answers.size.coerceAtLeast(1)
-        val responses = (0 until 10).map { cardIdx ->
-            val raw = answers[cardIdx] ?: 0
+        val drafts = answers.entries.sortedBy { it.key }.map { (key, raw) ->
+            val cardNumber = if (key in 0..9) key + 1 else (key / 100).coerceIn(0, 9) + 1
+            val respIndex = if (key in 0..9) 1 else (key % 100) + 1
             if (raw >= 10) {
-                RorschachCardResponse(
-                    loc = (raw / 100000) % 10,
-                    det = (raw / 1000) % 100,
-                    fq = (raw / 100) % 10,
-                    pop = (raw / 10) % 10,
-                    contentCode = raw % 10
+                RorschachResponseDraft(
+                    cardNumber = cardNumber,
+                    responseIndex = respIndex,
+                    location = mapLocation((raw / 100000) % 10),
+                    determinant = mapDeterminant((raw / 1000) % 100),
+                    formQuality = mapFormQuality((raw / 100) % 10),
+                    popular = ((raw / 10) % 10) == 1
                 )
             } else {
-                RorschachCardResponse(
-                    loc = raw % 4,
-                    det = defaultRorschachDet(cardIdx),
-                    fq = 1, // ordinary FQo
-                    pop = if (raw % 4 == 0) 1 else 0,
-                    contentCode = 0
+                RorschachResponseDraft(
+                    cardNumber = cardNumber,
+                    responseIndex = respIndex,
+                    location = mapLocation(raw)
                 )
             }
         }
-
-        // Location frequencies
-        val wCount = responses.count { it.loc == 0 }
-        val dCount = responses.count { it.loc == 1 }
-        val ddCount = responses.count { it.loc == 2 }
-        val sCount = responses.count { it.loc == 3 }
-
-        // Determinants
-        val fCount = responses.count { it.det == 0 }
-        val mCount = responses.count { it.det == 1 }
-        val fmCount = responses.count { it.det == 2 }
-        val inanimMCount = responses.count { it.det == 3 }
-        val fcCount = responses.count { it.det == 4 }
-        val cfCount = responses.count { it.det == 5 }
-        val cCount = responses.count { it.det == 6 }
-        val cPrimeCount = responses.count { it.det == 7 }
-        val tCount = responses.count { it.det == 8 }
-        val vCount = responses.count { it.det == 9 }
-        val yCount = responses.count { it.det == 10 }
-
-        // Weighted Sum of Color (WSumC)
-        val wSumC = (0.5 * fcCount) + (1.0 * cfCount) + (1.5 * cCount)
-        val ea = mCount.toDouble() + wSumC
-        val sumShading = (cPrimeCount + tCount + vCount + yCount).toDouble()
-        val es = (fmCount + inanimMCount).toDouble() + sumShading
-        val rawDiff = ea - es
-
-        val dScore = when {
-            rawDiff >= 4.0 -> 3
-            rawDiff >= 2.5 -> 2
-            rawDiff >= 1.0 -> 1
-            rawDiff >= -1.0 -> 0
-            rawDiff >= -2.5 -> -1
-            rawDiff >= -4.0 -> -2
-            else -> -3
-        }
-
-        val dMeaning = when {
-            dScore > 0 -> "Kapasitas koping surplus / toleransi stres sangat baik (D = +$dScore)"
-            dScore == 0 -> "Keseimbangan koping adekuat dan stabil menghadapi beban sehari-hari (D = 0)"
-            dScore == -1 -> "Beban stres internal mulai melampaui sumber daya koping (D = -1)"
-            else -> "Kelebihan beban stres signifikan / risiko disorganisasi afektif (D = $dScore)"
-        }
-
-        val ebDiff = mCount.toDouble() - wSumC
-        val ebStyle = when {
-            ebDiff > 1.5 -> "Introversif (Orientasi pemikiran internal & reflektif)"
-            ebDiff < -1.5 -> "Ekstratensif (Orientasi stimulasi eksternal & respons afektif terbuka)"
-            else -> "Ambiten (Fleksibel, gaya koping situasional)"
-        }
-
-        val nonF = (totalR - fCount).coerceAtLeast(1)
-        val lambda = fCount.toDouble() / nonF.toDouble()
-        val lambdaMeaning = when {
-            lambda > 1.2 -> "Penyempitan afektif / defensif rasional berlebih"
-            lambda in 0.3..1.2 -> "Efisiensi kognitif & keterbukaan emosional adaptif"
-            else -> "Keterlibatan emosional intens / filter intelektual longgar"
-        }
-
-        val fqPlus = responses.count { it.fq == 0 }
-        val fqO = responses.count { it.fq == 1 }
-        val fqU = responses.count { it.fq == 2 }
-        val fqMinus = responses.count { it.fq == 3 }
-
-        val xPlusPct = ((fqPlus + fqO).toDouble() / totalR) * 100.0
-        val xMinusPct = (fqMinus.toDouble() / totalR) * 100.0
-
-        val popularCount = responses.count { it.pop == 1 }
-        val pMeaning = when {
-            popularCount in 4..7 -> "Konvensionalitas perseptual normatif (Adaptif)"
-            popularCount > 7 -> "Konformitas sosial kaku (Takut menyimpang)"
-            else -> "Persepsi idiosinkratik / cara pandang sangat unik"
-        }
-
-        // Special Clinical Constellations
-        var sCon = 0
-        if (vCount > 0) sCon++
-        if (sumShading > 2.0) sCon++
-        if (es > ea) sCon++
-        if ((cfCount + cCount) > fcCount) sCon++
-        if (xPlusPct < 70.0) sCon++
-        if (sCount > 2) sCon++
-        if (popularCount < 3 || popularCount > 8) sCon++
-        if (responses.count { it.contentCode == 0 } < 2) sCon++
-        if (totalR < 17) sCon++
-        if (wSumC < 1.0) sCon++
-        if (dScore < 0) sCon++
-        if (fqMinus > 2) sCon++
-
-        var depi = 0
-        if (sumShading > (fmCount + inanimMCount)) depi++
-        if (cPrimeCount > 0 || sCount > 2) depi++
-        if (vCount > 0) depi++
-        if (dScore < 0) depi++
-        if (wSumC < 2.5) depi++
-        if (responses.count { it.contentCode == 3 } > 0) depi++
-        if (tCount > 1) depi++
-
-        var cdi = 0
-        if (ea < 6.0 || dScore < 0) cdi++
-        if (wSumC < 2.5) cdi++
-        if (responses.count { it.contentCode == 0 } < 2) cdi++
-        if (tCount > 1) cdi++
-        if (lambda > 1.0) cdi++
-
-        var pti = 0
-        if (xMinusPct > 20.0) pti++
-        if (xPlusPct < 65.0) pti++
-        if (fqMinus >= 3) pti++
-        if (ddCount > 3) pti++
-        if (mCount == 0 && wSumC == 0.0) pti++
-
-        val sConMeaning = if (sCon >= 8) "Risiko Keselamatan / Stres Kritis (S-CON Positif)" else "Dalam Batas Aman (S-CON Negatif)"
-        val depiMeaning = if (depi >= 5) "Kecenderungan Afek Disforik / Depresi (DEPI Positif)" else "Tidak Mengindikasikan Disforia Klinis (DEPI Negatif)"
-        val cdiMeaning = if (cdi >= 4) "Defisit Sumber Daya Koping Keseharian (CDI Positif)" else "Kapasitas Koping Interpersonal Cukup (CDI Negatif)"
-        val ptiMeaning = if (pti >= 3) "Indikasi Gangguan Uji Realitas / Berpikir (PTI Positif)" else "Proses Berpikir Koheren (PTI Negatif)"
-
-        val scores = listOf(
-            AssessmentScore(
-                label = "Erlebnistypus (EB)",
-                value = mCount.toDouble(),
-                minimum = 0.0,
-                maximum = 10.0,
-                meaning = "Rasio EB (M:WSumC) = $mCount : ${String.format(Locale.US, "%.1f", wSumC)} ($ebStyle)"
-            ),
-            AssessmentScore(
-                label = "Experience Actual (EA)",
-                value = ea,
-                minimum = 0.0,
-                maximum = 20.0,
-                meaning = "Kapasitas sumber daya adaptasi yang terorganisir = ${String.format(Locale.US, "%.1f", ea)}"
-            ),
-            AssessmentScore(
-                label = "Experienced Stimulation (es)",
-                value = es,
-                minimum = 0.0,
-                maximum = 20.0,
-                meaning = "Beban tuntutan stres & dorongan internal yang dialami = ${String.format(Locale.US, "%.1f", es)}"
-            ),
-            AssessmentScore(
-                label = "D-Score (Kapasitas Stres)",
-                value = dScore.toDouble(),
-                minimum = -5.0,
-                maximum = 5.0,
-                meaning = dMeaning
-            ),
-            AssessmentScore(
-                label = "Lambda (λ)",
-                value = lambda,
-                minimum = 0.0,
-                maximum = 3.0,
-                meaning = "λ = ${String.format(Locale.US, "%.2f", lambda)}: $lambdaMeaning"
-            ),
-            AssessmentScore(
-                label = "Reality Testing (X+%)",
-                value = xPlusPct,
-                minimum = 0.0,
-                maximum = 100.0,
-                meaning = "Akurasi persepsi konvensional = ${String.format(Locale.US, "%.1f%%", xPlusPct)}"
-            ),
-            AssessmentScore(
-                label = "Distorsi Perseptual (X-%)",
-                value = xMinusPct,
-                minimum = 0.0,
-                maximum = 100.0,
-                meaning = "Tingkat distorsi bentuk = ${String.format(Locale.US, "%.1f%%", xMinusPct)}"
-            ),
-            AssessmentScore(
-                label = "Popular Responses (P)",
-                value = popularCount.toDouble(),
-                minimum = 0.0,
-                maximum = 10.0,
-                meaning = "$popularCount/10 respons populer ($pMeaning)"
-            ),
-            AssessmentScore(
-                label = "Konstelasi Keselamatan (S-CON)",
-                value = sCon.toDouble(),
-                minimum = 0.0,
-                maximum = 12.0,
-                meaning = "$sCon/12: $sConMeaning"
-            ),
-            AssessmentScore(
-                label = "Depression Index (DEPI)",
-                value = depi.toDouble(),
-                minimum = 0.0,
-                maximum = 7.0,
-                meaning = "$depi/7: $depiMeaning"
-            ),
-            AssessmentScore(
-                label = "Coping Deficit Index (CDI)",
-                value = cdi.toDouble(),
-                minimum = 0.0,
-                maximum = 5.0,
-                meaning = "$cdi/5: $cdiMeaning"
-            ),
-            AssessmentScore(
-                label = "Perception-Thinking (PTI)",
-                value = pti.toDouble(),
-                minimum = 0.0,
-                maximum = 5.0,
-                meaning = "$pti/5: $ptiMeaning"
-            )
-        )
-
-        val locSummary = "Lokasi persepsi: $wCount W (Whole), $dCount D (Common Detail), $ddCount Dd (Unusual Detail), $sCount S (Space)."
-        val affectControl = when {
-            fcCount > (cfCount + cCount) -> "Emosi terkendali dengan baik dan terintegrasi secara matang dengan pertimbangan rasional (FC dominan)."
-            cCount > 0 -> "Terdapat potensi pelepasan emosi mentah tanpa kendali intelektual penuh (C muncul)."
-            cfCount >= fcCount -> "Ekspresi emosional cenderung spontan, reaktif, dan sangat peka terhadap stimulasi lingkungan (CF dominan)."
-            else -> "Respons emosional cenderung datar atau sangat tertahan."
-        }
-
-        val interpretation = "Berdasarkan evaluasi proyektif Tes Rorschach menggunakan standar Exner Comprehensive System (CS) dan R-PAS, " +
-            "terpetakan profil psikogram kepribadian dan dinamika koping: " +
-            "Gaya koping dasar (Erlebnistypus) bertipe $ebStyle dengan rasio EB $mCount : ${String.format(Locale.US, "%.1f", wSumC)}. " +
-            "Toleransi terhadap stres menunjukkan $dMeaning (EA = ${String.format(Locale.US, "%.1f", ea)}, es = ${String.format(Locale.US, "%.1f", es)}). " +
-            "Efisiensi kognitif (Lambda) berada pada nilai ${String.format(Locale.US, "%.2f", lambda)} ($lambdaMeaning). " +
-            "Uji realitas perseptual (X+%) mencapai ${String.format(Locale.US, "%.1f%%", xPlusPct)} dengan distorsi (X-%) sebesar ${String.format(Locale.US, "%.1f%%", xMinusPct)}, serta respons populer P = $popularCount ($pMeaning). " +
-            "$locSummary " +
-            "Regulasi emosional: $affectControl " +
-            "Hasil skrining klinis: S-CON = $sCon/12 ($sConMeaning), DEPI = $depi/7 ($depiMeaning), CDI = $cdi/5 ($cdiMeaning), PTI = $pti/5 ($ptiMeaning). " +
-            "Hasil ini dirancang sebagai hipotesis klinis untuk eksplorasi lebih mendalam bersama konselor, bukan vonis diagnostik mutlak."
-
-        return scores to interpretation
+        return scoreRorschachFromDrafts(drafts)
     }
 
+    private fun answeredSummary(answered: Int, total: Int): String = "$answered/$total butir terisi"
 }

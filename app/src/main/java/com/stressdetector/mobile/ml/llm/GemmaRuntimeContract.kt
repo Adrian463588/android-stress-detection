@@ -6,8 +6,8 @@ import java.io.File
 /** Shared runtime settings for Gemma preflight and production inference. */
 internal object GemmaRuntimeContract {
     const val RUNTIME_VERSION = "litertlm-android-0.13.1"
-    const val MAX_NUM_TOKENS = 2_048
-    const val RESPONSE_RESERVE_TOKENS = 384
+    const val MAX_NUM_TOKENS = 4_096
+    const val RESPONSE_RESERVE_TOKENS = 512
     const val PROMPT_OVERHEAD_TOKENS = 64
 
     fun cacheDirectory(context: Context): File = File(

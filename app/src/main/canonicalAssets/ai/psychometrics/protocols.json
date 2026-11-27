@@ -2118,5 +2118,135 @@
         }
       ]
     }
+  },
+  {
+    "instrumentId": "htp",
+    "edition": "HTP-3-Panel-Purwarupa",
+    "section": "Proyektif HTP §1",
+    "method": "Observasi gambar Rumah, Pohon, dan Orang disertai telemetri goresan, stylus, dan catatan pemeriksa.",
+    "interpretation": "Interpretasi bersifat eksploratif/hipotetis berdasarkan detail bangunan, pohon, figur manusia, dan wawancara.",
+    "limitation": "Tidak menghasilkan skor kepribadian numerik; tetap wajib dikombinasikan dengan wawancara psikolog.",
+    "entry": {
+      "version": "HTP Rekap Observasi",
+      "operation": "PROFILE",
+      "fields": [
+        {
+          "label": "Kelengkapan Panel Rumah (0-2)",
+          "minimum": 0,
+          "maximum": 2
+        },
+        {
+          "label": "Kelengkapan Panel Pohon (0-2)",
+          "minimum": 0,
+          "maximum": 2
+        },
+        {
+          "label": "Kelengkapan Panel Orang (0-2)",
+          "minimum": 0,
+          "maximum": 2
+        }
+      ]
+    },
+    "interpretations": []
+  },
+  {
+    "instrumentId": "dap",
+    "edition": "DAP-2-Panel-Purwarupa",
+    "section": "Proyektif DAP §1",
+    "method": "Observasi figur manusia utama dan pembanding disertai telemetri stylus dan komposisi ruang.",
+    "interpretation": "Menyoroti proporsi figur, keteraturan garis, detail wajah/anggota gerak, dan asosiasi partisipan.",
+    "limitation": "Observasi kualitatif eksploratif purwarupa; bukan diagnosis klinis tunggal.",
+    "entry": {
+      "version": "DAP Rekap Observasi",
+      "operation": "PROFILE",
+      "fields": [
+        {
+          "label": "Kelengkapan Figur Utama (0-2)",
+          "minimum": 0,
+          "maximum": 2
+        },
+        {
+          "label": "Kelengkapan Figur Pembanding (0-2)",
+          "minimum": 0,
+          "maximum": 2
+        }
+      ]
+    },
+    "interpretations": []
+  },
+  {
+    "instrumentId": "cbi_tbi",
+    "edition": "Chacko-2025-Exploratory",
+    "section": "CBI-TBI Eksploratif §1",
+    "method": "Rerata skor 0-100 pada domain kelelahan personal, kerja/aktivitas, dan interaksi.",
+    "interpretation": "Menggambarkan kecenderungan beban kelelahan eksploratif dalam skala 0-100.",
+    "limitation": "Purwarupa eksploratif; konfirmasi bentuk standar diperlukan sebelum penggunaan klinis.",
+    "entry": {
+      "version": "CBI-TBI Rekap Eksploratif",
+      "operation": "PROFILE",
+      "fields": [
+        {
+          "label": "Kelelahan Personal (0-100)",
+          "minimum": 0,
+          "maximum": 100
+        },
+        {
+          "label": "Kelelahan Kerja (0-100)",
+          "minimum": 0,
+          "maximum": 100
+        },
+        {
+          "label": "Kelelahan Interaksi (0-100)",
+          "minimum": 0,
+          "maximum": 100
+        }
+      ]
+    },
+    "interpretations": []
+  },
+  {
+    "instrumentId": "esj",
+    "edition": "ESJ-Exploratory-4",
+    "section": "ESJ Eksploratif §1",
+    "method": "Penjumlahan skor refleksi penilaian sosial dan regulasi respons.",
+    "interpretation": "Profil deskriptif eksploratif untuk keperluan simulasi dan wawancara konseling.",
+    "limitation": "Identitas manual baku belum terkonfirmasi; hanya untuk purwarupa penelitian.",
+    "entry": {
+      "version": "ESJ Rekap Eksploratif",
+      "operation": "TOTAL",
+      "fields": [
+        {
+          "label": "Penilaian Sosial (2-10)",
+          "minimum": 2,
+          "maximum": 10
+        },
+        {
+          "label": "Regulasi Respons (2-10)",
+          "minimum": 2,
+          "maximum": 10
+        }
+      ]
+    },
+    "interpretations": []
+  },
+  {
+    "instrumentId": "baum",
+    "edition": "Baum-1-Panel-Purwarupa",
+    "section": "Proyektif BAUM §1",
+    "method": "Observasi kualitatif gambar pohon (akar, batang, mahkota, dahan, penggunaan ruang) dan telemetri goresan.",
+    "interpretation": "Mendukung telaah proporsi gambar pohon, kesinambungan garis, dan asosiasi partisipan sebelum tinjauan psikolog.",
+    "limitation": "Purwarupa eksploratif; tidak menggantikan interpretasi manual psikolog.",
+    "entry": {
+      "version": "BAUM Rekap Observasi",
+      "operation": "PROFILE",
+      "fields": [
+        {
+          "label": "Kelengkapan Pohon (0-2)",
+          "minimum": 0,
+          "maximum": 2
+        }
+      ]
+    },
+    "interpretations": []
   }
 ]

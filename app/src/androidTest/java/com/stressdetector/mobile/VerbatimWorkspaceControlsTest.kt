@@ -55,7 +55,7 @@ class VerbatimWorkspaceControlsTest {
                 }
             }
         }
-        compose.onNodeWithText("Hentikan & simpan").assertIsDisplayed().assertHeightIsAtLeast(48.dp).performClick()
+        compose.onNodeWithText("Stop & simpan").assertIsDisplayed().assertHeightIsAtLeast(48.dp).performClick()
         compose.onNodeWithText("Jeda").assertIsDisplayed().assertHeightIsAtLeast(48.dp).performClick()
         assertEquals(1, stopped)
         assertEquals(1, paused)
@@ -77,7 +77,7 @@ class VerbatimWorkspaceControlsTest {
                 )
             }
         }
-        compose.onNodeWithText("Hentikan & simpan").assertIsDisplayed()
+        compose.onNodeWithText("Stop & simpan").assertIsDisplayed()
         compose.onNodeWithText("Jeda").assertIsNotEnabled()
     }
 

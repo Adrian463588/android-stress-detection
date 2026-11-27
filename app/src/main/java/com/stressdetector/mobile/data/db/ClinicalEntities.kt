@@ -21,7 +21,10 @@ data class VerbatimSessionEntity(
     @ColumnInfo(defaultValue = "'PENDING'") val finalizationStatus: String = "PENDING",
     @ColumnInfo(defaultValue = "'NOT_REQUESTED'") val summaryStatus: String = "NOT_REQUESTED",
     /** Session-to-audio gap provenance; WAV bytes remain pause-free and immutable. */
-    @ColumnInfo(defaultValue = "'[]'") val audioGapsJson: String = "[]"
+    @ColumnInfo(defaultValue = "'[]'") val audioGapsJson: String = "[]",
+    @ColumnInfo(defaultValue = "'CLIENT'") val watchWearerRole: String = "CLIENT",
+    @ColumnInfo(defaultValue = "0") val audioDurationMs: Long = 0L,
+    @ColumnInfo(defaultValue = "'id'") val languageCode: String = "id"
 )
 
 @Entity(tableName = "transcript_segments")
@@ -116,7 +119,45 @@ data class DivergenceEventEntity(
     val audioZeroCrossingRate: Float? = null,
     val audioClippingRatio: Float? = null,
     val audioFiniteSampleRatio: Float? = null,
-    val audioAnalysisVersion: String? = null
+    val audioAnalysisVersion: String? = null,
+    /** Structured clinical context & non-fusion evidence references (Room v23). */
+    val speakerId: String? = null,
+    val baselineValue: Float? = null,
+    val observedValue: Float? = null,
+    val deltaValue: Float? = null,
+    val unit: String? = null,
+    @ColumnInfo(defaultValue = "'[]'") val evidenceIdsJson: String = "[]",
+    @ColumnInfo(defaultValue = "0") val detectedAtElapsedMillis: Long = 0L,
+    /** Skin temperature divergence evidence (non-diagnostic; thermal-median-v1). */
+    val thermalDirection: String? = null,
+    val ambientTemperatureC: Float? = null,
+    val ambientDeltaC: Float? = null,
+    val slopeCelsiusPerMin: Float? = null
+)
+
+@Entity(
+    tableName = "skin_temperature_samples",
+    indices = [
+        Index(value = ["sessionId"]),
+        Index(value = ["sessionId", "elapsedMillis"])
+    ]
+)
+data class SkinTemperatureSampleEntity(
+    @PrimaryKey val sampleId: String,
+    val sessionId: String,
+    val generation: Long,
+    val sequenceNumber: Long,
+    val sensorTimestampMs: Long,
+    val receivedTimestampMs: Long,
+    val elapsedMillis: Long,
+    val clockUncertaintyMs: Long? = null,
+    val skinTemperatureC: Float? = null,
+    val ambientTemperatureC: Float? = null,
+    val measurementStatus: Int,
+    val isValid: Boolean,
+    val wearerRole: String,
+    val source: String,
+    @ColumnInfo(defaultValue = "0") val isPaused: Boolean = false
 )
 
 // ─── Shared Annotations Entity ────────────────────────────────────────────────
@@ -152,7 +193,9 @@ data class ChatMessageEntity(
     val stressContextJson: String? = null,
     val promptVersion: String? = null,
     val retrievalMode: String? = null,
-    val inputMode: String? = null
+    val inputMode: String? = null,
+    val messageType: String? = null,
+    val structuredPayloadJson: String? = null
 )
 
 @Entity(tableName = "counselor_persona")

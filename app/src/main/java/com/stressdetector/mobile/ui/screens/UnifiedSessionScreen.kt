@@ -1,8 +1,19 @@
-@file:Suppress("FunctionNaming", "LongParameterList", "LongMethod", "CyclomaticComplexMethod", "MaxLineLength")
+@file:Suppress(
+    "FunctionNaming",
+    "LongParameterList",
+    "LongMethod",
+    "CyclomaticComplexMethod",
+    "MaxLineLength",
+    "ComplexCondition",
+    "MagicNumber"
+)
 
 package com.stressdetector.mobile.ui.screens
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.widget.Toast
@@ -18,15 +29,21 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -44,6 +61,7 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -67,7 +85,9 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -80,7 +100,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -91,9 +110,13 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.stressdetector.mobile.data.db.DivergenceEventEntity
 import com.stressdetector.mobile.domain.PredictionAvailability
 import com.stressdetector.mobile.domain.engine.AcousticAnalysisSnapshot
 import com.stressdetector.mobile.domain.engine.AudioInputSource
@@ -103,9 +126,12 @@ import com.stressdetector.mobile.domain.engine.PlaybackState
 import com.stressdetector.mobile.domain.engine.SessionFinalizationStage
 import com.stressdetector.mobile.domain.engine.SpeechRuntimeState
 import com.stressdetector.mobile.domain.engine.VerbatimSessionSummary
+import com.stressdetector.mobile.domain.engine.WatchWearerRole
+import com.stressdetector.mobile.domain.voice.VoiceOutputState
 import com.stressdetector.mobile.ui.AppSpacing
 import com.stressdetector.mobile.ui.LocalAppMotion
 import com.stressdetector.mobile.ui.PremiumCard
+import com.stressdetector.mobile.ui.clinicalColors
 import com.stressdetector.mobile.ui.viewmodels.SessionCommandState
 import com.stressdetector.mobile.ui.viewmodels.UnifiedSessionEffect
 import com.stressdetector.mobile.ui.viewmodels.UnifiedSessionUiState
@@ -125,6 +151,32 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 
 private const val LIVE_TRANSCRIPT_TAIL_LIMIT = 200
+private const val PREFS_VERBATIM_PERMISSION = "verbatim_runtime_permissions"
+private const val KEY_MIC_REQUESTED_ONCE = "mic_permission_requested_once"
+
+internal enum class MicrophonePermissionStatus {
+    GRANTED,
+    CAN_REQUEST,
+    NEEDS_RATIONALE,
+    PERMANENTLY_DENIED
+}
+
+internal fun resolveMicrophonePermissionStatus(
+    isGranted: Boolean,
+    hasRequestedBefore: Boolean,
+    shouldShowRationale: Boolean
+): MicrophonePermissionStatus = when {
+    isGranted -> MicrophonePermissionStatus.GRANTED
+    shouldShowRationale -> MicrophonePermissionStatus.NEEDS_RATIONALE
+    hasRequestedBefore -> MicrophonePermissionStatus.PERMANENTLY_DENIED
+    else -> MicrophonePermissionStatus.CAN_REQUEST
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
@@ -146,6 +198,25 @@ fun UnifiedSessionScreen(
     val textExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain")
     ) { uri -> viewModel.exportTranscript(uri) }
+    val researchExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri -> viewModel.exportResearchCsv(uri) }
+    val temperatureCsvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri -> viewModel.exportSkinTemperatureCsv(uri) }
+    val importPackageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            viewModel.importSessionPackage(uri)
+        }
+    }
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -161,23 +232,74 @@ fun UnifiedSessionScreen(
         }
     }
 
+    val permissionPrefs = remember(context) {
+        context.applicationContext.getSharedPreferences(PREFS_VERBATIM_PERMISSION, Context.MODE_PRIVATE)
+    }
     var showConsentDialog by rememberSaveable { mutableStateOf(false) }
+    var setupConsentChecked by rememberSaveable { mutableStateOf(false) }
     var microphoneDenied by rememberSaveable { mutableStateOf(false) }
+    var microphoneGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var microphonePermanentlyDenied by remember { mutableStateOf(false) }
     var showSessionNameDialog by rememberSaveable { mutableStateOf(false) }
     var sessionName by rememberSaveable { mutableStateOf("Sesi Verbatim") }
     var monitoringEnabled by rememberSaveable { mutableStateOf(false) }
     var consentConfirmedForPendingStart by rememberSaveable { mutableStateOf(false) }
     var deleteTargetSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var showDeleteAllDialog by rememberSaveable { mutableStateOf(false) }
+    var showResearchConsentDialog by rememberSaveable { mutableStateOf(false) }
     var showManualAnnotationDialog by rememberSaveable { mutableStateOf(false) }
     var manualAnnotationText by rememberSaveable { mutableStateOf("") }
 
+    fun syncMicrophonePermissionState(): MicrophonePermissionStatus {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            permissionPrefs.edit().putBoolean(KEY_MIC_REQUESTED_ONCE, false).apply()
+        }
+        val activity = context.findActivity()
+        val shouldShowRationale = activity != null &&
+            ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.RECORD_AUDIO)
+        val status = resolveMicrophonePermissionStatus(
+            isGranted = granted,
+            hasRequestedBefore = permissionPrefs.getBoolean(KEY_MIC_REQUESTED_ONCE, false),
+            shouldShowRationale = shouldShowRationale
+        )
+        microphoneGranted = status == MicrophonePermissionStatus.GRANTED
+        microphonePermanentlyDenied = status == MicrophonePermissionStatus.PERMANENTLY_DENIED
+        if (granted) {
+            microphoneDenied = false
+        }
+        return status
+    }
+
+    fun openAppSettings() {
+        context.startActivity(
+            Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.parse("package:${context.packageName}")
+            )
+        )
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        syncMicrophonePermissionState()
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                syncMicrophonePermissionState()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LaunchedEffect(viewModel, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                microphoneDenied = false
-            }
+            syncMicrophonePermissionState()
             viewModel.refreshSpeechRuntime()
+            viewModel.refreshWatchConnection()
             viewModel.effects.collect { effect ->
                 when (effect) {
                     UnifiedSessionEffect.OpenStartDialog -> {
@@ -192,60 +314,87 @@ fun UnifiedSessionScreen(
         }
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val needsMicrophone = pendingAudioUri == null
-        val audioGranted = !needsMicrophone ||
-            (permissions[Manifest.permission.RECORD_AUDIO] ?: false) ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        if (audioGranted && consentConfirmedForPendingStart) {
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            permissionPrefs.edit().putBoolean(KEY_MIC_REQUESTED_ONCE, false).apply()
+            microphoneGranted = true
             microphoneDenied = false
-            consentConfirmedForPendingStart = false
-            viewModel.startSession(sessionName, monitoringEnabled)
+            microphonePermanentlyDenied = false
+            if (consentConfirmedForPendingStart) {
+                consentConfirmedForPendingStart = false
+                viewModel.startSession(sessionName, monitoringEnabled)
+            }
         } else {
-            microphoneDenied = needsMicrophone && !audioGranted
+            permissionPrefs.edit().putBoolean(KEY_MIC_REQUESTED_ONCE, true).apply()
+            val status = syncMicrophonePermissionState()
+            microphoneDenied = true
             consentConfirmedForPendingStart = false
             Toast.makeText(
                 context,
-                if (needsMicrophone) {
-                    "Izin mikrofon diperlukan untuk merekam sesi."
+                if (status == MicrophonePermissionStatus.PERMANENTLY_DENIED) {
+                    "Izin mikrofon ditolak permanen. Buka Setelan untuk mengaktifkannya."
                 } else {
-                    "Sesi import tidak memerlukan izin notifikasi."
+                    "Izin mikrofon diperlukan untuk merekam sesi."
                 },
                 Toast.LENGTH_LONG
             ).show()
         }
     }
 
+    fun requestMicrophonePermission() {
+        val status = syncMicrophonePermissionState()
+        when (status) {
+            MicrophonePermissionStatus.GRANTED -> Unit
+            MicrophonePermissionStatus.PERMANENTLY_DENIED -> openAppSettings()
+            MicrophonePermissionStatus.CAN_REQUEST,
+            MicrophonePermissionStatus.NEEDS_RATIONALE -> {
+                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        }
+    }
+
     fun requestStart() {
         val needsMicrophone = pendingAudioUri == null
-        val audioPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
-        if (!needsMicrophone || audioPermission == PackageManager.PERMISSION_GRANTED) {
-            microphoneDenied = false
+        if (!needsMicrophone) {
             consentConfirmedForPendingStart = false
             viewModel.startSession(sessionName, monitoringEnabled)
-        } else {
-            val permissions = buildList {
-                if (needsMicrophone) add(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        val status = syncMicrophonePermissionState()
+        when (status) {
+            MicrophonePermissionStatus.GRANTED -> {
+                consentConfirmedForPendingStart = false
+                viewModel.startSession(sessionName, monitoringEnabled)
             }
-            permissionLauncher.launch(permissions.toTypedArray())
+            MicrophonePermissionStatus.PERMANENTLY_DENIED -> {
+                consentConfirmedForPendingStart = false
+                microphoneDenied = true
+                Toast.makeText(
+                    context,
+                    "Izin mikrofon diperlukan. Ketuk Buka Setelan pada kesiapan mikrofon.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            MicrophonePermissionStatus.CAN_REQUEST,
+            MicrophonePermissionStatus.NEEDS_RATIONALE -> {
+                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
         }
     }
 
     if (showConsentDialog) {
         AlertDialog(
             onDismissRequest = { showConsentDialog = false },
-            title = { Text("Persetujuan pasien") },
+            title = { Text("Persetujuan sesi") },
             text = {
                 Text(
-                    "Pastikan semua pembicara menyetujui perekaman dan analisis lokal." +
-                        if (monitoringEnabled &&
-                            pendingAudioUri == null
-                        ) {
-                            " Sesi ini juga memakai PPG Galaxy Watch dengan persetujuan pemakainya."
+                    "Pastikan semua pembicara menyetujui perekaman sesi lokal." +
+                        if (monitoringEnabled && pendingAudioUri == null) {
+                            " Galaxy Watch aktif untuk merekam PPG pemakainya."
                         } else {
-                            " PPG tidak digunakan."
+                            ""
                         }
                 )
             },
@@ -297,7 +446,7 @@ fun UnifiedSessionScreen(
                         if (pendingAudioUri != null) {
                             "Audio impor dianalisis tanpa PPG live."
                         } else {
-                            "Audio tetap berfungsi tanpa Watch. PPG memerlukan sinyal berkualitas dan model ONNX siap; bukan diagnosis."
+                            "Audio dan transkrip tetap berjalan walau Watch tidak aktif."
                         },
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -354,7 +503,7 @@ fun UnifiedSessionScreen(
             uiState = uiState,
             onNewRecording = {
                 pendingAudioUri = null
-                viewModel.requestNewSession()
+                viewModel.openSessionSetup()
                 closeDrawer()
             },
             onImportAudio = {
@@ -411,6 +560,7 @@ fun UnifiedSessionScreen(
                 onRetryPlayback = viewModel::prepareAudioPlayback,
                 onExport = { viewModel.prepareZipExport()?.let(exportLauncher::launch) },
                 onExportText = { viewModel.prepareTranscriptExport()?.let(textExportLauncher::launch) },
+                onExportResearch = { showResearchConsentDialog = true },
                 onDelete = {
                     uiState.selectedSessionId?.let { deleteTargetSessionId = it }
                 },
@@ -418,8 +568,12 @@ fun UnifiedSessionScreen(
                 onRefreshReadiness = {
                     viewModel.refreshStorage()
                     viewModel.refreshSpeechRuntime()
+                    viewModel.refreshWatchConnection()
                 },
                 onCycleSpeaker = viewModel::cycleSpeakerLabel,
+                onSetSpeakerLabel = viewModel::setSpeakerLabel,
+                onToggleSpeakTts = viewModel::toggleSpeakUtterance,
+                onStopTts = viewModel::stopTts,
                 onEditTranscript = viewModel::updateTranscriptText,
                 onRequestAddManualAnnotation = {
                     manualAnnotationText = ""
@@ -427,13 +581,36 @@ fun UnifiedSessionScreen(
                 },
                 onDeleteManualAnnotation = viewModel::deleteManualAnnotation,
                 microphoneDenied = microphoneDenied,
-                onOpenMicrophoneSettings = {
-                    context.startActivity(
-                        Intent(
-                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                            android.net.Uri.parse("package:${context.packageName}")
-                        )
-                    )
+                microphoneGranted = microphoneGranted,
+                microphonePermanentlyDenied = microphonePermanentlyDenied,
+                onRequestMicrophonePermission = ::requestMicrophonePermission,
+                onOpenMicrophoneSettings = ::openAppSettings,
+                setupSessionName = sessionName,
+                onSetupSessionNameChange = { sessionName = it },
+                setupMonitoringEnabled = monitoringEnabled,
+                onSetupMonitoringEnabledChange = { monitoringEnabled = it },
+                setupConsentChecked = setupConsentChecked,
+                onSetupConsentCheckedChange = { setupConsentChecked = it },
+                onStartSetupSession = {
+                    pendingAudioUri = null
+                    consentConfirmedForPendingStart = true
+                    viewModel.openSessionSetup()
+                    requestStart()
+                },
+                onImportAudio = {
+                    importLauncher.launch(arrayOf("audio/wav", "audio/x-wav", "audio/wave"))
+                },
+                onSelectSession = onSelectSession,
+                onSetLanguage = viewModel::setSessionLanguage,
+                onSetWatchWearerRole = viewModel::setWatchWearerRole,
+                onSearchQueryChange = viewModel::setSearchQuery,
+                onOpenMarkerDetail = viewModel::openMarkerDetail,
+                onToggleTechnicalDetails = { viewModel.toggleTechnicalDetails(it) },
+                onImportPackage = {
+                    importPackageLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
+                },
+                onExportTemperatureCsv = {
+                    viewModel.prepareSkinTemperatureCsvExport()?.let(temperatureCsvLauncher::launch)
                 }
             )
         }
@@ -456,7 +633,7 @@ fun UnifiedSessionScreen(
         AlertDialog(
             onDismissRequest = { deleteTargetSessionId = null },
             title = { Text("Hapus sesi?") },
-            text = { Text("Audio, transcript, divergence events, dan summary sesi ini akan dihapus.") },
+            text = { Text("Audio, transcript, data suhu kulit, divergence events, dan summary sesi ini akan dihapus.") },
             confirmButton = {
                 TextButton(enabled = VerbatimWorkspace(uiState).canManageStoredSessions, onClick = {
                     viewModel.deleteSession(sessionId)
@@ -481,33 +658,44 @@ fun UnifiedSessionScreen(
             dismissButton = { TextButton(onClick = { showDeleteAllDialog = false }) { Text("Batal") } }
         )
     }
-}
 
-@Composable
-private fun VerbatimPrimaryAction(
-    label: String,
-    description: String,
-    enabled: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = modifier
-            .heightIn(min = 48.dp)
-            .semantics { stateDescription = description }
-    ) {
-        Icon(
-            imageVector = when (label) {
-                "Stop" -> Icons.Default.Stop
-                "Buka Profile" -> Icons.Default.FolderOpen
-                else -> Icons.Default.PlayArrow
+    if (showResearchConsentDialog) {
+        AlertDialog(
+            onDismissRequest = { showResearchConsentDialog = false },
+            title = { Text("Ekspor data riset teranonimisasi") },
+            text = {
+                Text(
+                    "File CSV riset hanya memuat seri waktu teranonimisasi (BPM, PRV, kualitas sinyal, dan metadata deviasi). " +
+                        "Nama sesi/klien, transkrip teks percakapan, dan audio rekaman tidak ikut diekspor."
+                )
             },
-            contentDescription = description
+            confirmButton = {
+                TextButton(
+                    enabled = VerbatimWorkspace(uiState).canMutateArchive,
+                    onClick = {
+                        showResearchConsentDialog = false
+                        viewModel.prepareResearchExport()?.let(researchExportLauncher::launch)
+                    }
+                ) { Text("Ekspor CSV") }
+            },
+            dismissButton = { TextButton(onClick = { showResearchConsentDialog = false }) { Text("Batal") } }
         )
-        Spacer(Modifier.size(6.dp))
-        Text(label)
+    }
+
+    uiState.selectedMarkerForDetail?.let { marker ->
+        val linkedSegment = uiState.transcriptSegments.firstOrNull {
+            it.id == marker.transcriptSegmentId ||
+                marker.markerElapsedMillis in (it.startOffsetMs - 5_000L)..(it.endOffsetMs + 5_000L)
+        }
+        VerbatimMarkerDetailSheet(
+            marker = marker,
+            linkedSegment = linkedSegment,
+            playbackOffsetMs = uiState.markerPlaybackOffsets[marker.eventId],
+            canAnnotate = VerbatimWorkspace(uiState).canAnnotate,
+            onDismiss = { viewModel.openMarkerDetail(null) },
+            onPlayFromMarker = viewModel::playFromMarker,
+            onSavePsychologistNote = viewModel::addManualAnnotation
+        )
     }
 }
 
@@ -866,15 +1054,38 @@ internal fun SessionContent(
     onDeleteManualAnnotation: (String) -> Unit,
     microphoneDenied: Boolean = false,
     onOpenMicrophoneSettings: () -> Unit = {},
-    onMoveSignalPage: (Int) -> Unit = {}
+    onMoveSignalPage: (Int) -> Unit = {},
+    onExportResearch: (() -> Unit)? = null,
+    microphoneGranted: Boolean = !microphoneDenied,
+    microphonePermanentlyDenied: Boolean = false,
+    onRequestMicrophonePermission: () -> Unit = onOpenMicrophoneSettings,
+    setupSessionName: String = "Sesi Verbatim",
+    onSetupSessionNameChange: (String) -> Unit = {},
+    setupMonitoringEnabled: Boolean = false,
+    onSetupMonitoringEnabledChange: (Boolean) -> Unit = {},
+    setupConsentChecked: Boolean = false,
+    onSetupConsentCheckedChange: (Boolean) -> Unit = {},
+    onStartSetupSession: () -> Unit = onStartOrStop,
+    onImportAudio: () -> Unit = onOpenDrawer,
+    onSelectSession: (String) -> Unit = {},
+    onSetLanguage: (String) -> Unit = {},
+    onSetWatchWearerRole: (WatchWearerRole) -> Unit = {},
+    onSearchQueryChange: (String) -> Unit = {},
+    onOpenMarkerDetail: (DivergenceEventEntity?) -> Unit = {},
+    onToggleTechnicalDetails: (Boolean) -> Unit = {},
+    onSetSpeakerLabel: (String, String) -> Unit = { _, _ -> },
+    onToggleSpeakTts: (String, String) -> Unit = { _, _ -> },
+    onStopTts: () -> Unit = {},
+    onImportPackage: (() -> Unit)? = null,
+    onExportTemperatureCsv: (() -> Unit)? = null
 ) {
     val workspace = remember(uiState) { VerbatimWorkspace(uiState) }
     val counts = remember(uiState) { VerbatimMarkerCounts(uiState) }
     var panel by rememberSaveable(uiState.selectedSessionId) { mutableStateOf("TRANSCRIPT") }
     var filter by rememberSaveable(uiState.selectedSessionId) { mutableStateOf(VerbatimMarkerFilter.ALL) }
     var technicalExpanded by rememberSaveable(uiState.selectedSessionId) { mutableStateOf(false) }
-    val transcriptItems = remember(uiState.transcriptSegments, workspace.capturing) {
-        val ordered = uiState.transcriptSegments.sortedWith(compareBy({ it.startOffsetMs }, { it.id })).distinctBy { it.id }
+    val transcriptItems = remember(uiState.filteredTranscriptSegments, workspace.capturing) {
+        val ordered = uiState.filteredTranscriptSegments.sortedWith(compareBy({ it.startOffsetMs }, { it.id })).distinctBy { it.id }
         if (workspace.capturing) ordered.takeLast(LIVE_TRANSCRIPT_TAIL_LIMIT) else ordered
     }
     val markerItems = remember(uiState.divergenceEvents, filter) {
@@ -891,111 +1102,168 @@ internal fun SessionContent(
     }
     val transcriptScroll = rememberLazyListState()
     val markerScroll = rememberLazyListState()
+    val motion = LocalAppMotion.current
+    val nearTranscriptBottom by remember {
+        derivedStateOf {
+            val total = transcriptScroll.layoutInfo.totalItemsCount
+            val lastVisible = transcriptScroll.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            total == 0 || lastVisible >= total - 3
+        }
+    }
     LaunchedEffect(uiState.selectedSessionId) {
         transcriptScroll.scrollToItem(0)
         markerScroll.scrollToItem(0)
     }
-    Column(modifier.fillMaxSize().imePadding()) {
+    LaunchedEffect(workspace.capturing, transcriptItems.lastOrNull()?.id, transcriptItems.lastOrNull()?.displayText) {
+        if (workspace.capturing && panel == "TRANSCRIPT" && transcriptItems.isNotEmpty() && nearTranscriptBottom) {
+            val last = (transcriptScroll.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+            if (motion.enabled) transcriptScroll.animateScrollToItem(last) else transcriptScroll.scrollToItem(last)
+        }
+    }
+    Column(modifier.fillMaxSize().navigationBarsPadding().imePadding()) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = AppSpacing.Compact, vertical = AppSpacing.Micro),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onOpenDrawer, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Default.Menu, contentDescription = "Buka daftar sesi")
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("Verbatim+", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (workspace.capturing) sessionCommandStatus(uiState.sessionCommandState) else "Pendamping konseling lokal",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                        )
+                    }
+                }
+                Divider(color = MaterialTheme.clinicalColors.borderSubtle)
+            }
+        }
         LazyColumn(
             state = if (panel == "TRANSCRIPT") transcriptScroll else markerScroll,
             modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = AppSpacing.Screen),
             contentPadding = PaddingValues(top = AppSpacing.Small, bottom = AppSpacing.Large),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)
         ) {
-            item("header") {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onOpenDrawer) { Icon(Icons.Default.Menu, contentDescription = "Buka daftar sesi") }
-                    Column(Modifier.weight(1f)) {
-                        Text("Verbatim+", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            if (workspace.capturing) sessionCommandStatus(uiState.sessionCommandState) else "Transkrip dan bukti wawancara",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.semantics {
-                                liveRegion = LiveRegionMode.Polite
-                            }
-                        )
-                    }
-                }
-            }
-            if (uiState.storageState.needsVerbatimStorageRecovery() || uiState.speechRuntimeState !is SpeechRuntimeState.Ready) {
+            if ((workspace.capturing || uiState.selectedSessionId != null) &&
+                (uiState.storageState.needsVerbatimStorageRecovery() || uiState.speechRuntimeState !is SpeechRuntimeState.Ready)
+            ) {
                 item("readiness") { VerbatimReadinessBanner(uiState, onOpenProfile, onRefreshReadiness) }
             }
             if (microphoneDenied) {
                 item("microphone-permission") {
                     Text(
-                        "Izin mikrofon belum diberikan. Impor WAV dan review arsip tetap tersedia.",
+                        if (microphonePermanentlyDenied) {
+                            "Izin mikrofon ditolak permanen. Impor WAV dan review arsip tetap tersedia."
+                        } else {
+                            "Izin mikrofon belum diberikan. Impor WAV dan review arsip tetap tersedia."
+                        },
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    TextButton(onClick = onOpenMicrophoneSettings, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text("Buka setelan izin mikrofon")
+                    TextButton(
+                        onClick = if (microphonePermanentlyDenied) onOpenMicrophoneSettings else onRequestMicrophonePermission,
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    ) {
+                        Text(if (microphonePermanentlyDenied) "Buka Setelan" else "Izinkan mikrofon")
                     }
                 }
             }
             if (workspace.capturing) {
                 item("live-status") {
-                    Text(formatElapsed(uiState.elapsedSeconds), style = MaterialTheme.typography.headlineSmall)
-                    if (uiState.speechProcessingState.isDraining || uiState.speechProcessingState.backlogFrames > 0) {
-                        Text(
-                            "Transkripsi sedang diproses · ${uiState.speechProcessingState.backlogFrames} frame antrean",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    VerbatimLiveStatusHeader(uiState, uiState.selectedSession?.summary?.sessionName ?: setupSessionName)
+                }
+                item("live-acoustic") {
+                    VerbatimLiveAcousticSummaryCard(uiState)
+                }
+                item("live-bpm") {
+                    VerbatimLiveHeartRateCard(uiState.liveBiosignal)
+                }
+                if (uiState.divergenceEvents.isNotEmpty()) {
+                    item("live-latest-marker") {
+                        VerbatimLatestMarkerBanner(
+                            marker = uiState.divergenceEvents.lastOrNull(),
+                            onClick = { onOpenMarkerDetail(it) }
                         )
                     }
                 }
-                item("live-pitch") {
-                    VerbatimPitchPanel(uiState.livePitch, uiState.isPaused, markers = uiState.signalMarkers)
-                }
             }
-            uiState.selectedSession?.summary?.let { session ->
-                item("archive") {
-                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Compact)) {
-                        Text(session.sessionName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "${formatSessionTime(session.startedAtMillis)} · ${formatDuration(session.durationSeconds)}",
-                            style = MaterialTheme.typography.bodySmall
+            uiState.selectedSession?.let { detail ->
+                val session = detail.summary
+                if (!workspace.capturing) {
+                    item("archive-summary") {
+                        VerbatimReviewSummaryHeader(
+                            detail = detail,
+                            markerCounts = counts,
+                            aiSummaryText = uiState.aiSummaryText,
+                            drawerStatusLabel = session.drawerStatusLabel(),
+                            drawerStorageLabel = session.drawerStorageLabel(),
+                            searchQuery = uiState.searchQuery,
+                            onSearchQueryChange = onSearchQueryChange,
+                            temperatureSamples = uiState.skinTemperatureSamples.ifEmpty { detail.skinTemperatureSamples }
                         )
-                        Text("${session.drawerStatusLabel()} · ${session.drawerStorageLabel()}", style = MaterialTheme.typography.bodySmall)
-                        if (workspace.archiveReady) {
-                            SessionPlaybackControls(
-                                uiState.playbackState,
-                                uiState.playbackPositionMillis,
-                                uiState.playbackDurationMillis,
-                                onPlay,
-                                onPausePlayback,
-                                onStopPlayback,
-                                onSeekAudio,
-                                onRetryPlayback,
-                                enabled = workspace.canPrepareAudio
-                            )
-                            VerbatimArchiveActions(workspace, onExportText, onExport, onDelete)
+                    }
+                    item("archive-timeline") {
+                        val effectiveDurationMs = if (uiState.playbackDurationMillis > 0L) {
+                            uiState.playbackDurationMillis
+                        } else if (session.audioDurationMs > 0L) {
+                            session.audioDurationMs
+                        } else {
+                            session.durationSeconds * 1_000L
+                        }
+                        VerbatimUnifiedTimelineCard(
+                            page = uiState.signalTracePage,
+                            events = detail.divergenceEvents,
+                            markers = uiState.signalMarkers,
+                            playbackPositionMs = uiState.playbackPositionMillis,
+                            totalDurationMs = effectiveDurationMs,
+                            onSelectMarker = { onOpenMarkerDetail(it) },
+                            temperatureSamples = uiState.skinTemperatureSamples.ifEmpty { detail.skinTemperatureSamples }
+                        )
+                    }
+                    if (workspace.archiveReady) {
+                        item("archive-playback") {
+                            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Compact)) {
+                                SessionPlaybackControls(
+                                    uiState.playbackState,
+                                    uiState.playbackPositionMillis,
+                                    uiState.playbackDurationMillis,
+                                    onPlay,
+                                    onPausePlayback,
+                                    onStopPlayback,
+                                    onSeekAudio,
+                                    onRetryPlayback,
+                                    enabled = workspace.canPrepareAudio
+                                )
+                                VerbatimArchiveActions(
+                                    workspace = workspace,
+                                    onExportText = onExportText,
+                                    onExportZip = onExport,
+                                    onDelete = onDelete,
+                                    onExportResearch = onExportResearch,
+                                    onExportTemperatureCsv = onExportTemperatureCsv
+                                )
+                            }
                         }
                     }
                 }
             }
-            if (!workspace.capturing && uiState.selectedSession != null) {
-                item("archive-signal") {
-                    VerbatimArchiveSignalPanel(
-                        page = uiState.signalTracePage,
-                        loading = uiState.isSignalTraceLoading,
-                        markers = uiState.signalMarkers,
-                        playbackOffsetMs = uiState.playbackPositionMillis,
-                        canPlay = workspace.canReviewAudio,
-                        onMovePage = onMoveSignalPage,
-                        onPlayFromMarker = onPlayFromMarker
-                    )
-                }
-            }
-            if (uiState.isSavingTranscript || uiState.isExporting || uiState.isDeletingSession) {
+            if (uiState.isSavingTranscript || uiState.isExporting || uiState.isImportingPackage || uiState.isDeletingSession) {
                 item("saving") {
                     Text(
                         when {
                             uiState.isExporting -> "Mengekspor sesi…"
+                            uiState.isImportingPackage -> "Mengimpor paket sesi…"
                             uiState.isDeletingSession -> "Menghapus sesi…"
                             else -> "Menyimpan koreksi…"
                         },
                         modifier = Modifier.semantics {
-                            liveRegion =
-                                LiveRegionMode.Polite
+                            liveRegion = LiveRegionMode.Polite
                         }
                     )
                     LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -1041,14 +1309,19 @@ internal fun SessionContent(
                             selected = panel == "MARKERS",
                             onClick = { panel = "MARKERS" },
                             modifier = Modifier.heightIn(min = 48.dp),
-                            text = {
-                                Text("Marker · ${counts.count(VerbatimMarkerFilter.ALL)}")
-                            }
+                            text = { Text("Marker · ${counts.count(VerbatimMarkerFilter.ALL)}") }
                         )
                     }
                 }
                 item("technical") {
-                    VerbatimDisclosure("Detail teknis sesi", technicalExpanded, { technicalExpanded = it }) {
+                    VerbatimDisclosure(
+                        label = "Detail teknis",
+                        expanded = technicalExpanded,
+                        onExpandedChange = {
+                            technicalExpanded = it
+                            onToggleTechnicalDetails(it)
+                        }
+                    ) {
                         if (workspace.capturing) {
                             uiState.speechProcessingState.decoderDescription?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         }
@@ -1060,40 +1333,86 @@ internal fun SessionContent(
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
+                        PrvTechnicalSummaryPanel(uiState.liveBiosignal.monitor.latestPrvByChannel)
                         LiveBiosignalCard(uiState.liveBiosignal)
                         LiveAudioCard(uiState.acousticAnalysis)
+                        if (workspace.capturing) {
+                            VerbatimPitchPanel(uiState.livePitch, uiState.isPaused, markers = uiState.signalMarkers)
+                        } else if (uiState.selectedSession != null) {
+                            VerbatimArchiveSignalPanel(
+                                page = uiState.signalTracePage,
+                                loading = uiState.isSignalTraceLoading,
+                                markers = uiState.signalMarkers,
+                                playbackOffsetMs = uiState.playbackPositionMillis,
+                                canPlay = workspace.canReviewAudio,
+                                onMovePage = onMoveSignalPage,
+                                onPlayFromMarker = onPlayFromMarker
+                            )
+                        }
                     }
                 }
                 if (panel == "TRANSCRIPT") {
-                    item("explanation") {
-                        Text(
-                            if (workspace.capturing) {
-                                "Teks sementara dapat berubah. Cue muncul pada ujaran final; prosodi menunggu baseline."
-                            } else {
-                                "Sorotan menunjukkan ekspresi leksikal. Buka cue atau detail ujaran untuk memeriksa buktinya."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    val ttsActive = uiState.ttsPlayback.state is VoiceOutputState.Preparing ||
+                        uiState.ttsPlayback.state is VoiceOutputState.Speaking
+                    val ttsError = (uiState.ttsPlayback.state as? VoiceOutputState.Error)?.message ?: uiState.ttsPlayback.error
+                    if (ttsActive || !ttsError.isNullOrBlank()) {
+                        item("tts-status") {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.small,
+                                color = if (ttsActive) {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.errorContainer
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = AppSpacing.Small, vertical = AppSpacing.Compact),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        when {
+                                            uiState.ttsPlayback.state is VoiceOutputState.Preparing ->
+                                                "Menyiapkan pembacaan TTS lokal (bukan audio asli sesi)…"
+                                            ttsActive ->
+                                                "Membacakan transkrip via TTS lokal (terpisah dari audio asli sesi)"
+                                            else -> "TTS lokal: $ttsError"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (ttsActive) {
+                                        TextButton(onClick = onStopTts, modifier = Modifier.heightIn(min = 48.dp)) {
+                                            Text("Hentikan")
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
-                    if (workspace.capturing && transcriptItems.isNotEmpty()) {
+                    if (workspace.capturing && transcriptItems.isNotEmpty() && !nearTranscriptBottom) {
                         item("latest-utterance") {
                             val scope = rememberCoroutineScope()
-                            val motion = LocalAppMotion.current
                             TextButton(onClick = {
                                 scope.launch {
                                     val last = (transcriptScroll.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
                                     if (motion.enabled) transcriptScroll.animateScrollToItem(last) else transcriptScroll.scrollToItem(last)
                                 }
-                            }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Ke ujaran terbaru") }
+                            }, modifier = Modifier.heightIn(min = 48.dp)) { Text("↓ Ke ujaran terbaru") }
                         }
                     }
                     if (transcriptItems.isEmpty()) {
                         item("empty") {
-                            EmptyLiveState("Belum ada ujaran yang dapat ditampilkan. Tidak ada transkrip pengganti.")
+                            EmptyLiveState(
+                                if (uiState.searchQuery.isNotBlank()) {
+                                    "Tidak ada ujaran yang cocok dengan «${uiState.searchQuery}»."
+                                } else {
+                                    "Belum ada ujaran yang dapat ditampilkan. Tidak ada transkrip pengganti."
+                                }
+                            )
                         }
                     }
-                    if (uiState.transcriptSegments.size > transcriptItems.size) {
+                    if (uiState.transcriptSegments.size > transcriptItems.size && uiState.searchQuery.isBlank()) {
                         item("tail") {
                             Text(
                                 "Live menampilkan ${transcriptItems.size} ujaran terbaru; seluruh ujaran tersedia setelah disimpan.",
@@ -1103,20 +1422,26 @@ internal fun SessionContent(
                     }
                     items(transcriptItems, key = { "transcript:${it.id}" }, contentType = { "utterance" }) { segment ->
                         VerbatimTranscriptCard(
-                            segment,
-                            uiState.cueAnalyses.getValue(segment.id),
-                            workspace.canReviewAudio,
-                            workspace.canEditTranscript,
-                            onCycleSpeaker,
-                            onEditTranscript,
-                            onPlayFromMarker
+                            segment = segment,
+                            analysis = uiState.cueAnalyses.getValue(segment.id),
+                            canPlay = workspace.canReviewAudio,
+                            canEdit = workspace.canEditTranscript,
+                            onCycleSpeaker = onCycleSpeaker,
+                            onEditTranscript = onEditTranscript,
+                            onSeekAudio = onPlayFromMarker,
+                            linkedMarkers = uiState.markersBySegmentId[segment.id].orEmpty(),
+                            onOpenMarkerDetail = { marker -> onOpenMarkerDetail(marker) },
+                            onSetSpeakerLabel = onSetSpeakerLabel,
+                            ttsState = uiState.ttsPlayback,
+                            canUseTts = !workspace.capturing || uiState.isPaused,
+                            onToggleSpeakTts = onToggleSpeakTts
                         )
                     }
                 } else {
                     item("filters") { VerbatimMarkerFilters(counts, filter, { filter = it }) }
                     item("marker-explanation") {
                         Text(
-                            "Marker adalah bukti untuk ditinjau bersama konteks, bukan diagnosis atau bukti desepsi.",
+                            "Marker menandai perubahan akustik, fisiologis, atau catatan untuk ditinjau bersama konteks ujaran.",
                             style = MaterialTheme.typography.bodySmall
                         )
                         OutlinedButton(
@@ -1125,13 +1450,21 @@ internal fun SessionContent(
                             modifier = Modifier.heightIn(min = 48.dp)
                         ) { Text("Tambah catatan") }
                     }
-                    if (markerItems.isEmpty() && cueItems.isEmpty() && annotationItems.isEmpty()) {
+                    if (!workspace.capturing &&
+                        (filter == VerbatimMarkerFilter.ALL || filter == VerbatimMarkerFilter.MULTIMODAL) &&
+                        uiState.multimodalComparisons.isNotEmpty()
+                    ) {
+                        item("multimodal-comparisons") {
+                            MultimodalComparisonSection(uiState.multimodalComparisons)
+                        }
+                    }
+                    val noFilteredMarkers = markerItems.isEmpty() && cueItems.isEmpty() && annotationItems.isEmpty()
+                    val showComparisonOnly = filter == VerbatimMarkerFilter.MULTIMODAL && uiState.multimodalComparisons.isNotEmpty()
+                    if (noFilteredMarkers && !showComparisonOnly) {
                         item("marker-empty") {
                             EmptyLiveState(
-                                if (filter ==
-                                    VerbatimMarkerFilter.ALL
-                                ) {
-                                    "Belum ada marker. Ini tidak memastikan tidak adanya keraguan atau stres."
+                                if (filter == VerbatimMarkerFilter.ALL) {
+                                    "Belum ada marker untuk sesi ini."
                                 } else {
                                     "Belum ada marker ${filter.label.lowercase()}. Pilih Semua untuk melihat bukti lain."
                                 }
@@ -1140,16 +1473,15 @@ internal fun SessionContent(
                     }
                     items(markerItems, key = { "event:${it.eventId}" }, contentType = { "event" }) { event ->
                         VerbatimMarkerCard(
-                            event,
-                            uiState.markerPlaybackOffsets[event.eventId]?.takeIf {
-                                workspace.canReviewAudio
-                            },
-                            onPlayFromMarker
+                            event = event,
+                            playbackOffset = uiState.markerPlaybackOffsets[event.eventId]?.takeIf { workspace.canReviewAudio },
+                            onSeekAudio = onPlayFromMarker,
+                            onOpenDetail = { onOpenMarkerDetail(event) }
                         )
                     }
-                    items(cueItems, key = {
-                        "cue:${it.id}"
-                    }, contentType = { "cue" }) { cue -> VerbatimCueButton(cue, onPlayFromMarker, workspace.canReviewAudio) }
+                    items(cueItems, key = { "cue:${it.id}" }, contentType = { "cue" }) { cue ->
+                        VerbatimCueButton(cue, onPlayFromMarker, workspace.canReviewAudio)
+                    }
                     items(annotationItems, key = { "note:${it.id}" }, contentType = { "note" }) { annotation ->
                         ManualAnnotationRow(
                             annotation,
@@ -1161,44 +1493,45 @@ internal fun SessionContent(
                     }
                 }
             } else {
-                item("welcome") {
-                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.Small)) {
-                        Text("Rekam percakapan, tinjau cue dan unduh transkrip.", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "Pilih Indonesia atau Inggris saat mulai. PPG Galaxy Watch bersifat opsional; proses inti tetap lokal.",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        if (uiState.canStartNewSession) {
-                            VerbatimPrimaryAction(
-                                "Mulai rekaman",
-                                "Mulai rekaman Verbatim+",
-                                true,
-                                Modifier.fillMaxWidth(),
-                                onStartOrStop
-                            )
-                        }
-                        TextButton(onClick = onOpenDrawer, modifier = Modifier.heightIn(min = 48.dp)) { Text("Buka sesi atau impor audio") }
-                    }
+                item("session-setup") {
+                    VerbatimSessionSetupSurface(
+                        uiState = uiState,
+                        sessionName = setupSessionName,
+                        onSessionNameChange = onSetupSessionNameChange,
+                        monitoringEnabled = setupMonitoringEnabled,
+                        onMonitoringEnabledChange = onSetupMonitoringEnabledChange,
+                        consentChecked = setupConsentChecked,
+                        onConsentCheckedChange = onSetupConsentCheckedChange,
+                        microphoneGranted = microphoneGranted,
+                        microphonePermanentlyDenied = microphonePermanentlyDenied,
+                        onStartSession = onStartSetupSession,
+                        onImportAudio = onImportAudio,
+                        onOpenDrawer = onOpenDrawer,
+                        onSelectSession = onSelectSession,
+                        onSetLanguage = onSetLanguage,
+                        onSetWatchWearerRole = onSetWatchWearerRole,
+                        onRefreshReadiness = onRefreshReadiness,
+                        onOpenProfile = onOpenProfile,
+                        onRequestMicrophonePermission = onRequestMicrophonePermission,
+                        onImportPackage = onImportPackage
+                    )
                 }
             }
         }
         if (workspace.capturing || uiState.isFinalizing) {
             Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = AppSpacing.Screen)) {
-                    VerbatimCaptureControls(
-                        workspace,
-                        if (uiState.isFinalizing) {
-                            finalizationStageLabel(
-                                uiState.finalizationStage
-                            )
-                        } else {
-                            sessionCommandStatus(uiState.sessionCommandState)
-                        },
-                        onStartOrStop,
-                        onPauseOrResume,
-                        Modifier.fillMaxWidth()
-                    )
-                }
+                VerbatimCaptureControls(
+                    workspace = workspace,
+                    stage = if (uiState.isFinalizing) {
+                        finalizationStageLabel(uiState.finalizationStage)
+                    } else {
+                        sessionCommandStatus(uiState.sessionCommandState)
+                    },
+                    onStop = onStartOrStop,
+                    onPauseOrResume = onPauseOrResume,
+                    onBookmark = if (!uiState.isFinalizing && workspace.canAnnotate) onRequestAddManualAnnotation else null,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.Screen)
+                )
             }
         }
     }
@@ -1235,7 +1568,7 @@ private fun LiveBiosignalCard(snapshot: LiveBiosignalSnapshot) {
                 )
             }
             Text(
-                "Indikator live untuk ditinjau; bukan keputusan stres Home lima menit.",
+                "Indikator PPG live per kanal independen.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1407,10 +1740,10 @@ private fun LiveAudioCard(snapshot: AcousticAnalysisSnapshot?) {
                 Text(
                     when (snapshot.markerType) {
                         com.stressdetector.mobile.domain.engine.SessionMarkerType.LOW_AUDIO_QUALITY ->
-                            "Kualitas audio rendah; tinjau rekaman sebelum interpretasi."
+                            "Kualitas audio rendah pada jendela ini."
                         com.stressdetector.mobile.domain.engine.SessionMarkerType.ACOUSTIC_DIVERGENCE ->
-                            "Deviasi terhadap baseline akustik; bukan kesimpulan klinis."
-                        else -> "Audio baseline sedang dipantau secara lokal."
+                            "Perubahan energi terhadap baseline akustik."
+                        else -> "Baseline akustik aktif."
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = if (snapshot.markerType == com.stressdetector.mobile.domain.engine.SessionMarkerType.LOW_AUDIO_QUALITY) {
@@ -1427,10 +1760,7 @@ private fun LiveAudioCard(snapshot: AcousticAnalysisSnapshot?) {
 private fun liveAvailabilityLabel(availability: PredictionAvailability): String = when (availability) {
     is PredictionAvailability.WarmingUp ->
         "Mengumpulkan baseline: ${availability.currentSamples}/${availability.requiredSamples} sample"
-    is PredictionAvailability.Ready -> listOfNotNull(
-        "Inference PPG tersedia",
-        availability.prediction.researchDisclaimer
-    ).joinToString(" — ")
+    is PredictionAvailability.Ready -> "Inference PPG lokal tersedia"
     is PredictionAvailability.Rejected -> "Window ditolak: ${availability.reason}"
     is PredictionAvailability.Unavailable -> "Monitor tidak tersedia: ${availability.reason}"
     is PredictionAvailability.InferenceError -> "Inference gagal: ${availability.reason}"
@@ -1572,8 +1902,6 @@ private fun sessionCommandStatus(state: SessionCommandState): String = when (sta
     SessionCommandState.Finalizing -> "Menyimpan…"
     is SessionCommandState.Error -> "Gagal: ${state.message}"
 }
-
-private fun formatElapsed(seconds: Long): String = "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
 
 private fun formatBpm(value: Float): String = String.format(Locale.US, "%.1f BPM", value)
 

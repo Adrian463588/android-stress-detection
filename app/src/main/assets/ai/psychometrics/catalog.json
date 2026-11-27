@@ -1252,21 +1252,17 @@
     "form": {
       "version": "Army Alpha Intelligence Test - 1 (UI-10013-96, 12 Instruksi Cepat)",
       "title": "Army Alpha Examination (Test 1 - Daya Tangkap Instruksi Cepat)",
-      "instructions": "Perhatikan stimulus dan dengarkan/baca instruksi lisan terarah berikut dengan cermat. Tentukan eksekusi atau pilihan yang paling tepat sesuai instruksi di bawah batasan waktu yang ketat.",
+      "instructions": "Perhatikan stimulus visual dan dengarkan/baca instruksi terarah berikut dengan cermat. Coret, gambar garis, atau tuliskan tanda langsung pada lembar stimulus menggunakan jari atau pena stylus (Samsung S Pen) di bawah batasan waktu yang ketat.",
       "sourceTitle": "KUNCI JAWABAN ARMY ALPHA UI-10013-96 & Norma ARMY ALPHA",
       "sourceUrl": "https://dn790003.ca.archive.org/0/items/armymentaltests00yoak/armymentaltests00yoak.pdf",
       "sourceLocator": "PsikoTest/Army_Alpha/Paket_25_Item/LEMBAR TES ARMY ALPHA.pdf",
       "choices": [
-        "a",
-        "b",
-        "c",
-        "d"
+        "Benar",
+        "Salah"
       ],
       "values": [
         0,
-        1,
-        2,
-        3
+        1
       ],
       "scales": [
         {
@@ -1284,134 +1280,62 @@
         {
           "text": "Butir 1 (Stimulus: 5 Lingkaran Horizontal): Perhatikan lima buah lingkaran pada gambar. Buatlah tanda silang (X) pada lingkaran ke-2 dan tulis huruf A pada lingkaran ke-5.",
           "scale": "directions",
-          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_1.png",
-          "choices": [
-            "a. Tanda silang (X) pada lingkaran ke-2 dan huruf A pada lingkaran ke-5",
-            "b. Tanda silang (X) pada lingkaran ke-1 dan huruf A pada lingkaran ke-3",
-            "c. Angka 1 pada lingkaran ke-2 dan huruf A pada lingkaran ke-5",
-            "d. Tanda silang (X) pada semua lingkaran"
-          ]
+          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_1.png"
         },
         {
           "text": "Butir 2 (Stimulus: Deret Lingkaran 1 s.d. 9): Perhatikan deretan sembilan lingkaran bernomor 1 sampai 9. Tariklah garis lengkung dari lingkaran 1 ke lingkaran 9 yang melewati bagian BAWAH lingkaran 3 dan 4, lalu melengkung di ATAS lingkaran 5 dan 6.",
           "scale": "directions",
-          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_2.png",
-          "choices": [
-            "a. Garis melewati bawah lingkaran 3-4 lalu naik melengkung di atas lingkaran 5-6",
-            "b. Garis lurus memotong tepat di tengah-tengah lingkaran 3, 4, 5, 6",
-            "c. Garis melewati atas lingkaran 3-4 lalu turun di bawah lingkaran 5-6",
-            "d. Garis melingkari seluruh lingkaran 1 sampai 9"
-          ]
+          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_2.png"
         },
         {
           "text": "Butir 3 (Stimulus: 3 Lingkaran dan Pilihan YA / TIDAK): Perhatikan tiga lingkaran dan kata YA / TIDAK di sampingnya. Dengarkan instruksi: Jika satu resimen militer beranggotakan lebih banyak prajurit daripada satu kompi, maka tuliskan angka 7 pada lingkaran ke-1; jika tidak, berikan garis bawah pada kata TIDAK.",
           "scale": "directions",
-          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_3.png",
-          "choices": [
-            "a. Menuliskan angka 7 pada lingkaran ke-1 (karena resimen > kompi benar)",
-            "b. Memberikan garis bawah pada kata TIDAK",
-            "c. Menuliskan angka 1 pada kata YA",
-            "d. Membuat tanda silang pada lingkaran ke-3"
-          ]
+          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_3.png"
         },
         {
           "text": "Butir 4 (Stimulus: 5 Lingkaran Horizontal): Perhatikan lima buah lingkaran pada gambar. Tuliskan jawaban yang benar untuk pertanyaan: Berapa hari dalam satu minggu? pada lingkaran ke-3, dan pada lingkaran ke-5 tuliskan sembarang angka yang SALAH untuk pertanyaan tersebut (selain angka 7).",
           "scale": "speed_accuracy",
-          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_4.png",
-          "choices": [
-            "a. Lingkaran ke-3 diisi angka 7, dan lingkaran ke-5 diisi angka selain 7 (misal angka 5)",
-            "b. Lingkaran ke-1 diisi angka 7, dan lingkaran ke-3 diisi angka 5",
-            "c. Semua lingkaran diisi angka 7",
-            "d. Lingkaran ke-3 diisi angka 12, dan lingkaran ke-5 dibiarkan kosong"
-          ]
+          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_4.png"
         },
         {
           "text": "Butir 5 (Stimulus: Segitiga dan Lingkaran Berpotongan): Perhatikan bangun segitiga dan lingkaran pada gambar. Buatlah tanda silang (X) pada bidang segitiga yang berada di LUAR lingkaran, dan tuliskan huruf A di dalam lingkaran.",
           "scale": "directions",
-          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_5.png",
-          "choices": [
-            "a. Tanda silang (X) di dalam segitiga luar lingkaran, dan huruf A di dalam lingkaran",
-            "b. Tanda silang (X) di perpotongan kedua bangun, dan huruf A di luar segitiga",
-            "c. Huruf A di segitiga murni, dan tanda silang (X) di dalam lingkaran",
-            "d. Tanda silang (X) pada sudut atas lingkaran"
-          ]
+          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_5.png"
         },
         {
           "text": "Butir 6 (Stimulus: Bujur Sangkar, Segitiga, dan Lingkaran Bertumpuk): Perhatikan bujur sangkar, segitiga, dan lingkaran yang saling bertumpuk. Buatlah tanda silang (X) pada sudut kiri bawah segitiga yang berada di LUAR bujur sangkar dan lingkaran, dan tuliskan huruf Y pada bidang perpotongan antara segitiga dan bujur sangkar.",
           "scale": "directions",
-          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_6.png",
-          "choices": [
-            "a. Tanda silang (X) di sudut segitiga murni luar persegi/lingkaran, dan huruf Y di perpotongan segitiga–bujur sangkar",
-            "b. Tanda silang (X) di dalam bujur sangkar murni, dan huruf Y di dalam lingkaran",
-            "c. Huruf Y di perpotongan ketiga bidang, dan tanda silang (X) di luar bangun",
-            "d. Huruf Y di sudut segitiga, dan tanda silang (X) di dalam lingkaran"
-          ]
+          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_6.png"
         },
         {
           "text": "Butir 7 (Stimulus: Deret Huruf A sampai P): Perhatikan deretan huruf A B C D E F G H I J K L M N O P pada gambar. Berikan garis bawah tepat pada huruf D, dan coretlah (buat garis miring pada) huruf K.",
           "scale": "directions",
-          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_7.png",
-          "choices": [
-            "a. Memberikan garis bawah tepat pada huruf D, dan mencoret huruf K",
-            "b. Memberikan garis bawah pada huruf C, dan mencoret huruf L",
-            "c. Mencoret huruf D, dan memberikan garis bawah pada huruf K",
-            "d. Mencoret semua huruf vokal yang ada dalam deret"
-          ]
+          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_7.png"
         },
         {
           "text": "Butir 8 (Stimulus: 3 Lingkaran dan Kata KAPAL MUATAN GUDANG): Perhatikan tiga lingkaran dan kata KAPAL MUATAN GUDANG pada gambar. Tuliskan huruf vokal kedua dari kata pertama pada lingkaran ke-1, huruf vokal kedua dari kata kedua pada lingkaran ke-2, dan huruf terakhir dari kata ketiga pada lingkaran ke-3.",
           "scale": "speed_accuracy",
-          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_8.png",
-          "choices": [
-            "a. Lingkaran 1 diisi huruf A, lingkaran 2 diisi huruf A, dan lingkaran 3 diisi huruf G",
-            "b. Lingkaran 1 diisi huruf K, lingkaran 2 diisi huruf M, dan lingkaran 3 diisi huruf G",
-            "c. Semua lingkaran diisi huruf vokal A dari kata KAPAL",
-            "d. Setiap lingkaran diisi jumlah huruf masing-masing kata"
-          ]
+          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_8.png"
         },
         {
           "text": "Butir 9 (Stimulus: Deret Angka 45-87-54-33-66-78-81-49-36-41-71-99-17-82-64-89): Perhatikan deretan angka dua digit pada gambar. Coretlah setiap angka yang bernilai lebih dari 30 tetapi kurang dari 40 (yaitu angka 33 dan 36).",
           "scale": "speed_accuracy",
-          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_9.png",
-          "choices": [
-            "a. Mencoret tepat angka 33 dan 36 (rentang antara 30 dan 40)",
-            "b. Mencoret semua angka ganjil (33, 81, 49, 41, 71, 99, 17, 89)",
-            "c. Mencoret angka 45, 54, dan 66 saja",
-            "d. Mencoret angka 99 saja"
-          ]
+          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_9.png"
         },
         {
           "text": "Butir 10 (Stimulus: Bangun Terbagi 5 Bidang Berbeda Luas): Perhatikan bidang persegi panjang yang terbagi menjadi lima bagian dengan ukuran berbeda. Tuliskan angka 2 atau 3 pada masing-masing dari dua bagian yang PALING BESAR, dan tuliskan angka sembarang antara 1 sampai 5 pada bagian yang ukurannya tepat di atas bagian paling kecil.",
           "scale": "speed_accuracy",
-          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_10.png",
-          "choices": [
-            "a. Menulis angka 2 atau 3 pada dua bidang terluas, dan angka antara 1–5 pada bidang setingkat di atas terkecil",
-            "b. Menulis angka 1 pada seluruh bidang yang ada",
-            "c. Menulis angka 5 pada bagian terkecil dan angka 2 pada bagian terluas",
-            "d. Mengarsir penuh seluruh bidang yang paling besar"
-          ]
+          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_10.png"
         },
         {
           "text": "Butir 11 (Stimulus: Bangun Lingkaran, Persegi, Segitiga Berisi Angka & Huruf): Perhatikan deretan bangun datar berisi angka dan huruf pada gambar. Tarik garis mencoret setiap angka ganjil yang TIDAK berada di dalam lingkaran, dan coret juga setiap angka genap yang berada di dalam bujur sangkar bersama dengan sebuah huruf.",
           "scale": "directions",
-          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_11.png",
-          "choices": [
-            "a. Mencoret angka ganjil di luar lingkaran, dan mencoret angka genap di dalam bujur sangkar berhuruf",
-            "b. Mencoret semua huruf yang terletak di dalam lingkaran",
-            "c. Mencoret semua angka tanpa memperhitungkan bentuk bangunnya",
-            "d. Melingkari semua angka genap yang ditemukan"
-          ]
+          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_11.png"
         },
         {
           "text": "Butir 12 (Stimulus: Deret Angka 1 sampai 9): Perhatikan deret angka 1 sampai 9 pada gambar. Dengarkan instruksi logika: Jika angka 7 lebih besar daripada angka 5, maka coretlah angka 6, KECUALI jika angka 6 lebih besar daripada angka 8, dalam hal tersebut buat garis bawah pada angka 7.",
           "scale": "speed_accuracy",
-          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_12.png",
-          "choices": [
-            "a. Mencoret angka 6 (karena 7 > 5 benar, dan kondisi perkecualian 6 > 8 salah)",
-            "b. Menggarisbawahi angka 7",
-            "c. Mencoret angka 8 dan angka 5",
-            "d. Membiarkan deret angka tanpa perubahan"
-          ]
+          "imageAssetPath": "ai/psychometrics/images/army_alpha/item_12.png"
         }
       ],
       "average": false,

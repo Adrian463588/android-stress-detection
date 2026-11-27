@@ -30,8 +30,28 @@ data class BundledLocalDocument(
     val sourceSha256: String,
     val license: String,
     val provenance: String,
-    val sourceLocator: String? = null
-)
+    val sourceLocator: String? = null,
+    val collection: String = COLLECTION_COUNSELING_THEORY,
+    val category: String = "",
+    val intendedAudience: String = "counselor",
+    val evidenceLevel: String = "reference",
+    val usageRestrictions: List<String> = emptyList(),
+    val reviewStatus: String = "reviewed",
+    val documentVersion: String = "1.0"
+) {
+    companion object {
+        const val COLLECTION_COUNSELING_THEORY = "counseling_theory"
+        const val COLLECTION_CLINICAL_GUIDANCE = "clinical_guidance"
+        const val COLLECTION_PSYCHOMETRIC_INTERPRETATION = "psychometric_interpretation_guide"
+        const val COLLECTION_RESTRICTED_ADMIN = "psychometric_admin_restricted"
+
+        val DEFAULT_COUNSELING_COLLECTIONS: Set<String> = setOf(
+            COLLECTION_COUNSELING_THEORY,
+            COLLECTION_CLINICAL_GUIDANCE,
+            COLLECTION_PSYCHOMETRIC_INTERPRETATION
+        )
+    }
+}
 
 /** Boundary for a checksum-verified bundled corpus. */
 interface BundledLocalCorpus {
@@ -105,7 +125,14 @@ class AssetBundledLocalCorpus(
             sourceSha256 = sourceSha256,
             license = license,
             provenance = provenance,
-            sourceLocator = sourceLocator
+            sourceLocator = sourceLocator,
+            collection = collection.ifBlank { BundledLocalDocument.COLLECTION_COUNSELING_THEORY },
+            category = category,
+            intendedAudience = intendedAudience.ifBlank { "counselor" },
+            evidenceLevel = evidenceLevel.ifBlank { "reference" },
+            usageRestrictions = usageRestrictions,
+            reviewStatus = reviewStatus.ifBlank { "reviewed" },
+            documentVersion = documentVersion.ifBlank { "1.0" }
         )
         validateDocument(document)
         return document
@@ -148,7 +175,8 @@ class BundledLocalRagRetriever(
     private val corpus: BundledLocalCorpus,
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val policy: LocalRagRetrievalPolicy = LocalRagRetrievalPolicy(),
-    private val ranker: HybridRetrievalRanker = HybridRetrievalRanker()
+    private val ranker: HybridRetrievalRanker = HybridRetrievalRanker(),
+    private val allowedCollections: Set<String> = BundledLocalDocument.DEFAULT_COUNSELING_COLLECTIONS
 ) : RagRetriever {
     @Suppress("UNUSED_PARAMETER")
     override suspend fun retrieveRelevantPassages(query: String, maxResults: Int, minRelevanceThreshold: Float): RagRetrievalResult =
@@ -163,25 +191,22 @@ class BundledLocalRagRetriever(
                     "Bundled local corpus unavailable: ${error.message ?: "manifest invalid"}"
                 )
             }
-            if (documents.isEmpty()) {
+            val eligibleDocuments = documents.filter { it.collection in allowedCollections }
+            if (eligibleDocuments.isEmpty()) {
                 return@withContext RagRetrievalResult.Unavailable("No approved bundled local knowledge documents")
             }
 
             val normalizedQuery = queryTerms.joinToString(" ")
-            val candidates = documents.mapNotNull { document ->
+            val candidates = eligibleDocuments.flatMap { document ->
                 currentCoroutineContext().ensureActive()
-                if (!document.sourceSha256.matches(SHA256)) return@mapNotNull null
+                if (!document.sourceSha256.matches(SHA256)) return@flatMap emptyList()
                 val bytes = corpus.read(document).getOrElse { error ->
                     if (error is CancellationException) throw error
-                    return@mapNotNull null
+                    return@flatMap emptyList()
                 }
-                if (sha256(bytes) != document.sourceSha256.lowercase(Locale.ROOT)) return@mapNotNull null
+                if (sha256(bytes) != document.sourceSha256.lowercase(Locale.ROOT)) return@flatMap emptyList()
                 val content = bytes.toString(Charsets.UTF_8).take(MAX_DOCUMENT_TEXT_CHARS)
-                val passage = LocalTextRanker.bestPassage(normalizedQuery, content, MAX_CITATION_TEXT)
-                    ?: return@mapNotNull null
-                val score = LocalTextRanker.score(normalizedQuery, passage.text)
-                if (score <= 0f) return@mapNotNull null
-                BundledCandidate(document, passage.text, score)
+                extractCandidates(document, content, normalizedQuery)
             }.sortedWith(compareByDescending<BundledCandidate> { it.score }.thenBy { it.document.documentId })
 
             val lexicalCandidates = candidates.map(::toLexicalCandidate)
@@ -215,17 +240,58 @@ class BundledLocalRagRetriever(
             )
         }
 
+    private fun extractCandidates(document: BundledLocalDocument, content: String, normalizedQuery: String): List<BundledCandidate> {
+        if (!document.format.equals("json", ignoreCase = true)) {
+            val passage = LocalTextRanker.bestPassage(normalizedQuery, content, MAX_CITATION_TEXT)
+                ?: return emptyList()
+            val score = LocalTextRanker.score(normalizedQuery, passage.text)
+            if (score <= 0f) return emptyList()
+            return listOf(BundledCandidate(document = document, text = passage.text, score = score))
+        }
+        return runCatching {
+            val root = JsonParser.parseString(content).asJsonObject
+            val sections = root.getAsJsonArray("sections") ?: return@runCatching emptyList()
+            sections.mapNotNull { element ->
+                val sec = element.asJsonObject
+                val text = sec.get("text")?.asString.orEmpty()
+                if (text.isBlank()) return@mapNotNull null
+                val heading = sec.get("heading")?.asString?.takeIf(String::isNotBlank)
+                val pageRange = sec.get("page_range")?.asString?.takeIf(String::isNotBlank)
+                val sectionId = sec.get("section_id")?.asString?.takeIf(String::isNotBlank)
+                val passage = LocalTextRanker.bestPassage(normalizedQuery, text, MAX_CITATION_TEXT)
+                    ?: return@mapNotNull null
+                val headingBonus = heading?.let { LocalTextRanker.score(normalizedQuery, it) * HEADING_BONUS_WEIGHT } ?: 0f
+                val totalScore = (LocalTextRanker.score(normalizedQuery, passage.text) + headingBonus).coerceAtMost(1f)
+                if (totalScore <= 0f) return@mapNotNull null
+                BundledCandidate(
+                    document = document,
+                    text = passage.text,
+                    score = totalScore,
+                    sectionHeading = heading,
+                    pageRange = pageRange,
+                    sectionId = sectionId
+                )
+            }.sortedByDescending { it.score }.take(MAX_SECTIONS_PER_BOOK)
+        }.getOrElse { emptyList() }
+    }
+
     private fun toLexicalCandidate(candidate: BundledCandidate): Pair<RetrievalCandidate, Float> {
         val passageHash = sha256(candidate.text.toByteArray(Charsets.UTF_8))
+        val sectionLabel = buildSectionLabel(candidate.document, candidate.sectionHeading, candidate.pageRange)
+        val locator = candidate.pageRange?.let { "${candidate.document.sourceLocator ?: candidate.document.assetPath} · Hal. $it" }
+            ?: candidate.document.sourceLocator
+        val chunkId = listOfNotNull(candidate.document.documentId, candidate.sectionId, passageHash.take(HASH_PREFIX_LENGTH))
+            .joinToString(":")
         return RetrievalCandidate(
             DocumentChunkEntity(
-                chunkId = "${candidate.document.documentId}:$passageHash",
+                chunkId = chunkId,
                 documentId = candidate.document.documentId,
                 chunkIndex = 0,
                 textContent = candidate.text,
                 embeddingBlob = null,
                 sourceTitle = candidate.document.title,
-                sourceLocator = candidate.document.sourceLocator
+                sourcePage = parseStartPage(candidate.pageRange),
+                sourceLocator = "$sectionLabel||$locator"
             ),
             vector = null
         ) to candidate.score
@@ -238,14 +304,18 @@ class BundledLocalRagRetriever(
             val chunk = scored.candidate.chunk
             val document = documentById.getValue(chunk.documentId)
             val passageHash = sha256(chunk.textContent.toByteArray(Charsets.UTF_8))
+            val parts = chunk.sourceLocator.orEmpty().split("||", limit = 2)
+            val section = parts.getOrNull(0)?.takeIf(String::isNotBlank) ?: (document.sourceLocator ?: "Bundled local passage")
+            val locator = parts.getOrNull(1)?.takeIf(String::isNotBlank) ?: document.sourceLocator
             KnowledgeCitation(
                 citationId = "bundled-${document.documentId}-${passageHash.take(HASH_PREFIX_LENGTH)}",
                 sourceTitle = document.title,
-                section = document.sourceLocator ?: "Bundled local passage",
+                section = section,
                 text = chunk.textContent,
                 relevanceScore = scored.fusedScore,
+                sourcePage = chunk.sourcePage,
                 sourceFileName = document.assetPath,
-                sourceLocator = document.sourceLocator,
+                sourceLocator = locator,
                 retrievedAtMillis = retrievedAt,
                 contentHash = passageHash,
                 chunkId = chunk.chunkId,
@@ -256,12 +326,31 @@ class BundledLocalRagRetriever(
         }
     }
 
-    private data class BundledCandidate(val document: BundledLocalDocument, val text: String, val score: Float)
+    private fun buildSectionLabel(document: BundledLocalDocument, heading: String?, pageRange: String?): String = when {
+        !heading.isNullOrBlank() && !pageRange.isNullOrBlank() -> "$heading (Hal. $pageRange)"
+        !heading.isNullOrBlank() -> heading
+        !pageRange.isNullOrBlank() -> "Hal. $pageRange"
+        else -> document.sourceLocator ?: "Bundled local passage"
+    }
+
+    private fun parseStartPage(pageRange: String?): Int? = pageRange
+        ?.let { Regex("(\\d+)").find(it)?.groupValues?.getOrNull(1)?.toIntOrNull() }
+
+    private data class BundledCandidate(
+        val document: BundledLocalDocument,
+        val text: String,
+        val score: Float,
+        val sectionHeading: String? = null,
+        val pageRange: String? = null,
+        val sectionId: String? = null
+    )
 
     private companion object {
         const val HASH_PREFIX_LENGTH = 16
-        const val MAX_DOCUMENT_TEXT_CHARS = 250_000
+        const val MAX_DOCUMENT_TEXT_CHARS = 600_000
         const val MAX_CITATION_TEXT = 1_200
+        const val MAX_SECTIONS_PER_BOOK = 2
+        const val HEADING_BONUS_WEIGHT = 0.25f
         val SHA256 = Regex("^[a-fA-F0-9]{64}$")
         val BUNDLED_QUERY_STOP_WORDS = setOf(
             "apa",
@@ -292,7 +381,14 @@ private data class BundledLocalManifestDocument(
     @SerializedName("source_sha256") val sourceSha256: String = "",
     val license: String = "",
     val provenance: String = "",
-    @SerializedName("source_locator") val sourceLocator: String? = null
+    @SerializedName("source_locator") val sourceLocator: String? = null,
+    val collection: String = "",
+    val category: String = "",
+    @SerializedName("intended_audience") val intendedAudience: String = "",
+    @SerializedName("evidence_level") val evidenceLevel: String = "",
+    @SerializedName("usage_restrictions") val usageRestrictions: List<String> = emptyList(),
+    @SerializedName("review_status") val reviewStatus: String = "",
+    @SerializedName("document_version") val documentVersion: String = ""
 )
 
 internal fun InputStream.readBounded(maxBytes: Int, sizeLimitError: String = "bundled_document_size_limit_exceeded"): ByteArray {
@@ -307,6 +403,36 @@ internal fun InputStream.readBounded(maxBytes: Int, sizeLimitError: String = "bu
         output.write(buffer, 0, count)
     }
     return output.toByteArray()
+}
+
+/** The assessment follow-up can cite a fixed, checksum-verified interview technique. */
+internal suspend fun assessmentFollowUpReference(corpus: BundledLocalCorpus): RagRetrievalResult.Retrieved? {
+    val document = corpus.loadDocuments().getOrNull()?.singleOrNull { it.documentId == "bk_05_keterampilan_mikro" }
+    val bytes = document?.let { corpus.read(it).getOrNull() }
+    val heading = "3. Keterampilan Bertanya Eksploratif"
+    val text = bytes?.toString(Charsets.UTF_8)
+        ?.substringAfter("## $heading", "")
+        ?.substringBefore("- **Pertanyaan Tertutup")
+        ?.substringBefore("\n## ")
+        ?.trim()
+    return if (document == null || text.isNullOrBlank()) {
+        null
+    } else {
+        val hash = sha256(text.toByteArray(Charsets.UTF_8))
+        val citation = KnowledgeCitation(
+            citationId = "${document.documentId}:$hash",
+            sourceTitle = document.title,
+            section = heading,
+            text = text,
+            relevanceScore = 0f,
+            sourceLocator = "${document.sourceLocator ?: document.assetPath} · $heading",
+            contentHash = hash,
+            documentId = document.documentId,
+            sourceSha256 = document.sourceSha256,
+            sourceTier = EvidenceSourceTier.BUNDLED_LOCAL
+        )
+        RagRetrievalResult.Retrieved(listOf(citation), RetrievalMethod.CURATED_REFERENCE, EvidenceSourceTier.BUNDLED_LOCAL)
+    }
 }
 
 private fun sha256(value: ByteArray): String = MessageDigest

@@ -20,4 +20,14 @@ add_library(secure_file_ops SHARED
     app_security_jni.cpp
 )
 target_compile_features(secure_file_ops PRIVATE cxx_std_17)
-target_link_options(secure_file_ops PRIVATE "-Wl,-z,max-page-size=16384")
+target_compile_options(secure_file_ops PRIVATE
+    -fvisibility=hidden
+    -fvisibility-inlines-hidden
+    -ffunction-sections
+    -fdata-sections
+)
+target_link_options(secure_file_ops PRIVATE
+    "-Wl,-z,max-page-size=16384"
+    "-Wl,--gc-sections"
+    "-Wl,--exclude-libs,ALL"
+)

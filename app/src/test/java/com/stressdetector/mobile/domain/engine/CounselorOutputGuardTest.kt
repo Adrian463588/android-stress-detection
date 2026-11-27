@@ -242,6 +242,46 @@ class CounselorOutputGuardTest {
         assertTrue(validation is PersonaValidationResult.Invalid)
     }
 
+    @Test
+    fun counselingPlanWithCbtRebtAndAssessmentInterpretationIsAccepted() {
+        val evidence = citation(chunkId = "bk03-1").copy(sourceTier = EvidenceSourceTier.BUNDLED_LOCAL)
+        val registry = CitationRegistry.fromIncludedEvidence(listOf(evidence), emptyList())
+        val plan = """
+            1. Ringkasan Data: Skor TIU-5 berada pada kategori KS yang mencerminkan tantangan logika figural cepat.
+            2. Teknik Konseling: Gunakan pendekatan REBT (model ABCDE) dan restrukturisasi kognitif CBT [S1|bk03-1].
+            3. Latihan Mandiri: Catatan pikiran otomatis 3 kolom selama 10 menit sebelum tidur.
+            Bahan tinjauan konselor (purwarupa). Bukan diagnosis medis.
+        """.trimIndent()
+        val result = CounselorOutputGuard.Default.validate(
+            text = plan,
+            mode = RagMode.BUNDLED_GROUNDED,
+            citations = listOf(evidence),
+            registry = registry
+        )
+        assertTrue(result is GuardedCounselorOutput.Accepted)
+    }
+
+    @Test
+    fun psychometricAnswerKeyDisclosuresAreRejected() {
+        val evidence = citation(chunkId = "bk06-1").copy(sourceTier = EvidenceSourceTier.BUNDLED_LOCAL)
+        val registry = CitationRegistry.fromIncludedEvidence(listOf(evidence), emptyList())
+
+        listOf(
+            "Berikut adalah kunci jawaban TIU 6 untuk Anda [S1|bk06-1].",
+            "Daftar jawaban Set A: 4, 5, 1, 6, 2, 1 [S1|bk06-1].",
+            "1. B, 2. S, 3. B merupakan urutan skor benar [S1|bk06-1]."
+        ).forEach { output ->
+            val result = CounselorOutputGuard.Default.validate(
+                text = output,
+                mode = RagMode.BUNDLED_GROUNDED,
+                citations = listOf(evidence),
+                registry = registry
+            )
+            assertTrue("Expected rejection for: $output", result is GuardedCounselorOutput.Rejected)
+            assertEquals("answer_key_disclosure", (result as GuardedCounselorOutput.Rejected).reasonCode)
+        }
+    }
+
     private fun citation(
         chunkId: String?,
         citationId: String = chunkId ?: "citation-1",

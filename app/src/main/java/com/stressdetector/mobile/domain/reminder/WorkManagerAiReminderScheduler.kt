@@ -79,10 +79,20 @@ class WorkManagerAiReminderScheduler(context: Context) : AiReminderScheduler {
             return
         }
         val pending = repository.getPending()
+        if (!settings.enabled.value) {
+            val hasManualOnly = pending.any { it.policyVersion == AI_MANUAL_FOLLOWUP_POLICY_VERSION }
+            if (!hasManualOnly) {
+                cancelAll()
+                return
+            }
+        }
         pending.forEach { record ->
+            if (!settings.enabled.value && record.policyVersion != AI_MANUAL_FOLLOWUP_POLICY_VERSION) {
+                return@forEach
+            }
             if (record.scheduledAt.isAfter(now)) {
                 enqueueDelivery(record.reminderId, record.scheduledAt)
-            } else {
+            } else if (record.policyVersion != AI_MANUAL_FOLLOWUP_POLICY_VERSION) {
                 workManager.cancelUniqueWork("$AI_REMINDER_DELIVERY_WORK_PREFIX${record.reminderId}")
                 repository.deletePendingForSource(record.sourceSessionId)
                 enqueuePlanning(record.sourceSessionId)
@@ -247,6 +257,35 @@ class AiReminderDeliveryWorker(appContext: Context, workerParams: WorkerParamete
         publisher: ReminderNotificationPublisher,
         record: AiReminderRecord
     ): Result {
+        val prewritten = repository.readPayload(record.reminderId)
+        if (prewritten != null && record.policyVersion == AI_MANUAL_FOLLOWUP_POLICY_VERSION) {
+            val manualContent = ReminderContent(
+                message = prewritten.message,
+                displayNameUsed = prewritten.displayNameUsed,
+                sourceSessionId = prewritten.sourceSessionId,
+                modelVersion = record.modelVersion,
+                policyVersion = record.policyVersion
+            )
+            val publishAction: () -> ReminderPublishResult = {
+                publisher.publish(record.reminderId, manualContent)
+            }
+            return when (val published = repository.publishIfActive(record.reminderId, publishAction)) {
+                ReminderPublishResult.Published -> {
+                    repository.markDelivered(record.reminderId, Instant.now())
+                    Result.success()
+                }
+                ReminderPublishResult.PermissionDenied -> {
+                    repository.deletePayload(record.reminderId)
+                    fail(repository, record.reminderId, "NOTIFICATION_PERMISSION_DENIED")
+                }
+                is ReminderPublishResult.Rejected -> fail(repository, record.reminderId, published.code)
+                is ReminderPublishResult.Failed -> if (published.retryable) {
+                    Result.retry()
+                } else {
+                    fail(repository, record.reminderId, published.reason)
+                }
+            }
+        }
         val eligible = AppLocator.aiReminderEligibility(applicationContext).find(record.sourceSessionId)
         val context = (eligible as? ReminderEligibilityResult.Eligible)?.context
         return context?.let { grounding ->

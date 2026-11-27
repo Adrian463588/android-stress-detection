@@ -3,6 +3,9 @@ package com.stressdetector.mobile.domain.engine
 import java.util.concurrent.atomic.AtomicLong
 
 /** One session-owned clock used to align audio offsets with Watch PPG elapsed time. */
+data class TimelinePauseInterval(val startElapsedMillis: Long, val endElapsedMillis: Long? = null)
+
+@Suppress("TooManyFunctions")
 class SessionTimeline private constructor(
     val sessionId: String,
     val generation: Long,
@@ -13,10 +16,49 @@ class SessionTimeline private constructor(
     private val lock = Any()
     private var audioStartElapsedMillis: Long? = null
     private var ppgToSessionOffsetMillis: Long? = null
+    private var clockBindingSourceValue: String = "UNBOUND"
+    private var clockUncertaintyValue: Long? = null
+    private val pauseIntervalList = mutableListOf<TimelinePauseInterval>()
 
     fun currentElapsedMillis(): Long = (monotonicNowMillis() - startedAtMonotonicMillis).coerceAtLeast(0L)
 
     fun audioStartElapsedMillisOrNull(): Long? = synchronized(lock) { audioStartElapsedMillis }
+
+    fun clockBindingSource(): String = synchronized(lock) { clockBindingSourceValue }
+
+    fun clockUncertaintyMillis(): Long? = synchronized(lock) { clockUncertaintyValue }
+
+    fun pauseIntervals(): List<TimelinePauseInterval> = synchronized(lock) { pauseIntervalList.toList() }
+
+    fun recordPauseStart(elapsedMillis: Long = currentElapsedMillis()) {
+        synchronized(lock) {
+            val current = pauseIntervalList.lastOrNull()
+            if (current == null || current.endElapsedMillis != null) {
+                pauseIntervalList.add(TimelinePauseInterval(startElapsedMillis = elapsedMillis.coerceAtLeast(0L)))
+            }
+        }
+    }
+
+    fun recordPauseEnd(elapsedMillis: Long = currentElapsedMillis()) {
+        synchronized(lock) {
+            val last = pauseIntervalList.lastOrNull() ?: return
+            if (last.endElapsedMillis == null) {
+                val safeEnd = elapsedMillis.coerceAtLeast(last.startElapsedMillis)
+                pauseIntervalList[pauseIntervalList.lastIndex] = last.copy(endElapsedMillis = safeEnd)
+            }
+        }
+    }
+
+    fun activeRecordingMillis(upToElapsedMillis: Long = currentElapsedMillis()): Long = synchronized(lock) {
+        val total = upToElapsedMillis.coerceAtLeast(0L)
+        var paused = 0L
+        pauseIntervalList.forEach { interval ->
+            val start = interval.startElapsedMillis.coerceIn(0L, total)
+            val end = (interval.endElapsedMillis ?: total).coerceIn(start, total)
+            paused += (end - start)
+        }
+        (total - paused).coerceAtLeast(0L)
+    }
 
     fun markAudioStarted(): Long = synchronized(lock) {
         markAudioStartedAtLocked(monotonicNowMillis())
@@ -26,10 +68,17 @@ class SessionTimeline private constructor(
         markAudioStartedAtLocked(monotonicMillis)
     }
 
-    fun bindPpgClock(ppgElapsedMillis: Long, receivedAtMonotonicMillis: Long = monotonicNowMillis()): Long = synchronized(lock) {
+    fun bindPpgClock(
+        ppgElapsedMillis: Long,
+        receivedAtMonotonicMillis: Long = monotonicNowMillis(),
+        bindingSource: String = "SESSION_READY",
+        uncertaintyMillis: Long? = null
+    ): Long = synchronized(lock) {
         val receivedAtSessionElapsed = sessionElapsedAt(receivedAtMonotonicMillis)
         val offset = receivedAtSessionElapsed - ppgElapsedMillis.coerceAtLeast(0L)
         ppgToSessionOffsetMillis = offset
+        clockBindingSourceValue = bindingSource
+        clockUncertaintyValue = uncertaintyMillis
         offset
     }
 

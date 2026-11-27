@@ -23,7 +23,8 @@ fun AppNavGraph(
     counselorPersonaScreen: @Composable () -> Unit,
     documentLibraryScreen: @Composable () -> Unit,
     documentDetailScreen: @Composable (String) -> Unit,
-    assessmentScreen: @Composable (String?) -> Unit = {}
+    assessmentScreen: @Composable (String?) -> Unit = {},
+    assessmentResultScreen: @Composable (String, String) -> Unit = { _, _ -> }
 ) {
     NavHost(
         navController = navController,
@@ -55,6 +56,18 @@ fun AppNavGraph(
             arguments = listOf(navArgument("instrumentId") { type = NavType.StringType })
         ) { entry ->
             assessmentScreen(entry.arguments?.getString("instrumentId").orEmpty())
+        }
+        composable(
+            route = Screen.AssessmentResult.route,
+            arguments = listOf(
+                navArgument("instrumentId") { type = NavType.StringType },
+                navArgument("resultId") { type = NavType.StringType }
+            )
+        ) { entry ->
+            assessmentResultScreen(
+                entry.arguments?.getString("instrumentId").orEmpty(),
+                entry.arguments?.getString("resultId").orEmpty()
+            )
         }
         composable(Screen.Profile.route) {
             profileScreen()

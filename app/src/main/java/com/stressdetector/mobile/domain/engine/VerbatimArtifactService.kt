@@ -13,6 +13,7 @@ import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.CancellationException
 
 /** User-action-only review/export/delete boundary for finalized encrypted session artifacts. */
+@Suppress("TooManyFunctions")
 class VerbatimArtifactService(
     context: Context,
     private val encryptedStorage: EncryptedStorageService,
@@ -130,6 +131,21 @@ class VerbatimArtifactService(
                 error = "Jejak waveform/pitch tidak tersedia atau tidak valid; audio asli tetap dapat ditinjau."
             )
         }
+    }
+
+    fun readAiSummary(userId: String, summary: VerbatimSessionSummary): String? {
+        val folder = summary.artifactFolderPath
+        if (folder.isBlank()) return null
+        return runCatching {
+            requireSafeFolder(folder)
+            encryptedStorage.readEncryptedFile(userId, "$folder/ai_summary.txt.enc")
+                .bufferedReader()
+                .use { it.readText() }
+                .trim()
+                .takeIf { it.isNotBlank() }
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
+        }.getOrNull()
     }
 
     fun deleteSession(userId: String, folderPath: String, sessionId: String? = null): Boolean {

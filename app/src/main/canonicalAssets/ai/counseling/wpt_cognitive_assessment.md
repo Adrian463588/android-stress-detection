@@ -48,8 +48,8 @@ Berdasarkan norma terstandarisasi Wonderlic Personnel Test:
 | **25 – 31** | **111 – 121** | *High Average* | 75 – 89 |
 | **16 – 24** | **93 – 108** | *Average* | 25 – 74 |
 | **10 – 15** | **80 – 90** | *Low Average* | 10 – 24 |
-| **5 – 9** | **69 – 78** | *Borderline Defective* | 3 – 9 |
-| **$\le 4$** | **59 – 67** | *Mentally Defective* | $< 3$ |
+| **5 – 9** | **69 – 78** | *Sangat Di Bawah Rata-Rata* | 3 – 9 |
+| **$\le 4$** | **59 – 67** | *Perlu Dukungan & Evaluasi Lanjutan* | $< 3$ |
 
 - Rata-rata skor populasi tenaga kerja dewasa umum adalah **21** (sekitar persentil ke-50, IQ ~102).
 

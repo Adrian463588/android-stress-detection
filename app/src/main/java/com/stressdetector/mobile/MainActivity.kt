@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -548,6 +549,7 @@ private fun StressDetectorApp(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding)
+                            .consumeWindowInsets(innerPadding)
                     ) {
                         if (windowSizeClass != WindowWidthSizeClass.Compact) {
                             AppNavigationRail(
@@ -684,8 +686,31 @@ private fun StressDetectorApp(
                                                     launchSingleTop = true
                                                 }
                                             },
+                                            onOpenResult = { instrumentId, resultId ->
+                                                navController.navigate(Screen.AssessmentResult.createRoute(instrumentId, resultId)) {
+                                                    launchSingleTop = true
+                                                }
+                                            },
                                             onDiscussWithAi = { prompt ->
                                                 counselorViewModel.sendMessage(prompt)
+                                                navigateToRoot(Screen.Chat)
+                                            },
+                                            onDiscussResult = { request ->
+                                                counselorViewModel.discussAssessmentResult(request)
+                                                navigateToRoot(Screen.Chat)
+                                            },
+                                            onBack = { navController.popBackStack() }
+                                        )
+                                    },
+                                    assessmentResultScreen = { instrumentId, resultId ->
+                                        val context = androidx.compose.ui.platform.LocalContext.current
+                                        val resultViewModel: AssessmentViewModel = viewModel(
+                                            factory = AssessmentViewModel.Factory(context, instrumentId, resultId)
+                                        )
+                                        com.stressdetector.mobile.ui.screens.AssessmentResultRouteScreen(
+                                            viewModel = resultViewModel,
+                                            onDiscussResult = { request ->
+                                                counselorViewModel.discussAssessmentResult(request)
                                                 navigateToRoot(Screen.Chat)
                                             },
                                             onBack = { navController.popBackStack() }

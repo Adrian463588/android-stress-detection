@@ -2,6 +2,7 @@ package com.stressdetector.mobile.domain.assessment
 
 import com.stressdetector.mobile.domain.engine.CitationRegistry
 import com.stressdetector.mobile.domain.engine.ConservativeGemmaTokenCounter
+import com.stressdetector.mobile.domain.engine.CounselingInteractionMode
 import com.stressdetector.mobile.domain.engine.CounselorGenerationRequest
 import com.stressdetector.mobile.domain.engine.CounselorOutputGuard
 import com.stressdetector.mobile.domain.engine.CounselorPromptBuilder
@@ -49,6 +50,23 @@ internal class AssessmentDiscussion(
         "Jelaskan prinsip inti dan cara penerapan praktis modul konseling ini dalam satu paragraf ringkas."
     )
 
+    suspend fun analyzeProjective(
+        instrumentId: String,
+        instrumentTitle: String,
+        panels: List<ProjectivePanelDraft>,
+        verbalNotes: List<String> = emptyList(),
+        renderedImagesPng: List<ByteArray> = emptyList()
+    ): ProjectiveMultimodalReport {
+        val activeEngine = if (consent()) engine else null
+        return ProjectiveMultimodalAnalyzer(activeEngine).analyze(
+            instrumentId = instrumentId,
+            instrumentTitle = instrumentTitle,
+            panels = panels,
+            verbalNotes = verbalNotes,
+            renderedImagesPng = renderedImagesPng
+        )
+    }
+
     private suspend fun explain(instrumentId: String, title: String, locator: String, evidence: List<String>, question: String): String {
         check(consent()) { "Aktifkan consent AI Counselor di Profile." }
         val readiness = engine.preflight()
@@ -79,7 +97,8 @@ internal class AssessmentDiscussion(
             ragMode = RagMode.GROUNDED,
             retrievedCitations = sources,
             stressHistoryContext = "",
-            citationRegistry = sourceRegistry
+            citationRegistry = sourceRegistry,
+            interactionMode = CounselingInteractionMode.ASSESSMENT_INTERPRETATION
         )
         val registry = CounselorPromptBuilder().prepare(request).citationRegistry
         check(registry.bindings.size == sources.size) { "Rujukan $title melebihi kapasitas prompt lokal." }
@@ -92,14 +111,16 @@ internal class AssessmentDiscussion(
             }
         }
         check(consent()) { "Consent AI Counselor dicabut." }
-        val explanation = registry.bindings.fold(output.currentText()) { outputText, binding ->
+        val answer = output.finish()
+        check(answer.text.isNotBlank()) { "Gemma belum menyelesaikan penjelasan. Coba lagi." }
+        val explanation = registry.bindings.fold(answer.text) { outputText, binding ->
             outputText.replace(binding.marker, "")
         }.trim()
         // All passages come from the single source already shown by the app.
         val guarded = CounselorOutputGuard.Default.validate(explanation, RagMode.GENERAL_SAFE, emptyList())
         check(guarded is GuardedCounselorOutput.Accepted) { "Gemma belum dapat menjelaskan asesmen secara aman." }
         check(!guarded.text.contains("mohon berikan", ignoreCase = true)) { "Gemma belum merujuk pada data asesmen yang tersedia." }
-        return guarded.text
+        return if (answer.incomplete) "${guarded.text}\n\nPenjelasan berhenti sebelum selesai." else guarded.text
     }
 }
 
@@ -119,17 +140,23 @@ private fun boundedPassages(parts: List<String>): List<String> {
     val budget = PromptBudget()
     val passages = mutableListOf<String>()
     var passage = ""
-    parts.forEach { part ->
-        check(ConservativeGemmaTokenCounter.count(part) <= budget.maxCitationTokens)
+    parts.forEach { rawPart ->
+        val part = if (ConservativeGemmaTokenCounter.count(rawPart) <= budget.maxCitationTokens) {
+            rawPart
+        } else {
+            ConservativeGemmaTokenCounter.take(rawPart, budget.maxCitationTokens)
+        }
         val combined = listOf(passage, part).filter(String::isNotBlank).joinToString(" ")
         if (ConservativeGemmaTokenCounter.count(combined) > budget.maxCitationTokens) {
-            passages += passage
-            passage = part
+            if (passages.size + 1 < budget.maxCitationCount) {
+                passages += passage
+                passage = part
+            }
         } else {
             passage = combined
         }
     }
-    passages += passage
+    if (passage.isNotBlank()) passages += passage
     check(passages.size <= budget.maxCitationCount)
     return passages
 }

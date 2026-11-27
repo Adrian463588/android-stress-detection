@@ -4,6 +4,8 @@ import com.stressdetector.mobile.domain.engine.EvidenceSourceTier
 import com.stressdetector.mobile.domain.engine.KnowledgeCitation
 import com.stressdetector.mobile.domain.engine.RagRetrievalResult
 import com.stressdetector.mobile.domain.engine.RagRetriever
+import com.stressdetector.mobile.domain.engine.RetrievalMethod
+import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -12,6 +14,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BundledLocalKnowledgeTest {
+    @Test
+    fun `assessment follow up cites open questions from the shipped counseling module`() = runBlocking {
+        val path = "ai/counseling/bk_05_keterampilan_mikro.md"
+        val content = File("src/main/canonicalAssets/$path").readText()
+        val source = document(content).copy(documentId = "bk_05_keterampilan_mikro", assetPath = path)
+
+        val result = requireNotNull(assessmentFollowUpReference(FixtureCorpus(source, content)))
+        val citation = result.citations.single()
+        assertEquals(RetrievalMethod.CURATED_REFERENCE, result.method)
+        assertEquals(EvidenceSourceTier.BUNDLED_LOCAL, citation.sourceTier)
+        assertEquals(source.sourceSha256, citation.sourceSha256)
+        assertTrue(citation.text.contains("Pertanyaan Terbuka"))
+        assertTrue(!citation.text.contains("Pertanyaan Tertutup"))
+    }
+
     @Test
     fun `bundled retriever admits only checksum verified evidence`() = runBlocking {
         val text = "Coping dapat mencakup latihan napas dan dukungan sosial."
@@ -171,6 +188,76 @@ class BundledLocalKnowledgeTest {
 
         assertTrue(result is RagRetrievalResult.Unavailable)
         assertEquals(EvidenceSourceTier.NONE, (result as RagRetrievalResult.Unavailable).sourceTier)
+    }
+
+    @Test
+    fun `packaged BankMateriKonseling json books retrieve cbt rebt group and tiu5 with page provenance`() = runBlocking {
+        val context = org.mockito.Mockito.mock(android.content.Context::class.java)
+        val assetManager = org.mockito.Mockito.mock(android.content.res.AssetManager::class.java)
+        org.mockito.Mockito.`when`(context.assets).thenReturn(assetManager)
+        val manifestBytes = File("src/main/canonicalAssets/ai/bundled_knowledge_manifest.json").readBytes()
+        org.mockito.Mockito.`when`(assetManager.open("ai/bundled_knowledge_manifest.json")).thenAnswer {
+            java.io.ByteArrayInputStream(manifestBytes)
+        }
+        val corpus = AssetBundledLocalCorpus(context)
+        val docs = corpus.loadDocuments().getOrThrow()
+        docs.forEach { doc ->
+            val bytes = File("src/main/canonicalAssets/${doc.assetPath}").readBytes()
+            org.mockito.Mockito.`when`(assetManager.open(doc.assetPath)).thenAnswer {
+                java.io.ByteArrayInputStream(bytes)
+            }
+        }
+        val retriever = BundledLocalRagRetriever(
+            corpus = corpus,
+            policy = LocalRagRetrievalPolicy(
+                thresholdPolicy = CalibratedRetrievalThresholdPolicy("bundled-counseling-kb-v2", 0.012f, 0.012f)
+            )
+        )
+
+        val rebt = retriever.retrieveRelevantPassages("teknik konseling REBT keyakinan irasional ABCDE", maxResults = 3)
+        assertTrue("Expected REBT retrieval, got $rebt", rebt is RagRetrievalResult.Retrieved)
+        val rebtCitations = (rebt as RagRetrievalResult.Retrieved).citations
+        assertTrue(rebtCitations.any { it.text.contains("REBT", ignoreCase = true) || it.text.contains("Rasional", ignoreCase = true) })
+
+        val cbt = retriever.retrieveRelevantPassages("restrukturisasi kognitif CBT pikiran otomatis", maxResults = 3)
+        assertTrue("Expected CBT retrieval, got $cbt", cbt is RagRetrievalResult.Retrieved)
+
+        val group = retriever.retrieveRelevantPassages("tahapan konseling kelompok dinamika kelompok", maxResults = 3)
+        assertTrue("Expected group counseling retrieval, got $group", group is RagRetrievalResult.Retrieved)
+
+        val tiu5 = retriever.retrieveRelevantPassages("asesmen TIU 5 figural analogi bentuk", maxResults = 3)
+        assertTrue("Expected TIU-5 retrieval, got $tiu5", tiu5 is RagRetrievalResult.Retrieved)
+
+        val unknown = retriever.retrieveRelevantPassages("qwertyuiopasdfghjkl", maxResults = 3)
+        assertTrue(unknown is RagRetrievalResult.BelowThreshold || unknown is RagRetrievalResult.Unavailable)
+    }
+
+    @Test
+    fun `restricted psychometric collection is isolated from default counseling retriever`() = runBlocking {
+        val restrictedText = "Protokol rahasia kunci jawaban Set A Set B psikotes kognitif."
+        val publicText = "Pendekatan konseling CBT dan REBT membantu restrukturisasi kognitif."
+        val restrictedDoc = document(restrictedText).copy(
+            documentId = "restricted-1",
+            collection = BundledLocalDocument.COLLECTION_RESTRICTED_ADMIN,
+            usageRestrictions = listOf("restricted_examiner_only")
+        )
+        val publicDoc = document(publicText).copy(
+            documentId = "public-1",
+            collection = BundledLocalDocument.COLLECTION_COUNSELING_THEORY
+        )
+        val corpus = object : BundledLocalCorpus {
+            override suspend fun loadDocuments() = Result.success(listOf(restrictedDoc, publicDoc))
+            override suspend fun read(document: BundledLocalDocument) = Result.success(
+                (if (document.documentId == "restricted-1") restrictedText else publicText).toByteArray(Charsets.UTF_8)
+            )
+        }
+        val retriever = BundledLocalRagRetriever(corpus = corpus, policy = calibratedPolicy())
+
+        val blocked = retriever.retrieveRelevantPassages("kunci jawaban Set A Set B")
+        assertTrue("Expected Unavailable or BelowThreshold, got $blocked", blocked !is RagRetrievalResult.Retrieved)
+
+        val allowed = retriever.retrieveRelevantPassages("konseling CBT REBT restrukturisasi") as RagRetrievalResult.Retrieved
+        assertEquals("public-1", allowed.citations.single().documentId)
     }
 
     private fun document(text: String) = BundledLocalDocument(

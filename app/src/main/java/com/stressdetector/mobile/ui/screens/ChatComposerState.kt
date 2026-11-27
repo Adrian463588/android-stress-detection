@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
@@ -25,6 +28,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.stressdetector.mobile.domain.voice.VoiceInputState
@@ -114,13 +118,24 @@ internal fun ChatComposer(state: ChatComposerState) {
             maxLines = 4,
             shape = MaterialTheme.shapes.large,
             enabled = !state.isGenerating,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(
+                onSend = { if (state.inputText.isNotBlank() && !state.isGenerating) state.onSend() }
+            ),
             trailingIcon = {
                 if (state.isGenerating) {
-                    IconButton(onClick = state.onCancelGeneration) {
+                    IconButton(
+                        onClick = state.onCancelGeneration,
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    ) {
                         Icon(Icons.Default.Close, contentDescription = "Batal", tint = MaterialTheme.colorScheme.error)
                     }
                 } else {
-                    IconButton(onClick = state.onSend, enabled = state.inputText.isNotBlank()) {
+                    IconButton(
+                        onClick = state.onSend,
+                        enabled = state.inputText.isNotBlank(),
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    ) {
                         Icon(
                             Icons.Default.Send,
                             contentDescription = "Kirim pertanyaan",
@@ -137,9 +152,11 @@ internal fun ChatComposer(state: ChatComposerState) {
         IconButton(
             onClick = state.onVoice,
             enabled = !state.isGenerating,
-            modifier = Modifier.semantics {
-                stateDescription = if (state.voiceBusy) "Perekaman suara aktif" else "Perekaman suara tidak aktif"
-            }
+            modifier = Modifier
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .semantics {
+                    stateDescription = if (state.voiceBusy) "Perekaman suara aktif" else "Perekaman suara tidak aktif"
+                }
         ) {
             Icon(
                 if (state.voiceBusy) Icons.Default.Stop else Icons.Default.Mic,

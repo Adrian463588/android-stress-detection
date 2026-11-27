@@ -178,6 +178,55 @@ data class BpmSummary(
     val validPeakCount: Int
 )
 
+/** Explicit origin for live pulse / heart-rate observation; sources are never silently swapped. */
+enum class BpmSource(val displayLabel: String) {
+    PPG_GREEN("PPG Green"),
+    PPG_IR("PPG IR"),
+    PPG_RED_DIAGNOSTIC("PPG Red (Diagnostik)"),
+    WATCH_SDK_HR("Galaxy Watch HR")
+}
+
+/** Honest acquisition state for a BPM source. */
+enum class BpmSignalStatus(val displayLabel: String) {
+    WARMING_UP("Menyiapkan jendela sinyal"),
+    SIGNAL_VALID("Sinyal baik"),
+    MOTION_ARTIFACT("Artefak gerakan terdeteksi"),
+    POOR_QUALITY("Kualitas sinyal rendah"),
+    DISCONNECTED("Koneksi sensor terputus")
+}
+
+/** Quality-gated Pulse Rate Variability (PRV) metrics derived from valid PPG PPI intervals. */
+data class PrvMetrics(
+    val channel: PpgType,
+    val rmssdMs: Float? = null,
+    val sdnnMs: Float? = null,
+    val pnn50Pct: Float? = null,
+    val meanPpiMs: Float? = null,
+    val medianPpiMs: Float? = null,
+    val pulseAmplitudeMedian: Float? = null,
+    val validIbiCount: Int = 0,
+    val candidateIbiCount: Int = 0,
+    val validIbiRatio: Float = 0f,
+    val windowSeconds: Int = 0,
+    val isQualityPassed: Boolean = false,
+    val insufficiencyReason: String? = null
+)
+
+/** Real-time per-source BPM preview & quality status (exploratory, separate from canonical ONNX prediction). */
+data class LiveBpmChannelSnapshot(
+    val source: BpmSource,
+    val observedBpm: Float? = null,
+    val baselineBpm: Float? = null,
+    val deltaBpm: Float? = null,
+    val qualityScore: Float = 0f,
+    val status: BpmSignalStatus = BpmSignalStatus.WARMING_UP,
+    val isStale: Boolean = false,
+    val isCanonicalWindow: Boolean = false,
+    val statusReason: String? = null,
+    val lastUpdatedElapsedMillis: Long? = null,
+    val prvMetrics: PrvMetrics? = null
+)
+
 /**
  * Domain model for real-time monitoring state.
  */
@@ -201,7 +250,15 @@ data class LiveMonitorState(
     val rejectionReason: String? = null,
     val latestWindowTimestampMs: Long? = null,
     val predictionAvailability: PredictionAvailability = PredictionAvailability.WarmingUp(0, 0),
-    val channelStates: Map<PpgType, LiveChannelState> = emptyMap()
+    val channelStates: Map<PpgType, LiveChannelState> = emptyMap(),
+    /** Independent live preview snapshots keyed by explicit [BpmSource]. */
+    val liveBpmBySource: Map<BpmSource, LiveBpmChannelSnapshot> = emptyMap(),
+    /** Primary live preview shown in Verbatim+ Live HUD (never silently fused). */
+    val activeBpmPreview: LiveBpmChannelSnapshot? = null,
+    /** Latest quality-gated PRV evidence per independent PPG channel. */
+    val latestPrvByChannel: Map<PpgType, PrvMetrics> = emptyMap(),
+    val clockBindingSource: String = "UNBOUND",
+    val clockUncertaintyMillis: Long? = null
 )
 
 data class LiveMonitorStopSummary(
